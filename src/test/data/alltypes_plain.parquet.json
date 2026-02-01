@@ -1,0 +1,194 @@
+[
+  {
+    "id": 4,
+    "bool_col": true,
+    "tinyint_col": 0,
+    "smallint_col": 0,
+    "int_col": 0,
+    "bigint_col": 0,
+    "float_col": 0.0,
+    "double_col": 0.0,
+    "date_string_col": [
+      48,
+      51,
+      47,
+      48,
+      49,
+      47,
+      48,
+      57
+    ],
+    "string_col": [
+      48
+    ],
+    "timestamp_col": "2009-03-01 00:00:00"
+  },
+  {
+    "id": 5,
+    "bool_col": false,
+    "tinyint_col": 1,
+    "smallint_col": 1,
+    "int_col": 1,
+    "bigint_col": 10,
+    "float_col": 1.100000023841858,
+    "double_col": 10.1,
+    "date_string_col": [
+      48,
+      51,
+      47,
+      48,
+      49,
+      47,
+      48,
+      57
+    ],
+    "string_col": [
+      49
+    ],
+    "timestamp_col": "2009-03-01 00:01:00"
+  },
+  {
+    "id": 6,
+    "bool_col": true,
+    "tinyint_col": 0,
+    "smallint_col": 0,
+    "int_col": 0,
+    "bigint_col": 0,
+    "float_col": 0.0,
+    "double_col": 0.0,
+    "date_string_col": [
+      48,
+      52,
+      47,
+      48,
+      49,
+      47,
+      48,
+      57
+    ],
+    "string_col": [
+      48
+    ],
+    "timestamp_col": "2009-04-01 00:00:00"
+  },
+  {
+    "id": 7,
+    "bool_col": false,
+    "tinyint_col": 1,
+    "smallint_col": 1,
+    "int_col": 1,
+    "bigint_col": 10,
+    "float_col": 1.100000023841858,
+    "double_col": 10.1,
+    "date_string_col": [
+      48,
+      52,
+      47,
+      48,
+      49,
+      47,
+      48,
+      57
+    ],
+    "string_col": [
+      49
+    ],
+    "timestamp_col": "2009-04-01 00:01:00"
+  },
+  {
+    "id": 2,
+    "bool_col": true,
+    "tinyint_col": 0,
+    "smallint_col": 0,
+    "int_col": 0,
+    "bigint_col": 0,
+    "float_col": 0.0,
+    "double_col": 0.0,
+    "date_string_col": [
+      48,
+      50,
+      47,
+      48,
+      49,
+      47,
+      48,
+      57
+    ],
+    "string_col": [
+      48
+    ],
+    "timestamp_col": "2009-02-01 00:00:00"
+  },
+  {
+    "id": 3,
+    "bool_col": false,
+    "tinyint_col": 1,
+    "smallint_col": 1,
+    "int_col": 1,
+    "bigint_col": 10,
+    "float_col": 1.100000023841858,
+    "double_col": 10.1,
+    "date_string_col": [
+      48,
+      50,
+      47,
+      48,
+      49,
+      47,
+      48,
+      57
+    ],
+    "string_col": [
+      49
+    ],
+    "timestamp_col": "2009-02-01 00:01:00"
+  },
+  {
+    "id": 0,
+    "bool_col": true,
+    "tinyint_col": 0,
+    "smallint_col": 0,
+    "int_col": 0,
+    "bigint_col": 0,
+    "float_col": 0.0,
+    "double_col": 0.0,
+    "date_string_col": [
+      48,
+      49,
+      47,
+      48,
+      49,
+      47,
+      48,
+      57
+    ],
+    "string_col": [
+      48
+    ],
+    "timestamp_col": "2009-01-01 00:00:00"
+  },
+  {
+    "id": 1,
+    "bool_col": false,
+    "tinyint_col": 1,
+    "smallint_col": 1,
+    "int_col": 1,
+    "bigint_col": 10,
+    "float_col": 1.100000023841858,
+    "double_col": 10.1,
+    "date_string_col": [
+      48,
+      49,
+      47,
+      48,
+      49,
+      47,
+      48,
+      57
+    ],
+    "string_col": [
+      49
+    ],
+    "timestamp_col": "2009-01-01 00:01:00"
+  }
+]
