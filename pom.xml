@@ -4,7 +4,7 @@
 
   <groupId>org.parquet</groupId>
   <artifactId>parquet4j</artifactId>
-  <version>0.1.0</version>
+  <version>0.1.1-SNAPSHOT</version>
 
   <name>parquet4j</name>
   <url>https://github.com/aloksingh/parquet4j</url>
@@ -130,6 +130,6 @@
         <connection>scm:git:git@github.com:aloksingh/parquet4j.git</connection>
         <url>scm:git:git@github.com:aloksingh/parquet4j.git</url>
         <developerConnection>scm:git:git@github.com:aloksingh/parquet4j.git</developerConnection>
-      <tag>parquet4j-0.1.0</tag>
+      <tag>HEAD</tag>
   </scm>
 </project>
