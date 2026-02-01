@@ -125,4 +125,11 @@
       </plugins>
     </pluginManagement>
   </build>
+    <distributionManagement>
+    </distributionManagement>
+    <scm>
+        <connection>scm:git:git@github.com:aloksingh/parquet4j.git</connection>
+        <url>scm:git:git@github.com:aloksingh/parquet4j.git</url>
+        <developerConnection>scm:git:git@github.com:aloksingh/parquet4j.git</developerConnection>
+    </scm>
 </project>
