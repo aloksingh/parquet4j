@@ -1,0 +1,362 @@
+dogma_v1 utf-8
+- identifier  = parquet_v1
+- description = Apache Parquet columnar storage format
+- reference   = https://parquet.apache.org/docs/file-format/
+- dogma       = https://github.com/kstenerud/dogma/blob/master/v1/dogma_v1.0.md
+
+# ==============================================================================
+# Apache Parquet File Format
+# ==============================================================================
+#
+# Parquet is a columnar storage format that organizes data by columns rather
+# than rows. A Parquet file consists of:
+# 1. File header (magic number)
+# 2. One or more row groups (data)
+# 3. File footer (metadata + footer length + magic number)
+#
+# The file metadata is encoded using Apache Thrift Compact Protocol and
+# contains the schema, row group information, and column chunk metadata.
+# ==============================================================================
+
+# Main file structure
+parquet_file      = byte_order(lsb, file_structure);
+
+file_structure    = file_header
+                  & row_group+
+                  & file_footer
+                  ;
+
+# ------------------------------------------------------------------------------
+# File Header
+# ------------------------------------------------------------------------------
+# The file begins with a 4-byte magic number "PAR1"
+file_header       = magic_number;
+magic_number      = "PAR1";
+
+# ------------------------------------------------------------------------------
+# Row Groups
+# ------------------------------------------------------------------------------
+# Row groups contain the actual data, organized into column chunks.
+# Each column chunk contains one or more pages (dictionary page + data pages).
+# The exact structure and offsets are described in the file metadata.
+row_group         = column_chunk+;
+
+column_chunk      = dictionary_page?
+                  & data_page+
+                  ;
+
+# ------------------------------------------------------------------------------
+# Pages
+# ------------------------------------------------------------------------------
+# Pages are the unit of compression and encoding in Parquet.
+# Each page starts with a Thrift-encoded PageHeader, followed by page data.
+#
+# Page types:
+# - DICTIONARY_PAGE (0): Contains dictionary values for dictionary encoding
+# - DATA_PAGE (1): Contains column data with embedded repetition/definition levels
+# - DATA_PAGE_V2 (3): Contains column data with separate uncompressed levels
+
+dictionary_page   = page_header_dict
+                  & compressed_dict_data
+                  ;
+
+data_page         = page_header_data
+                  & compressed_data_page_v1
+                  ;
+
+data_page_v2      = page_header_data_v2
+                  & page_v2_data
+                  ;
+
+# ------------------------------------------------------------------------------
+# Page Headers (Thrift Compact Protocol encoded)
+# ------------------------------------------------------------------------------
+# PageHeader structure (Thrift):
+# - type: PageType (required)
+# - uncompressed_page_size: i32 (required)
+# - compressed_page_size: i32 (required)
+# - crc: i32 (optional)
+# - data_page_header: DataPageHeader (optional, for DATA_PAGE)
+# - index_page_header: IndexPageHeader (optional)
+# - dictionary_page_header: DictionaryPageHeader (optional, for DICTIONARY_PAGE)
+# - data_page_header_v2: DataPageHeaderV2 (optional, for DATA_PAGE_V2)
+
+page_header_dict   = thrift_compact_protocol;
+page_header_data   = thrift_compact_protocol;
+page_header_data_v2 = thrift_compact_protocol;
+
+# ------------------------------------------------------------------------------
+# DATA_PAGE (V1) Structure
+# ------------------------------------------------------------------------------
+# After decompression, DATA_PAGE contains:
+# 1. Repetition levels (RLE/bit-packed encoded) - only if max_repetition_level > 0
+#    - 4-byte length (LE) indicating byte length of RLE data
+#    - RLE/bit-packed encoded level data
+# 2. Definition levels (RLE/bit-packed encoded) - only if max_definition_level > 0
+#    - 4-byte length (LE) indicating byte length of RLE data
+#    - RLE/bit-packed encoded level data
+# 3. Encoded values (encoding specified in page header)
+#
+# The compressed data is the entire structure above, compressed with the
+# codec specified in the column chunk metadata.
+
+compressed_data_page_v1 = u8(~)*;
+
+decompressed_data_page_v1 = repetition_levels_v1?
+                          & definition_levels_v1?
+                          & encoded_values_v1
+                          ;
+
+# Repetition levels in V1 (RLE/bit-packed with 4-byte length prefix)
+repetition_levels_v1 = u32(var(rep_len, ~))
+                     & rle_encoded_levels{rep_len}
+                     ;
+
+# Definition levels in V1 (RLE/bit-packed with 4-byte length prefix)
+definition_levels_v1 = u32(var(def_len, ~))
+                     & rle_encoded_levels{def_len}
+                     ;
+
+# RLE/bit-packed encoded level data
+rle_encoded_levels = u8(~);
+
+# Encoded values depend on the encoding type specified in the page header
+encoded_values_v1  = u8(~)*;
+
+# ------------------------------------------------------------------------------
+# DATA_PAGE_V2 Structure
+# ------------------------------------------------------------------------------
+# For DATA_PAGE_V2, the structure is different:
+# - Repetition levels (RLE/bit-packed encoded, UNCOMPRESSED)
+# - Definition levels (RLE/bit-packed encoded, UNCOMPRESSED)
+# - Encoded values (possibly compressed based on is_compressed flag)
+#
+# The lengths are specified in the DataPageHeaderV2 (in page header), not
+# as 4-byte prefixes like in V1.
+
+page_v2_data      = repetition_levels_v2
+                  & definition_levels_v2
+                  & encoded_values_v2
+                  ;
+
+# Repetition levels in V2 (uncompressed, length from header)
+repetition_levels_v2 = u8(~)*;
+
+# Definition levels in V2 (uncompressed, length from header)
+definition_levels_v2 = u8(~)*;
+
+# Encoded values in V2 (may be compressed if is_compressed is true)
+encoded_values_v2 = u8(~)*;
+
+# ------------------------------------------------------------------------------
+# DICTIONARY_PAGE Structure
+# ------------------------------------------------------------------------------
+# After decompression, contains dictionary values encoded with PLAIN or
+# PLAIN_DICTIONARY encoding
+
+compressed_dict_data = u8(~)*;
+
+# ------------------------------------------------------------------------------
+# File Footer
+# ------------------------------------------------------------------------------
+# The footer contains file metadata (Thrift-encoded), followed by the footer
+# length (4 bytes, little-endian), and the magic number again.
+#
+# Footer structure:
+# - FileMetaData (Thrift Compact Protocol)
+# - Footer length (4 bytes LE) - size of FileMetaData in bytes
+# - Magic number "PAR1" (4 bytes)
+
+file_footer       = file_metadata
+                  & footer_length
+                  & magic_number
+                  ;
+
+# FileMetaData contains:
+# - version: Parquet format version
+# - schema: List of SchemaElements describing the schema tree
+# - num_rows: Total number of rows
+# - row_groups: List of RowGroup metadata
+# - key_value_metadata: Optional key-value pairs
+# - created_by: Optional string identifying the writer
+# - column_orders: Optional list of column sort orders
+# - encryption_algorithm: Optional encryption metadata
+file_metadata     = thrift_compact_protocol;
+
+# Footer length is stored as a 4-byte little-endian integer
+footer_length     = u32(~);
+
+# ------------------------------------------------------------------------------
+# Thrift Compact Protocol
+# ------------------------------------------------------------------------------
+# Parquet uses Thrift Compact Protocol for serialization of metadata.
+# This is a complex binary format with variable-length encoding.
+# Details: https://github.com/apache/thrift/blob/master/doc/specs/thrift-compact-protocol.md
+thrift_compact_protocol: bits =
+    """
+    Apache Thrift Compact Protocol binary serialization.
+
+    Compact protocol uses variable-length encoding for integers (zigzag + varint),
+    field headers, and type information. Structures contain:
+    - Field headers: (field_id_delta << 4) | field_type
+    - Field stop: 0x00
+    - Lists/Sets: size_and_type byte + elements
+    - Maps: size varint + key_type + value_type + key-value pairs
+
+    For full specification, see:
+    https://github.com/apache/thrift/blob/master/doc/specs/thrift-compact-protocol.md
+    """;
+
+# ------------------------------------------------------------------------------
+# Page Types (from org.apache.parquet.format.PageType)
+# ------------------------------------------------------------------------------
+PAGE_TYPE_DATA_PAGE       = 0;
+PAGE_TYPE_INDEX_PAGE      = 1;
+PAGE_TYPE_DICTIONARY_PAGE = 2;
+PAGE_TYPE_DATA_PAGE_V2    = 3;
+
+# ------------------------------------------------------------------------------
+# Physical Types (from org.parquet.model.Type)
+# ------------------------------------------------------------------------------
+TYPE_BOOLEAN              = 0;
+TYPE_INT32                = 1;
+TYPE_INT64                = 2;
+TYPE_INT96                = 3;  # Deprecated - used for legacy nanosecond timestamps
+TYPE_FLOAT                = 4;
+TYPE_DOUBLE               = 5;
+TYPE_BYTE_ARRAY           = 6;
+TYPE_FIXED_LEN_BYTE_ARRAY = 7;
+
+# ------------------------------------------------------------------------------
+# Encoding Types (from org.parquet.model.Encoding)
+# ------------------------------------------------------------------------------
+ENCODING_PLAIN                 = 0;
+ENCODING_PLAIN_DICTIONARY      = 2;
+ENCODING_RLE                   = 3;
+ENCODING_BIT_PACKED            = 4;
+ENCODING_DELTA_BINARY_PACKED   = 5;
+ENCODING_DELTA_LENGTH_BYTE_ARRAY = 6;
+ENCODING_DELTA_BYTE_ARRAY      = 7;
+ENCODING_RLE_DICTIONARY        = 8;
+ENCODING_BYTE_STREAM_SPLIT     = 9;
+
+# ------------------------------------------------------------------------------
+# Compression Codecs (from org.parquet.model.CompressionCodec)
+# ------------------------------------------------------------------------------
+CODEC_UNCOMPRESSED = 0;
+CODEC_SNAPPY       = 1;
+CODEC_GZIP         = 2;
+CODEC_LZO          = 3;
+CODEC_BROTLI       = 4;
+CODEC_LZ4          = 5;
+CODEC_ZSTD         = 6;
+CODEC_LZ4_RAW      = 7;
+
+# ------------------------------------------------------------------------------
+# Repetition Types (from org.apache.parquet.format.FieldRepetitionType)
+# ------------------------------------------------------------------------------
+REPETITION_REQUIRED = 0;  # Field is required (appears exactly once)
+REPETITION_OPTIONAL = 1;  # Field is optional (appears 0 or 1 times)
+REPETITION_REPEATED = 2;  # Field is repeated (appears 0 or more times)
+
+# ------------------------------------------------------------------------------
+# Encoding Formats
+# ------------------------------------------------------------------------------
+
+# ------------------------------------------------------------------------------
+# Variable-length integer encoding (varint)
+# Used in RLE encoding and Thrift protocol
+# ------------------------------------------------------------------------------
+# Varints encode integers using 1-10 bytes. Each byte uses 7 bits for data
+# and 1 bit (MSB) as a continuation flag.
+# - If MSB = 1, more bytes follow
+# - If MSB = 0, this is the last byte
+# - Bytes are in little-endian order for data bits
+varint: bits = """
+Variable-length integer encoding (varint).
+
+Each byte contains 7 bits of data (bits 0-6) and a continuation bit (bit 7):
+- If bit 7 = 1, more bytes follow
+- If bit 7 = 0, this is the last byte
+
+The 7-bit data chunks are concatenated in little-endian order to form the integer.
+
+Example: 300 (0x012C)
+  Binary: 00000001 00101100
+  Varint: 10101100 00000010
+          ^------^ ^-------
+          0x2C      0x02
+          (cont=1)  (cont=0)
+""";
+
+# ------------------------------------------------------------------------------
+# RLE/Bit-Packed Hybrid Encoding
+# Used for repetition and definition levels
+# ------------------------------------------------------------------------------
+# Format:
+# - Header byte group: varint-encoded value with bit 0 indicating mode:
+#   - If bit 0 = 1: RLE run (remaining bits = run length)
+#   - If bit 0 = 0: Bit-packed run (remaining bits = byte count / 8)
+# - Data: Either repeated value (RLE) or bit-packed values
+rle_bitpacked_hybrid: bits = """
+RLE/Bit-Packed Hybrid Encoding for levels.
+
+The encoding alternates between RLE runs and bit-packed runs.
+Each run starts with a header indicating the run type and length:
+
+Header format (varint):
+- Bit 0: Mode (1 = RLE, 0 = bit-packed)
+- Remaining bits: Length information
+
+RLE run:
+  header = (count << 1) | 1
+  followed by: single value (encoded in bit width specified by max level)
+
+Bit-packed run:
+  header = (byte_count << 1) | 0
+  followed by: bit-packed values (8 values per byte_count bytes)
+
+The bit width for values is determined by: ceil(log2(max_level + 1))
+""";
+
+# ------------------------------------------------------------------------------
+# Delta Encoding
+# Used for INT32 and INT64 columns
+# ------------------------------------------------------------------------------
+delta_encoding: bits = """
+Delta Binary Packed Encoding (DELTA_BINARY_PACKED).
+
+Encodes integers as differences (deltas) from previous values, using
+variable-width bit-packing to compress the deltas.
+
+Format:
+1. Block header (5 varints):
+   - block_size: number of values in this block
+   - miniblocks_in_block: number of miniblocks
+   - total_value_count: total values in this page
+   - first_value: the first value (zigzag encoded)
+
+2. For each miniblock:
+   - min_delta: minimum delta in this miniblock (zigzag varint)
+   - bit_width: bits per delta value
+   - deltas: bit-packed delta values
+
+Values are reconstructed by: value[i] = value[i-1] + delta[i]
+""";
+
+# ------------------------------------------------------------------------------
+# Helper macros
+# ------------------------------------------------------------------------------
+# Unsigned integers in little-endian byte order
+u8(values)  = uint(8, values);
+u16(values) = ordered(uint(16, values));
+u32(values) = ordered(uint(32, values));
+u64(values) = ordered(uint(64, values));
+
+# Signed integers in little-endian byte order
+i32(values) = ordered(sint(32, values));
+i64(values) = ordered(sint(64, values));
+
+# Floating point in little-endian byte order
+f32(values) = ordered(float(32, values));
+f64(values) = ordered(float(64, values));
