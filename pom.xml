@@ -125,7 +125,13 @@
     </pluginManagement>
   </build>
     <distributionManagement>
+        <repository>
+            <id>github</id>
+            <name>GitHub OWNER Apache Maven Packages</name>
+            <url>https://maven.pkg.github.com/aloksingh/parquet4j</url>
+        </repository>
     </distributionManagement>
+
     <scm>
         <connection>scm:git:git@github.com:aloksingh/parquet4j.git</connection>
         <url>scm:git:git@github.com:aloksingh/parquet4j.git</url>
