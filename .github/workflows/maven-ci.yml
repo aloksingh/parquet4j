@@ -1,0 +1,31 @@
+# This workflow will build a Java project with Maven, and cache/restore any dependencies to improve the workflow execution time
+# For more information see: https://help.github.com/actions/language-and-framework-guides/building-and-testing-java-with-maven
+# TODO: Run on aws runners
+
+name: maven-ci
+
+on:
+  push:
+  pull_request:
+  merge_group:
+jobs:
+  maven_ci_build:
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up JDK 22
+        uses: actions/setup-java@v4
+        with:
+          java-version: '23'
+          distribution: 'temurin'
+          cache: maven
+      - name: Setup Maven Action
+        uses: s4u/setup-maven-action@v1.18.0
+        with:
+          java-version: 23
+          maven-version: 3.9.1
+
+      - name: Build with Maven
+        run: mvn --file pom.xml clean test -U -DforkCount=1C
