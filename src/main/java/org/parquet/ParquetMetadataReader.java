@@ -37,6 +37,14 @@ import shaded.parquet.org.apache.thrift.transport.TIOStreamTransport;
  * internal representation including schema, row groups, and column statistics.
  */
 public class ParquetMetadataReader {
+
+  /**
+   * Private constructor to prevent instantiation of this utility class.
+   */
+  private ParquetMetadataReader() {
+    // Utility class
+  }
+
   private static final byte[] MAGIC = "PAR1".getBytes(StandardCharsets.UTF_8);
   private static final int FOOTER_SIZE = 8; // 4 bytes footer length + 4 bytes magic
 

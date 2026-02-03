@@ -30,6 +30,13 @@ import org.parquet.model.RowColumnGroup;
 public class MapColumnExample {
 
   /**
+   * Private constructor to prevent instantiation of this utility class.
+   */
+  private MapColumnExample() {
+    // Utility class
+  }
+
+  /**
    * Main entry point for the MapColumnExample utility.
    * <p>
    * Reads and displays the contents of a Parquet file containing MAP columns.

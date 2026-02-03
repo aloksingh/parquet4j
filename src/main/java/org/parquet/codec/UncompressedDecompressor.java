@@ -14,6 +14,12 @@ import org.parquet.Decompressor;
 public class UncompressedDecompressor implements Decompressor {
 
   /**
+   * Constructs a new uncompressed decompressor (no-op).
+   */
+  public UncompressedDecompressor() {
+  }
+
+  /**
    * Returns the input buffer without performing any decompression.
    *
    * <p>Since the data is already uncompressed, this method performs a no-op

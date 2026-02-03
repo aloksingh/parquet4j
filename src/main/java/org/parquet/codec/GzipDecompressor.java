@@ -8,9 +8,19 @@ import java.util.zip.GZIPInputStream;
 import org.parquet.Decompressor;
 
 /**
- * GZIP decompressor
+ * GZIP decompressor implementation.
+ * <p>
+ * This decompressor uses the standard Java {@link GZIPInputStream} to decompress data
+ * according to the GZIP file format specification (RFC 1952).
+ * </p>
  */
 public class GzipDecompressor implements Decompressor {
+
+  /**
+   * Constructs a new GZIP decompressor.
+   */
+  public GzipDecompressor() {
+  }
   @Override
   public ByteBuffer decompress(ByteBuffer compressed, int uncompressedSize) throws IOException {
     byte[] compressedBytes = new byte[compressed.remaining()];

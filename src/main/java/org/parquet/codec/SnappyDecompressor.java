@@ -7,9 +7,19 @@ import org.parquet.model.ParquetException;
 import org.xerial.snappy.Snappy;
 
 /**
- * Snappy decompressor
+ * Snappy decompressor implementation.
+ * <p>
+ * This decompressor uses the Snappy compression algorithm via the xerial snappy-java library
+ * to decompress data compressed with Snappy.
+ * </p>
  */
 public class SnappyDecompressor implements Decompressor {
+
+  /**
+   * Constructs a new Snappy decompressor.
+   */
+  public SnappyDecompressor() {
+  }
   @Override
   public ByteBuffer decompress(ByteBuffer compressed, int uncompressedSize) throws IOException {
     byte[] compressedBytes = new byte[compressed.remaining()];

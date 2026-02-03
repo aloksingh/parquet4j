@@ -19,6 +19,13 @@ import org.parquet.Compressor;
  * @see Compressor
  */
 public class Lz4Compressor implements Compressor {
+
+  /**
+   * Constructs a new LZ4 compressor.
+   */
+  public Lz4Compressor() {
+  }
+
   /** Factory instance for creating LZ4 compressors */
   private static final LZ4Factory factory = LZ4Factory.fastestInstance();
 

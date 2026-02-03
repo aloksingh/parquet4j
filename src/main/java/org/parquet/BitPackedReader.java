@@ -20,6 +20,13 @@ import org.parquet.model.ParquetException;
 public class BitPackedReader {
 
   /**
+   * Private constructor to prevent instantiation of this utility class.
+   */
+  private BitPackedReader() {
+    // Utility class
+  }
+
+  /**
    * Reads bit-packed boolean values from a ByteBuffer.
    * <p>
    * Booleans are stored in LSB-first (least significant bit first) order. This method

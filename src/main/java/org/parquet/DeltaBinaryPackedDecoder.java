@@ -39,6 +39,12 @@ public class DeltaBinaryPackedDecoder {
   private boolean firstValueConsumed;
   private int blockEndOffset;
 
+  /**
+   * Constructs a new DELTA_BINARY_PACKED decoder for the given buffer.
+   *
+   * @param buffer the ByteBuffer containing encoded DELTA_BINARY_PACKED data
+   * @param is64Bit true if decoding 64-bit integers, false for 32-bit integers
+   */
   public DeltaBinaryPackedDecoder(ByteBuffer buffer, boolean is64Bit) {
     this.buffer = buffer;
     this.buffer.order(ByteOrder.LITTLE_ENDIAN);

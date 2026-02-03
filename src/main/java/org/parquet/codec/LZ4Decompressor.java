@@ -17,6 +17,12 @@ import org.parquet.Decompressor;
  * This implementation handles both formats by detecting the presence of length prefixes.
  */
 public class LZ4Decompressor implements Decompressor {
+
+  /**
+   * Constructs a new LZ4 decompressor that supports both Hadoop LZ4 and raw LZ4 formats.
+   */
+  public LZ4Decompressor() {
+  }
   private static final LZ4Factory factory = LZ4Factory.fastestInstance();
   private static final LZ4SafeDecompressor decompressor = factory.safeDecompressor();
 

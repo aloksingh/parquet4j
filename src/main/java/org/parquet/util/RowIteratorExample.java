@@ -27,6 +27,13 @@ import org.parquet.model.RowColumnGroup;
 public class RowIteratorExample {
 
   /**
+   * Private constructor to prevent instantiation of this utility class.
+   */
+  private RowIteratorExample() {
+    // Utility class
+  }
+
+  /**
    * Main method demonstrating various approaches to iterating through Parquet file rows.
    *
    * @param args command line arguments where the first argument should be the path to a Parquet file

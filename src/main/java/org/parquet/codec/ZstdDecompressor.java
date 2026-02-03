@@ -7,9 +7,19 @@ import org.parquet.Decompressor;
 import org.parquet.model.ParquetException;
 
 /**
- * ZSTD decompressor
+ * ZSTD (Zstandard) decompressor implementation.
+ * <p>
+ * This decompressor uses the Zstandard compression algorithm via the zstd-jni library
+ * to decompress data compressed with ZSTD.
+ * </p>
  */
 public class ZstdDecompressor implements Decompressor {
+
+  /**
+   * Constructs a new ZSTD decompressor.
+   */
+  public ZstdDecompressor() {
+  }
   @Override
   public ByteBuffer decompress(ByteBuffer compressed, int uncompressedSize) throws IOException {
     byte[] compressedBytes = new byte[compressed.remaining()];

@@ -13,6 +13,12 @@ import org.parquet.Compressor;
  * </p>
  */
 public class GzipCompressor implements Compressor {
+
+  /**
+   * Constructs a new GZIP compressor.
+   */
+  public GzipCompressor() {
+  }
   /**
    * Compresses the input byte array using GZIP compression.
    *
