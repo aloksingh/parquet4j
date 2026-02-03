@@ -32,6 +32,9 @@ public class ParquetToJsonConverter {
 
   private final Gson gson;
 
+  /**
+   * Constructs a new ParquetToJsonConverter with pretty-printing enabled for JSON output.
+   */
   public ParquetToJsonConverter() {
     this.gson = new GsonBuilder().setPrettyPrinting().create();
   }
@@ -70,7 +73,13 @@ public class ParquetToJsonConverter {
   }
 
   /**
-   * Extract metadata from the Parquet file
+   * Extract metadata from the Parquet file.
+   * <p>
+   * Extracts comprehensive metadata including file-level information (version, row counts),
+   * key-value metadata, column descriptions with statistics, and row group information.
+   *
+   * @param reader the SerializedFileReader for the Parquet file
+   * @return JsonObject containing all metadata information
    */
   private JsonObject extractMetadata(SerializedFileReader reader) {
     JsonObject metadata = new JsonObject();
@@ -139,7 +148,16 @@ public class ParquetToJsonConverter {
   }
 
   /**
-   * Extract statistics for a logical column across all row groups
+   * Extract statistics for a logical column across all row groups.
+   * <p>
+   * Aggregates statistics such as value counts, null counts, min/max values across
+   * all row groups for a given logical column. Map columns are skipped as they don't
+   * have straightforward statistics.
+   *
+   * @param metadata   the ParquetMetadata containing row group and column information
+   * @param logicalCol the logical column descriptor to extract statistics for
+   * @param schema     the schema descriptor for the Parquet file
+   * @return JsonObject containing aggregated statistics (totalValues, nullCount, min, max, etc.)
    */
   private JsonObject extractColumnStatistics(ParquetMetadata metadata,
                                              LogicalColumnDescriptor logicalCol,
@@ -197,7 +215,15 @@ public class ParquetToJsonConverter {
   }
 
   /**
-   * Decode a statistics value based on its type
+   * Decode a statistics value based on its type.
+   * <p>
+   * Converts byte array representations of statistics values (min/max) to their
+   * string representations based on the Parquet physical type. Falls back to
+   * hex representation if decoding fails.
+   *
+   * @param value the byte array containing the encoded value
+   * @param type  the Parquet physical type (INT32, INT64, FLOAT, DOUBLE, BYTE_ARRAY, BOOLEAN)
+   * @return string representation of the decoded value, or hex string if decoding fails
    */
   private String decodeStatValue(byte[] value, Type type) {
     if (value == null || value.length == 0) {
@@ -251,7 +277,13 @@ public class ParquetToJsonConverter {
   }
 
   /**
-   * Convert byte array to hex string
+   * Convert byte array to hex string.
+   * <p>
+   * Converts each byte to its two-digit hexadecimal representation and
+   * prefixes with "0x".
+   *
+   * @param bytes the byte array to convert
+   * @return hex string representation prefixed with "0x", or empty string if input is null/empty
    */
   private String bytesToHex(byte[] bytes) {
     if (bytes == null || bytes.length == 0) {
@@ -265,7 +297,14 @@ public class ParquetToJsonConverter {
   }
 
   /**
-   * Extract rows from the Parquet file
+   * Extract rows from the Parquet file.
+   * <p>
+   * Iterates through all rows in the Parquet file and converts each row to a JSON object,
+   * handling various column types including primitives, maps, and lists.
+   *
+   * @param reader the SerializedFileReader for the Parquet file
+   * @return JsonArray containing all rows as JSON objects
+   * @throws IOException if an error occurs while reading the file
    */
   private JsonArray extractRows(SerializedFileReader reader) throws IOException {
     JsonArray rows = new JsonArray();
@@ -295,7 +334,15 @@ public class ParquetToJsonConverter {
   }
 
   /**
-   * Add a value to a JSON object, handling different types appropriately
+   * Add a value to a JSON object, handling different types appropriately.
+   * <p>
+   * Recursively handles various Java types and converts them to appropriate JSON representations:
+   * primitives (String, Number, Boolean), Maps (as nested JSON objects), Lists (as JSON arrays),
+   * and byte arrays (as UTF-8 strings).
+   *
+   * @param jsonObject the JSON object to add the value to
+   * @param key        the key under which to store the value
+   * @param value      the value to add (can be null, primitive, Map, List, byte[], etc.)
    */
   private void addValueToJson(JsonObject jsonObject, String key, Object value) {
     if (value == null) {
@@ -340,7 +387,13 @@ public class ParquetToJsonConverter {
   }
 
   /**
-   * Main method for command-line usage
+   * Main method for command-line usage.
+   * <p>
+   * Converts a Parquet file to JSON format. If no output file is specified,
+   * outputs to stdout.
+   *
+   * @param args command-line arguments: [0] input Parquet file path, [1] optional output JSON file path
+   * @throws IOException if an error occurs during file conversion
    */
   public static void main(String[] args) throws IOException {
     if (args.length < 1) {
