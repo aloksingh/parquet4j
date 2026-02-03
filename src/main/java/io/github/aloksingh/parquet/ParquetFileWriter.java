@@ -303,9 +303,9 @@ public class ParquetFileWriter implements ParquetWriter {
     columnMetaData.setPath_in_schema(Arrays.asList(columnDesc.path()));
     columnMetaData.setCodec(convertCompressionCodec(compressionCodec));
     columnMetaData.setNum_values(values.size());
-    // Note: total sizes should NOT include page headers, only the page data itself
-    columnMetaData.setTotal_uncompressed_size(pageInfo.uncompressed_page_size);
-    columnMetaData.setTotal_compressed_size(pageInfo.compressed_page_size);
+    // Total sizes MUST include page headers + page data
+    columnMetaData.setTotal_uncompressed_size(pageInfo.total_uncompressed_size);
+    columnMetaData.setTotal_compressed_size(pageInfo.total_compressed_size);
     columnMetaData.setData_page_offset(columnChunkStartPos);
 
     // Add statistics
@@ -420,8 +420,9 @@ public class ParquetFileWriter implements ParquetWriter {
     columnMetaData.setPath_in_schema(Arrays.asList(columnDesc.path()));
     columnMetaData.setCodec(convertCompressionCodec(compressionCodec));
     columnMetaData.setNum_values(numValues);
-    columnMetaData.setTotal_uncompressed_size(pageInfo.uncompressed_page_size);
-    columnMetaData.setTotal_compressed_size(pageInfo.compressed_page_size);
+    // Total sizes MUST include page headers + page data
+    columnMetaData.setTotal_uncompressed_size(pageInfo.total_uncompressed_size);
+    columnMetaData.setTotal_compressed_size(pageInfo.total_compressed_size);
     columnMetaData.setData_page_offset(columnChunkStartPos);
 
     // Add statistics
