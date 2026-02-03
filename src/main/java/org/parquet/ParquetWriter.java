@@ -34,9 +34,6 @@ public interface ParquetWriter extends AutoCloseable {
    * to optimize I/O performance.
    *
    * @param row the row data to write, containing values for all columns; must not be null
-   * @throws IllegalArgumentException if the row is null or contains invalid data
-   * @throws IllegalStateException if the writer has been closed
-   * @throws java.io.IOException if an I/O error occurs during writing
    */
   void addRow(RowColumnGroup row);
 
