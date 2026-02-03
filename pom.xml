@@ -169,4 +169,10 @@
             <url>https://maven.pkg.github.com/aloksingh/parquet4j</url>
         </repository>
     </distributionManagement>
+    <scm>
+        <connection>scm:git:git@github.com:aloksingh/parquet4j.git</connection>
+        <url>scm:git:git@github.com:aloksingh/parquet4j.git</url>
+        <developerConnection>scm:git:git@github.com:aloksingh/parquet4j.git</developerConnection>
+        <tag>HEAD</tag>
+    </scm>
 </project>
