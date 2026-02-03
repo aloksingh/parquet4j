@@ -39,8 +39,38 @@ import shaded.parquet.org.apache.thrift.protocol.TCompactProtocol;
 import shaded.parquet.org.apache.thrift.transport.TIOStreamTransport;
 
 /**
- * A simple Parquet file writer that implements the ParquetWriter interface.
- * This writer supports basic data types and PLAIN encoding with optional compression.
+ * A Parquet file writer that implements the ParquetWriter interface.
+ * This writer supports basic data types, MAP types, and PLAIN encoding with optional compression.
+ *
+ * <p>Features:</p>
+ * <ul>
+ *   <li>Supports primitive types: BOOLEAN, INT32, INT64, FLOAT, DOUBLE, BYTE_ARRAY, FIXED_LEN_BYTE_ARRAY</li>
+ *   <li>Supports MAP type with proper hierarchical schema encoding</li>
+ *   <li>PLAIN encoding for values</li>
+ *   <li>RLE/Bit-Packing Hybrid encoding for definition and repetition levels</li>
+ *   <li>Optional compression: UNCOMPRESSED, SNAPPY, GZIP, LZO, BROTLI, LZ4, ZSTD, LZ4_RAW</li>
+ *   <li>Automatic row group management</li>
+ *   <li>Column statistics generation</li>
+ * </ul>
+ *
+ * <p>Example usage:</p>
+ * <pre>{@code
+ * SchemaDescriptor schema = SchemaDescriptor.builder()
+ *     .name("example")
+ *     .addColumn(ColumnDescriptor.primitive("id", Type.INT32))
+ *     .addColumn(ColumnDescriptor.primitive("name", Type.BYTE_ARRAY))
+ *     .build();
+ *
+ * try (ParquetFileWriter writer = new ParquetFileWriter(
+ *         Paths.get("output.parquet"),
+ *         schema,
+ *         CompressionCodec.SNAPPY)) {
+ *     writer.addRow(RowColumnGroup.builder(schema)
+ *         .add("id", 1)
+ *         .add("name", "Alice")
+ *         .build());
+ * }
+ * }</pre>
  */
 public class ParquetFileWriter implements ParquetWriter {
   private static final byte[] PARQUET_MAGIC = "PAR1".getBytes(StandardCharsets.UTF_8);
@@ -99,6 +129,8 @@ public class ParquetFileWriter implements ParquetWriter {
 
   /**
    * Initialize the writer and write the file header.
+   *
+   * @throws IOException if file cannot be created or header cannot be written
    */
   public void start() throws IOException {
     if (outputStream != null) {
@@ -115,6 +147,15 @@ public class ParquetFileWriter implements ParquetWriter {
     currentPosition += PARQUET_MAGIC.length;
   }
 
+  /**
+   * Add a row to the Parquet file. Rows are buffered and written when the row group reaches
+   * a threshold size (currently 1000 rows).
+   *
+   * @param row Row data to add to the file
+   * @throws IllegalStateException if writer is closed
+   * @throws IllegalArgumentException if row schema doesn't match writer schema
+   * @throws ParquetException if writing fails
+   */
   @Override
   public void addRow(RowColumnGroup row) {
     if (closed) {
@@ -149,6 +190,8 @@ public class ParquetFileWriter implements ParquetWriter {
 
   /**
    * Flush the current row group to disk.
+   *
+   * @throws IOException if writing the row group fails
    */
   private void flushRowGroup() throws IOException {
     if (currentRowGroupRows.isEmpty()) {
@@ -199,6 +242,12 @@ public class ParquetFileWriter implements ParquetWriter {
 
   /**
    * Write a single column chunk for a row group.
+   *
+   * @param columnDesc Column descriptor for the column to write
+   * @param columnIndex Index of the column in the schema
+   * @param rows List of rows to extract column values from
+   * @return ColumnChunk metadata for the written column
+   * @throws IOException if writing fails
    */
   private ColumnChunk writeColumnChunk(ColumnDescriptor columnDesc,
                                        int columnIndex,
@@ -275,6 +324,11 @@ public class ParquetFileWriter implements ParquetWriter {
 
   /**
    * Write map column chunks (key and value columns) for a logical MAP column.
+   *
+   * @param logicalCol Logical column descriptor for the MAP column
+   * @param rows List of rows to extract map values from
+   * @return List of column chunks (key chunk and value chunk)
+   * @throws IOException if writing fails
    */
   private List<ColumnChunk> writeMapColumnChunks(LogicalColumnDescriptor logicalCol,
                                                  List<RowColumnGroup> rows) throws IOException {
@@ -386,6 +440,10 @@ public class ParquetFileWriter implements ParquetWriter {
 
   /**
    * Find a value by column path in a row.
+   *
+   * @param row Row to search in
+   * @param path Column path as array of path components
+   * @return Column value or null if not found
    */
   private Object findValueByPath(RowColumnGroup row, String[] path) {
     String pathString = String.join(".", path);
@@ -398,6 +456,10 @@ public class ParquetFileWriter implements ParquetWriter {
 
   /**
    * Calculate statistics for a list of values.
+   *
+   * @param values List of column values
+   * @param type Physical type of the values
+   * @return Column statistics including min, max, null count, and distinct count
    */
   private ColumnStatistics calculateStatistics(List<Object> values, org.parquet.model.Type type) {
     ColumnStatistics stats = new ColumnStatistics();
@@ -427,6 +489,11 @@ public class ParquetFileWriter implements ParquetWriter {
 
   /**
    * Compare two values and return the minimum based on type.
+   *
+   * @param a First value
+   * @param b Second value
+   * @param type Physical type of the values
+   * @return Minimum value
    */
   @SuppressWarnings("unchecked")
   private Object minValue(Object a, Object b, org.parquet.model.Type type) {
@@ -455,6 +522,11 @@ public class ParquetFileWriter implements ParquetWriter {
 
   /**
    * Compare two values and return the maximum based on type.
+   *
+   * @param a First value
+   * @param b Second value
+   * @param type Physical type of the values
+   * @return Maximum value
    */
   @SuppressWarnings("unchecked")
   private Object maxValue(Object a, Object b, org.parquet.model.Type type) {
@@ -483,6 +555,10 @@ public class ParquetFileWriter implements ParquetWriter {
 
   /**
    * Compare two byte arrays lexicographically.
+   *
+   * @param a First byte array
+   * @param b Second byte array
+   * @return Negative if a < b, positive if a > b, zero if equal
    */
   private int compareByteArrays(byte[] a, byte[] b) {
     int minLength = Math.min(a.length, b.length);
@@ -497,6 +573,11 @@ public class ParquetFileWriter implements ParquetWriter {
 
   /**
    * Convert column statistics to Parquet Statistics format.
+   *
+   * @param stats Internal column statistics
+   * @param type Physical type of the column
+   * @return Parquet Statistics object or null if no statistics available
+   * @throws IOException if encoding statistics fails
    */
   private Statistics toParquetStatistics(ColumnStatistics stats, org.parquet.model.Type type)
       throws IOException {
@@ -523,6 +604,11 @@ public class ParquetFileWriter implements ParquetWriter {
 
   /**
    * Encode a statistic value to byte array for Parquet format.
+   *
+   * @param value Statistic value to encode
+   * @param type Physical type of the value
+   * @return Encoded byte array
+   * @throws IOException if encoding fails
    */
   private byte[] encodeStatValue(Object value, org.parquet.model.Type type) throws IOException {
     ByteArrayOutputStream buffer = new ByteArrayOutputStream();
@@ -560,12 +646,16 @@ public class ParquetFileWriter implements ParquetWriter {
   }
 
   /**
-   * Helper class to track column statistics.
+   * Helper class to track column statistics during writing.
    */
   private static class ColumnStatistics {
+    /** Minimum value in the column */
     Object min;
+    /** Maximum value in the column */
     Object max;
+    /** Number of null values in the column */
     long nullCount;
+    /** Number of distinct values in the column */
     long distinctCount;
 
     ColumnStatistics() {
@@ -575,15 +665,27 @@ public class ParquetFileWriter implements ParquetWriter {
   }
 
   /**
-   * Helper class to return page information.
+   * Helper class to return page size information after writing a data page.
    */
   private static class PageInfo {
+    /** Size of uncompressed page data (without header) */
     final int uncompressed_page_size;
+    /** Size of compressed page data (without header) */
     final int compressed_page_size;
+    /** Size of the page header */
     final int header_size;
-    final int total_compressed_size;  // header + compressed data
-    final int total_uncompressed_size;  // header + uncompressed data
+    /** Total compressed size (header + compressed data) */
+    final int total_compressed_size;
+    /** Total uncompressed size (header + uncompressed data) */
+    final int total_uncompressed_size;
 
+    /**
+     * Create page information.
+     *
+     * @param uncompressed_page_size Size of uncompressed page data
+     * @param compressed_page_size Size of compressed page data
+     * @param header_size Size of page header
+     */
     PageInfo(int uncompressed_page_size, int compressed_page_size, int header_size) {
       this.uncompressed_page_size = uncompressed_page_size;
       this.compressed_page_size = compressed_page_size;
@@ -595,6 +697,13 @@ public class ParquetFileWriter implements ParquetWriter {
 
   /**
    * Write a data page and return its size information.
+   *
+   * @param columnDesc Column descriptor for the column being written
+   * @param values List of column values to write
+   * @param definitionLevels Definition levels for null handling
+   * @param repetitionLevels Repetition levels for repeated fields
+   * @return PageInfo containing size information about the written page
+   * @throws IOException if writing fails
    */
   private PageInfo writeDataPage(ColumnDescriptor columnDesc,
                                  List<Object> values,
@@ -606,6 +715,14 @@ public class ParquetFileWriter implements ParquetWriter {
 
   /**
    * Write a data page with explicit numValues (for map columns where numValues != values.size()).
+   *
+   * @param columnDesc Column descriptor for the column being written
+   * @param values List of column values to write
+   * @param definitionLevels Definition levels for null handling
+   * @param repetitionLevels Repetition levels for repeated fields
+   * @param numValues Explicit count of values (may differ from values.size() for maps)
+   * @return PageInfo containing size information about the written page
+   * @throws IOException if writing fails
    */
   private PageInfo writeDataPageWithLevels(ColumnDescriptor columnDesc,
                                            List<Object> values,
@@ -670,6 +787,11 @@ public class ParquetFileWriter implements ParquetWriter {
 
   /**
    * Encode definition/repetition levels using proper RLE/Bit-Packing Hybrid encoding.
+   *
+   * @param levels List of level values to encode
+   * @param maxLevel Maximum level value (determines bit width)
+   * @return Encoded byte array in RLE/Bit-Packing Hybrid format
+   * @throws IOException if encoding fails
    */
   private byte[] encodeRLE(List<Integer> levels, int maxLevel) throws IOException {
     // Calculate bit width needed for the max level value
@@ -682,6 +804,11 @@ public class ParquetFileWriter implements ParquetWriter {
 
   /**
    * Encode values using PLAIN encoding.
+   *
+   * @param values List of values to encode
+   * @param type Physical type of the values
+   * @return Encoded byte array in PLAIN format
+   * @throws IOException if encoding fails
    */
   private byte[] encodeValuesPlain(List<Object> values, org.parquet.model.Type type)
       throws IOException {
@@ -731,6 +858,12 @@ public class ParquetFileWriter implements ParquetWriter {
     return buffer.toByteArray();
   }
 
+  /**
+   * Convert various object types to byte arrays for encoding.
+   *
+   * @param value Object to convert (byte[], String, ByteBuffer, or other)
+   * @return Byte array representation of the value
+   */
   private byte[] getByteArray(Object value) {
     if (value instanceof byte[]) {
       return (byte[]) value;
@@ -745,42 +878,84 @@ public class ParquetFileWriter implements ParquetWriter {
     }
   }
 
+  /**
+   * Write a 32-bit integer in little-endian format.
+   *
+   * @param buffer Output buffer to write to
+   * @param value Integer value to write
+   */
   private void writeInt32(ByteArrayOutputStream buffer, int value) {
     ByteBuffer bb = ByteBuffer.allocate(4).order(ByteOrder.LITTLE_ENDIAN);
     bb.putInt(value);
     buffer.write(bb.array(), 0, 4);
   }
 
+  /**
+   * Write a 64-bit integer in little-endian format.
+   *
+   * @param buffer Output buffer to write to
+   * @param value Long value to write
+   */
   private void writeInt64(ByteArrayOutputStream buffer, long value) {
     ByteBuffer bb = ByteBuffer.allocate(8).order(ByteOrder.LITTLE_ENDIAN);
     bb.putLong(value);
     buffer.write(bb.array(), 0, 8);
   }
 
+  /**
+   * Write a 32-bit float in little-endian format.
+   *
+   * @param buffer Output buffer to write to
+   * @param value Float value to write
+   */
   private void writeFloat(ByteArrayOutputStream buffer, float value) {
     ByteBuffer bb = ByteBuffer.allocate(4).order(ByteOrder.LITTLE_ENDIAN);
     bb.putFloat(value);
     buffer.write(bb.array(), 0, 4);
   }
 
+  /**
+   * Write a 64-bit double in little-endian format.
+   *
+   * @param buffer Output buffer to write to
+   * @param value Double value to write
+   */
   private void writeDouble(ByteArrayOutputStream buffer, double value) {
     ByteBuffer bb = ByteBuffer.allocate(8).order(ByteOrder.LITTLE_ENDIAN);
     bb.putDouble(value);
     buffer.write(bb.array(), 0, 8);
   }
 
+  /**
+   * Write a variable-length byte array with 4-byte length prefix.
+   *
+   * @param buffer Output buffer to write to
+   * @param value Byte array to write
+   * @throws IOException if writing fails
+   */
   private void writeByteArray(ByteArrayOutputStream buffer, byte[] value) throws IOException {
     // Write length as 4-byte little-endian integer
     writeInt32(buffer, value.length);
     buffer.write(value);
   }
 
+  /**
+   * Write a fixed-length byte array without length prefix.
+   *
+   * @param buffer Output buffer to write to
+   * @param value Byte array to write
+   * @throws IOException if writing fails
+   */
   private void writeFixedByteArray(ByteArrayOutputStream buffer, byte[] value) throws IOException {
     buffer.write(value);
   }
 
   /**
    * Compress data using the configured compression codec.
+   *
+   * @param data Uncompressed data
+   * @return Compressed data
+   * @throws IOException if compression fails
    */
   private byte[] compress(byte[] data) throws IOException {
     return compressor.compress(data);
@@ -788,6 +963,9 @@ public class ParquetFileWriter implements ParquetWriter {
 
   /**
    * Convert internal Type to Parquet format Type.
+   *
+   * @param type Internal type enum
+   * @return Parquet format type enum
    */
   private org.apache.parquet.format.Type convertType(org.parquet.model.Type type) {
     return switch (type) {
@@ -804,6 +982,9 @@ public class ParquetFileWriter implements ParquetWriter {
 
   /**
    * Convert internal CompressionCodec to Parquet format CompressionCodec.
+   *
+   * @param codec Internal compression codec enum
+   * @return Parquet format compression codec enum
    */
   private org.apache.parquet.format.CompressionCodec convertCompressionCodec(
       CompressionCodec codec) {
@@ -821,6 +1002,8 @@ public class ParquetFileWriter implements ParquetWriter {
 
   /**
    * Build the file schema from the schema descriptor.
+   *
+   * @return Root schema element representing the file schema
    */
   private SchemaElement buildFileSchema() {
     SchemaElement root = new SchemaElement();
@@ -838,6 +1021,8 @@ public class ParquetFileWriter implements ParquetWriter {
 
   /**
    * Build schema elements for columns, supporting hierarchical MAP structures.
+   *
+   * @return List of schema elements representing all columns
    */
   private List<SchemaElement> buildColumnSchemas() {
     List<SchemaElement> elements = new ArrayList<>();
@@ -867,6 +1052,9 @@ public class ParquetFileWriter implements ParquetWriter {
 
   /**
    * Build a schema element for a primitive column.
+   *
+   * @param col Column descriptor for the primitive column
+   * @return Schema element representing the column
    */
   private SchemaElement buildPrimitiveSchemaElement(ColumnDescriptor col) {
     SchemaElement element = new SchemaElement();
@@ -894,7 +1082,10 @@ public class ParquetFileWriter implements ParquetWriter {
 
   /**
    * Build schema elements for a MAP column.
-   * Returns 3 elements: map group, key_value group, key, and value.
+   * Returns 4 elements: map group, key_value group, key, and value.
+   *
+   * @param logicalCol Logical column descriptor for the MAP column
+   * @return List of schema elements (map group, key_value group, key element, value element)
    */
   private List<SchemaElement> buildMapSchemaElements(LogicalColumnDescriptor logicalCol) {
     List<SchemaElement> elements = new ArrayList<>();
