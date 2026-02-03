@@ -157,7 +157,7 @@
                 <version>${central-publishing-maven-plugin.version}</version>
                 <extensions>true</extensions>
                 <configuration>
-                    <publishingServerId>central</publishingServerId>
+                    <publishingServerId>maven-central</publishingServerId>
                 </configuration>
             </plugin>
         </plugins>
