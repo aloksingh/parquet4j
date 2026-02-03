@@ -50,30 +50,66 @@ public class LogicalColumnDescriptor {
     this.listMetadata = listMetadata;
   }
 
+  /**
+   * Returns the name of this logical column.
+   *
+   * @return the column name
+   */
   public String getName() {
     return name;
   }
 
+  /**
+   * Returns the logical type of this column (PRIMITIVE, MAP, LIST, or STRUCT).
+   *
+   * @return the logical type
+   */
   public LogicalType getLogicalType() {
     return logicalType;
   }
 
+  /**
+   * Checks if this is a primitive column.
+   *
+   * @return true if this column is a primitive type
+   */
   public boolean isPrimitive() {
     return logicalType == LogicalType.PRIMITIVE;
   }
 
+  /**
+   * Checks if this is a map column.
+   *
+   * @return true if this column is a map type
+   */
   public boolean isMap() {
     return logicalType == LogicalType.MAP;
   }
 
+  /**
+   * Checks if this is a list column.
+   *
+   * @return true if this column is a list type
+   */
   public boolean isList() {
     return logicalType == LogicalType.LIST;
   }
 
+  /**
+   * Checks if this is a struct column.
+   *
+   * @return true if this column is a struct type
+   */
   public boolean isStruct() {
     return logicalType == LogicalType.STRUCT;
   }
 
+  /**
+   * Returns the physical type for primitive and list columns.
+   *
+   * @return the physical type
+   * @throws IllegalStateException if this is not a primitive or list column
+   */
   public Type getPhysicalType() {
     if (isPrimitive()) {
       return physicalType;
@@ -83,6 +119,12 @@ public class LogicalColumnDescriptor {
     throw new IllegalStateException("Physical type only available for primitive and list columns");
   }
 
+  /**
+   * Returns the physical column descriptor for primitive and list columns.
+   *
+   * @return the physical column descriptor
+   * @throws IllegalStateException if this is not a primitive or list column
+   */
   public ColumnDescriptor getPhysicalDescriptor() {
     if (isPrimitive()) {
       return physicalDescriptor;
@@ -93,6 +135,12 @@ public class LogicalColumnDescriptor {
         "Physical descriptor only available for primitive and list columns");
   }
 
+  /**
+   * Returns the map metadata for map columns.
+   *
+   * @return the map metadata containing key and value descriptors
+   * @throws IllegalStateException if this is not a map column
+   */
   public MapMetadata getMapMetadata() {
     if (!isMap()) {
       throw new IllegalStateException("Map metadata only available for map columns");
@@ -100,6 +148,12 @@ public class LogicalColumnDescriptor {
     return mapMetadata;
   }
 
+  /**
+   * Returns the list metadata for list columns.
+   *
+   * @return the list metadata containing element descriptor
+   * @throws IllegalStateException if this is not a list column
+   */
   public ListMetadata getListMetadata() {
     if (!isList()) {
       throw new IllegalStateException("List metadata only available for list columns");

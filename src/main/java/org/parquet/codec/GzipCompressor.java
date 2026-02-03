@@ -6,9 +6,20 @@ import java.util.zip.GZIPOutputStream;
 import org.parquet.Compressor;
 
 /**
- * GZIP compressor
+ * GZIP compression implementation.
+ * <p>
+ * This compressor uses the standard Java {@link GZIPOutputStream} to compress data
+ * according to the GZIP file format specification (RFC 1952).
+ * </p>
  */
 public class GzipCompressor implements Compressor {
+  /**
+   * Compresses the input byte array using GZIP compression.
+   *
+   * @param uncompressed the uncompressed byte array to compress
+   * @return the compressed byte array in GZIP format
+   * @throws IOException if an I/O error occurs during compression
+   */
   @Override
   public byte[] compress(byte[] uncompressed) throws IOException {
     ByteArrayOutputStream out = new ByteArrayOutputStream();

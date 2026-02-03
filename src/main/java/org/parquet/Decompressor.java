@@ -5,17 +5,39 @@ import java.nio.ByteBuffer;
 import org.parquet.codec.GzipDecompressor;
 import org.parquet.codec.LZ4Decompressor;
 import org.parquet.codec.SnappyDecompressor;
+import org.parquet.codec.UncompressedDecompressor;
 import org.parquet.codec.ZstdDecompressor;
 import org.parquet.model.CompressionCodec;
 import org.parquet.model.ParquetException;
 
 /**
- * Handles decompression of Parquet page data
+ * Handles decompression of Parquet page data.
+ *
+ * <p>This interface defines the contract for decompressing data in Parquet files.
+ * Implementations provide specific decompression algorithms such as GZIP, Snappy,
+ * LZ4, ZSTD, or no decompression for uncompressed data.
+ *
+ * @see CompressionCodec
  */
 public interface Decompressor {
 
+  /**
+   * Decompresses the given compressed data.
+   *
+   * @param compressed the ByteBuffer containing compressed data
+   * @param uncompressedSize the expected size of the uncompressed data in bytes
+   * @return a ByteBuffer containing the decompressed data
+   * @throws IOException if an I/O error occurs during decompression
+   */
   ByteBuffer decompress(ByteBuffer compressed, int uncompressedSize) throws IOException;
 
+  /**
+   * Creates a decompressor instance for the specified compression codec.
+   *
+   * @param codec the compression codec to use for decompression
+   * @return a decompressor instance that implements the specified codec
+   * @throws ParquetException if the codec is not supported
+   */
   static Decompressor create(CompressionCodec codec) {
     return switch (codec) {
       case UNCOMPRESSED -> new UncompressedDecompressor();
@@ -25,16 +47,6 @@ public interface Decompressor {
       case ZSTD -> new ZstdDecompressor();
       default -> throw new ParquetException("Unsupported compression codec: " + codec);
     };
-  }
-
-  /**
-   * No-op decompressor for uncompressed data
-   */
-  class UncompressedDecompressor implements Decompressor {
-    @Override
-    public ByteBuffer decompress(ByteBuffer compressed, int uncompressedSize) {
-      return compressed;
-    }
   }
 
 }

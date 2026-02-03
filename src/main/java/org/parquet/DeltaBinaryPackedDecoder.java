@@ -50,7 +50,14 @@ public class DeltaBinaryPackedDecoder {
   }
 
   /**
-   * Get the number of bytes consumed from the buffer since construction
+   * Get the number of bytes consumed from the buffer since construction.
+   * <p>
+   * This method returns the total number of bytes read from the buffer during decoding.
+   * If all values have been consumed and a block end offset is available, it returns
+   * the maximum of the current position and block end offset to account for any trailing
+   * padding or unread miniblocks.
+   *
+   * @return the number of bytes consumed from the buffer
    */
   public int getBytesConsumed() {
     int currentOffset = buffer.position() - startPosition;
@@ -64,14 +71,32 @@ public class DeltaBinaryPackedDecoder {
   }
 
   /**
-   * Get the total number of values in this DELTA_BINARY_PACKED block
+   * Get the total number of values in this DELTA_BINARY_PACKED block.
+   * <p>
+   * This value is read from the header during initialization and represents
+   * the total count of values encoded in this DELTA_BINARY_PACKED stream.
+   *
+   * @return the total number of encoded values
    */
   public int getTotalValueCount() {
     return totalValueCount;
   }
 
   /**
-   * Decode all values as 32-bit integers
+   * Decode all values as 32-bit integers.
+   * <p>
+   * This method decodes up to {@code expectedValues} from the DELTA_BINARY_PACKED stream.
+   * It processes all encoded blocks and mini-blocks to ensure all bytes are consumed from
+   * the buffer, even if fewer values are requested than are encoded.
+   * <p>
+   * The decoder maintains internal state and processes:
+   * <ul>
+   *   <li>The first value (stored directly in the header)</li>
+   *   <li>All subsequent blocks containing mini-blocks of bit-packed delta values</li>
+   * </ul>
+   *
+   * @param expectedValues the number of values to decode and return
+   * @return an array of decoded 32-bit integer values
    */
   public int[] decodeInt32(int expectedValues) {
     // Guard against zero expectedValues to avoid division by zero in header initialization
@@ -144,7 +169,20 @@ public class DeltaBinaryPackedDecoder {
   }
 
   /**
-   * Decode all values as 64-bit integers
+   * Decode all values as 64-bit integers.
+   * <p>
+   * This method decodes up to {@code expectedValues} from the DELTA_BINARY_PACKED stream.
+   * It processes all encoded blocks and mini-blocks to ensure all bytes are consumed from
+   * the buffer, even if fewer values are requested than are encoded.
+   * <p>
+   * The decoder maintains internal state and processes:
+   * <ul>
+   *   <li>The first value (stored directly in the header)</li>
+   *   <li>All subsequent blocks containing mini-blocks of bit-packed delta values</li>
+   * </ul>
+   *
+   * @param expectedValues the number of values to decode and return
+   * @return an array of decoded 64-bit integer values
    */
   public long[] decodeInt64(int expectedValues) {
     // Guard against zero expectedValues to avoid division by zero in header initialization
@@ -217,7 +255,16 @@ public class DeltaBinaryPackedDecoder {
   }
 
   /**
-   * Initialize header by reading block_size, num_mini_blocks, total_value_count, and first_value
+   * Initialize header by reading block_size, num_mini_blocks, total_value_count, and first_value.
+   * <p>
+   * This method reads the DELTA_BINARY_PACKED header from the buffer, which contains:
+   * <ul>
+   *   <li>block_size: number of values in each block (multiple of 128)</li>
+   *   <li>num_mini_blocks: number of mini-blocks per block</li>
+   *   <li>total_value_count: total values in the stream</li>
+   *   <li>first_value: the first value (zigzag encoded)</li>
+   * </ul>
+   * It also calculates the values per mini-block and allocates storage for mini-block bit widths.
    */
   private void initializeHeader() {
     int posBefore = buffer.position();
@@ -234,8 +281,17 @@ public class DeltaBinaryPackedDecoder {
   }
 
   /**
-   * Read block header: min_delta and bit widths for all mini-blocks
-   * Also computes the block end offset to handle trailing miniblocks
+   * Read block header: min_delta and bit widths for all mini-blocks.
+   * <p>
+   * This method reads the per-block header containing:
+   * <ul>
+   *   <li>min_delta: the minimum delta value in this block (zigzag encoded)</li>
+   *   <li>bit widths: one byte per mini-block indicating bits needed for deltas</li>
+   * </ul>
+   * It also computes the block end offset to properly handle trailing mini-blocks that
+   * may contain no actual values but still occupy space in the file format.
+   *
+   * @param valuesProcessed the number of values already processed from the stream
    */
   private void readBlockHeader(int valuesProcessed) {
     // Read min delta
@@ -272,7 +328,15 @@ public class DeltaBinaryPackedDecoder {
   }
 
   /**
-   * Read bit-packed values from the buffer as signed int64
+   * Read bit-packed values from the buffer as signed int64.
+   * <p>
+   * This method unpacks bit-packed delta values from the buffer. Bit-packed data is read
+   * in chunks of 8 values, padding to 8-value boundaries as required by the Parquet format.
+   * Each value uses exactly {@code bitWidth} bits in the packed representation.
+   *
+   * @param bitWidth the number of bits used to encode each value
+   * @param numValues the number of values to unpack
+   * @return an array of unpacked long values
    */
   private long[] readBitPackedInt64Values(int bitWidth, int numValues) {
     long[] result = new long[numValues];
@@ -321,7 +385,13 @@ public class DeltaBinaryPackedDecoder {
   }
 
   /**
-   * Read an unsigned variable-length integer
+   * Read an unsigned variable-length integer using varint encoding.
+   * <p>
+   * Varint encoding uses the high bit of each byte as a continuation flag.
+   * If the high bit is set, more bytes follow. The remaining 7 bits of each
+   * byte contain the actual value, with least significant bits first.
+   *
+   * @return the decoded unsigned integer value
    */
   private int readUnsignedVarInt() {
     int result = 0;
@@ -338,7 +408,20 @@ public class DeltaBinaryPackedDecoder {
   }
 
   /**
-   * Read a zigzag-encoded variable-length long
+   * Read a zigzag-encoded variable-length long.
+   * <p>
+   * Zigzag encoding maps signed integers to unsigned integers so that numbers with
+   * small absolute values have small encoded values. The encoding is:
+   * <ul>
+   *   <li>0 encodes as 0</li>
+   *   <li>-1 encodes as 1</li>
+   *   <li>1 encodes as 2</li>
+   *   <li>-2 encodes as 3</li>
+   *   <li>etc.</li>
+   * </ul>
+   * The formula to decode is: (n >>> 1) ^ -(n & 1)
+   *
+   * @return the decoded signed long value
    */
   private long readZigzagVarLong() {
     long encoded = 0;

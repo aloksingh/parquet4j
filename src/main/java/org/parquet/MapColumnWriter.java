@@ -26,7 +26,10 @@ public class MapColumnWriter {
   private final Type valueType;
 
   /**
-   * Create a map column writer for specific key/value types
+   * Create a map column writer for specific key/value types.
+   *
+   * @param keyType the type of the map keys
+   * @param valueType the type of the map values
    */
   public MapColumnWriter(Type keyType, Type valueType) {
     this.keyType = keyType;
@@ -36,6 +39,9 @@ public class MapColumnWriter {
   /**
    * Extract all keys from a list of maps, flattening them in order.
    * NULL maps and empty maps don't contribute any keys.
+   *
+   * @param maps the list of maps to extract keys from
+   * @return a flattened list of all keys from non-null, non-empty maps
    */
   public List<Object> extractKeys(List<Map<?, ?>> maps) {
     List<Object> keys = new ArrayList<>();
@@ -54,6 +60,9 @@ public class MapColumnWriter {
   /**
    * Extract all values from a list of maps, flattening them in order.
    * NULL maps and empty maps don't contribute any values.
+   *
+   * @param maps the list of maps to extract values from
+   * @return a flattened list of all values from non-null, non-empty maps
    */
   public List<Object> extractValues(List<Map<?, ?>> maps) {
     List<Object> values = new ArrayList<>();
@@ -73,14 +82,21 @@ public class MapColumnWriter {
    * Calculate repetition levels for map entries.
    * <p>
    * Repetition level meanings:
-   * 0 = First entry of a new map (or NULL/empty map)
-   * 1 = Additional entry in the same map
+   * <ul>
+   * <li>0 = First entry of a new map (or NULL/empty map)</li>
+   * <li>1 = Additional entry in the same map</li>
+   * </ul>
    * <p>
    * Example:
-   * Row 0: {a: 1, b: 2}  -> levels: [0, 1]
-   * Row 1: {c: 3}        -> levels: [0]
-   * Row 2: null          -> levels: [0]
-   * Row 3: {}            -> levels: [0]
+   * <pre>
+   * Row 0: {a: 1, b: 2}  -&gt; levels: [0, 1]
+   * Row 1: {c: 3}        -&gt; levels: [0]
+   * Row 2: null          -&gt; levels: [0]
+   * Row 3: {}            -&gt; levels: [0]
+   * </pre>
+   *
+   * @param maps the list of maps to calculate repetition levels for
+   * @return the repetition levels for all map entries
    */
   public List<Integer> calculateRepetitionLevels(List<Map<?, ?>> maps) {
     List<Integer> levels = new ArrayList<>();
@@ -105,15 +121,22 @@ public class MapColumnWriter {
    * Calculate definition levels for map keys.
    * <p>
    * Definition level meanings (max def level = 2):
-   * 0 = Map is NULL
-   * 1 = Map is empty (defined but has no entries)
-   * 2 = Key is present (keys are always required/non-null)
+   * <ul>
+   * <li>0 = Map is NULL</li>
+   * <li>1 = Map is empty (defined but has no entries)</li>
+   * <li>2 = Key is present (keys are always required/non-null)</li>
+   * </ul>
    * <p>
    * Example:
-   * Row 0: {a: 1, b: 2}  -> levels: [2, 2]
-   * Row 1: {c: 3}        -> levels: [2]
-   * Row 2: null          -> levels: [0]
-   * Row 3: {}            -> levels: [1]
+   * <pre>
+   * Row 0: {a: 1, b: 2}  -&gt; levels: [2, 2]
+   * Row 1: {c: 3}        -&gt; levels: [2]
+   * Row 2: null          -&gt; levels: [0]
+   * Row 3: {}            -&gt; levels: [1]
+   * </pre>
+   *
+   * @param maps the list of maps to calculate key definition levels for
+   * @return the definition levels for all map keys
    */
   public List<Integer> calculateKeyDefinitionLevels(List<Map<?, ?>> maps) {
     List<Integer> levels = new ArrayList<>();
@@ -138,16 +161,23 @@ public class MapColumnWriter {
    * Calculate definition levels for map values.
    * <p>
    * Definition level meanings (max def level = 3):
-   * 0 = Map is NULL
-   * 1 = Map is empty (defined but has no entries)
-   * 2 = Entry exists but value is NULL
-   * 3 = Value is present (non-null)
+   * <ul>
+   * <li>0 = Map is NULL</li>
+   * <li>1 = Map is empty (defined but has no entries)</li>
+   * <li>2 = Entry exists but value is NULL</li>
+   * <li>3 = Value is present (non-null)</li>
+   * </ul>
    * <p>
    * Example:
-   * Row 0: {a: 1, b: null}  -> levels: [3, 2]
-   * Row 1: {c: 3}           -> levels: [3]
-   * Row 2: null             -> levels: [0]
-   * Row 3: {}               -> levels: [1]
+   * <pre>
+   * Row 0: {a: 1, b: null}  -&gt; levels: [3, 2]
+   * Row 1: {c: 3}           -&gt; levels: [3]
+   * Row 2: null             -&gt; levels: [0]
+   * Row 3: {}               -&gt; levels: [1]
+   * </pre>
+   *
+   * @param maps the list of maps to calculate value definition levels for
+   * @return the definition levels for all map values
    */
   public List<Integer> calculateValueDefinitionLevels(List<Map<?, ?>> maps) {
     List<Integer> levels = new ArrayList<>();
@@ -171,6 +201,9 @@ public class MapColumnWriter {
   /**
    * Count the total number of key-value pairs across all maps.
    * This is used to set numValues in the data page.
+   *
+   * @param maps the list of maps to count entries from
+   * @return the total number of entries (including one entry each for NULL and empty maps)
    */
   public int countTotalEntries(List<Map<?, ?>> maps) {
     int count = 0;

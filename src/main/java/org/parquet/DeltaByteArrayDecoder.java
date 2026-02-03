@@ -28,13 +28,32 @@ public class DeltaByteArrayDecoder {
   private final ByteBuffer buffer;
   private int[] prefixLengths;
 
+  /**
+   * Constructs a new DeltaByteArrayDecoder with the given buffer.
+   *
+   * @param buffer the ByteBuffer containing DELTA_BYTE_ARRAY encoded data.
+   *               The buffer will be set to LITTLE_ENDIAN byte order.
+   */
   public DeltaByteArrayDecoder(ByteBuffer buffer) {
     this.buffer = buffer;
     this.buffer.order(ByteOrder.LITTLE_ENDIAN);
   }
 
   /**
-   * Decode the specified number of byte array values
+   * Decodes the specified number of byte array values from the buffer.
+   * <p>
+   * The method performs the following steps:
+   * <ol>
+   *   <li>Decodes prefix lengths using DELTA_BINARY_PACKED encoding</li>
+   *   <li>Decodes suffix lengths using DELTA_BINARY_PACKED encoding</li>
+   *   <li>Reads concatenated suffix bytes</li>
+   *   <li>Reconstructs each value by combining the prefix from the previous value with the current suffix</li>
+   * </ol>
+   *
+   * @param numValues the number of byte array values to decode
+   * @return an array of decoded byte arrays
+   * @throws RuntimeException if the block contains a different number of values than expected,
+   *                          or if prefix and suffix counts don't match
    */
   public byte[][] decode(int numValues) {
     if (numValues == 0) {
