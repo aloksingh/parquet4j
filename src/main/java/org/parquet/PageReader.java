@@ -17,7 +17,16 @@ import shaded.parquet.org.apache.thrift.protocol.TCompactProtocol;
 import shaded.parquet.org.apache.thrift.transport.TIOStreamTransport;
 
 /**
- * Reads pages from a column chunk
+ * Reads pages from a column chunk in a Parquet file.
+ *
+ * <p>This class is responsible for parsing page headers, decompressing page data,
+ * and creating appropriate Page objects based on the page type (DATA_PAGE, DATA_PAGE_V2,
+ * or DICTIONARY_PAGE). It handles the complexities of different page formats and
+ * compression schemes.</p>
+ *
+ * <p>The reader maintains an internal offset to track the current position within
+ * the column chunk and supports sequential reading of pages via {@link #readNextPage()}
+ * or batch reading via {@link #readAllPages()}.</p>
  */
 public class PageReader {
   private final ChunkReader chunkReader;
@@ -27,6 +36,13 @@ public class PageReader {
   private long currentOffset;
   private final long endOffset;
 
+  /**
+   * Creates a new PageReader for reading pages from a column chunk.
+   *
+   * @param chunkReader the chunk reader used to read raw bytes from the file
+   * @param columnMeta metadata for the column chunk being read
+   * @param columnDescriptor descriptor containing schema information about the column
+   */
   public PageReader(ChunkReader chunkReader,
                     ParquetMetadata.ColumnChunkMetadata columnMeta,
                     ColumnDescriptor columnDescriptor) {
@@ -41,7 +57,13 @@ public class PageReader {
   }
 
   /**
-   * Read all pages from this column chunk
+   * Reads all pages from this column chunk sequentially.
+   *
+   * <p>This method repeatedly calls {@link #readNextPage()} until no more pages
+   * are available in the column chunk.</p>
+   *
+   * @return a list of all pages in this column chunk
+   * @throws IOException if an I/O error occurs while reading page data
    */
   public List<Page> readAllPages() throws IOException {
     List<Page> pages = new ArrayList<>();
@@ -53,7 +75,30 @@ public class PageReader {
   }
 
   /**
-   * Read the next page, or null if no more pages
+   * Reads the next page from the column chunk.
+   *
+   * <p>This method performs the following operations:</p>
+   * <ol>
+   *   <li>Reads and parses the Thrift-encoded page header</li>
+   *   <li>Reads the compressed page data</li>
+   *   <li>Decompresses the data if necessary (handling differs by page type)</li>
+   *   <li>Creates the appropriate Page object (DataPage, DataPageV2, or DictionaryPage)</li>
+   * </ol>
+   *
+   * <p><b>Special handling for DATA_PAGE_V2:</b> In V2 pages, repetition and definition
+   * levels are stored uncompressed at the beginning of the page, followed by the
+   * (possibly compressed) data. This method extracts the levels separately before
+   * decompressing the data portion.</p>
+   *
+   * <p><b>Special handling for DATA_PAGE (V1):</b> In V1 pages, the entire page is
+   * decompressed first, then repetition and definition levels are extracted from
+   * the beginning of the decompressed data. Each level section starts with a 4-byte
+   * little-endian length field.</p>
+   *
+   * @return the next Page object, or {@code null} if there are no more pages in the chunk
+   * @throws IOException if an I/O error occurs while reading page data
+   * @throws ParquetException if the page header cannot be parsed or an unsupported
+   *         page type is encountered
    */
   public Page readNextPage() throws IOException {
     if (currentOffset >= endOffset) {
