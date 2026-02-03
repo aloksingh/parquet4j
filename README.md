@@ -81,7 +81,7 @@ try (SerializedFileReader reader = new SerializedFileReader("data.parquet")) {
 ```
 
 ### Reading Simple Map columns
-- See [MapColumnExample](src/main/java/org/wazokazi/parquet/util/MapColumnExample.java)
+- See [MapColumnExample](src/main/java/io/github/aloksingh/parquet/util/MapColumnExample.java)
 
 ## Building and Testing
 
