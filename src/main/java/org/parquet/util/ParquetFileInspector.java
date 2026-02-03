@@ -38,6 +38,9 @@ public class ParquetFileInspector implements AutoCloseable {
 
   /**
    * Create an inspector for a Parquet file.
+   *
+   * @param filePath the path to the Parquet file to inspect
+   * @throws IOException if the file cannot be read or is not a valid Parquet file
    */
   public ParquetFileInspector(String filePath) throws IOException {
     this(Paths.get(filePath));
@@ -45,6 +48,9 @@ public class ParquetFileInspector implements AutoCloseable {
 
   /**
    * Create an inspector for a Parquet file.
+   *
+   * @param filePath the path to the Parquet file to inspect
+   * @throws IOException if the file cannot be read or is not a valid Parquet file
    */
   public ParquetFileInspector(Path filePath) throws IOException {
     this.filePath = filePath;
@@ -55,6 +61,17 @@ public class ParquetFileInspector implements AutoCloseable {
 
   /**
    * Generate a comprehensive description of the Parquet file.
+   * <p>
+   * The output includes:
+   * <ul>
+   *   <li>File information (path, size, version, row count)</li>
+   *   <li>Schema structure (logical and physical columns)</li>
+   *   <li>Row group details (count, size, compression)</li>
+   *   <li>Column chunk details (encoding, compression, statistics)</li>
+   *   <li>Data sampling (first few rows with location information)</li>
+   * </ul>
+   *
+   * @return a formatted text report of the Parquet file structure and contents
    */
   public String inspect() {
     StringBuilder sb = new StringBuilder();
@@ -128,6 +145,11 @@ public class ParquetFileInspector implements AutoCloseable {
 
   /**
    * Build file information JSON.
+   * <p>
+   * Includes file path, size, format version, row count, row group count,
+   * created-by metadata, and column counts.
+   *
+   * @return a JsonObject containing file-level metadata
    */
   private JsonObject buildFileInfoJson() {
     JsonObject fileInfo = new JsonObject();
@@ -160,6 +182,11 @@ public class ParquetFileInspector implements AutoCloseable {
 
   /**
    * Build schema JSON.
+   * <p>
+   * Includes both logical columns (user-facing view) and physical columns
+   * (storage view) with their types, paths, and repetition information.
+   *
+   * @return a JsonObject containing schema structure information
    */
   private JsonObject buildSchemaJson() {
     JsonObject schemaObj = new JsonObject();
@@ -211,6 +238,11 @@ public class ParquetFileInspector implements AutoCloseable {
 
   /**
    * Build row groups JSON.
+   * <p>
+   * Includes information about each row group: row count, size, compression
+   * ratio, and column count.
+   *
+   * @return a JsonObject containing row group metadata for all row groups
    */
   private JsonObject buildRowGroupsJson() {
     JsonObject rowGroupsObj = new JsonObject();
@@ -251,6 +283,12 @@ public class ParquetFileInspector implements AutoCloseable {
 
   /**
    * Build column chunks JSON (first row group).
+   * <p>
+   * Provides detailed information about each column chunk in the first row group,
+   * including type, codec, compression ratio, and statistics (min, max, null count,
+   * distinct count).
+   *
+   * @return a JsonObject containing column chunk details for the first row group
    */
   private JsonObject buildColumnChunksJson() {
     JsonObject columnsObj = new JsonObject();
@@ -311,6 +349,17 @@ public class ParquetFileInspector implements AutoCloseable {
 
   /**
    * Build data sampling JSON.
+   * <p>
+   * Samples the first few rows from the file with location information
+   * (row group index and row index within the group). The number of samples
+   * depends on the total row count:
+   * <ul>
+   *   <li>10 or fewer rows: all rows</li>
+   *   <li>11-100 rows: first 10 rows</li>
+   *   <li>More than 100 rows: first 5 rows</li>
+   * </ul>
+   *
+   * @return a JsonObject containing sampled row data with location metadata
    */
   private JsonObject buildDataSamplingJson() {
     JsonObject samplingObj = new JsonObject();
@@ -387,6 +436,12 @@ public class ParquetFileInspector implements AutoCloseable {
 
   /**
    * Build statistics JSON.
+   * <p>
+   * Provides file-level statistics including total rows, file size, average
+   * row size, and overall compression metrics (uncompressed size, compressed
+   * size, compression ratio, bytes saved).
+   *
+   * @return a JsonObject containing file-level statistics
    */
   private JsonObject buildStatisticsJson() {
     JsonObject stats = new JsonObject();
@@ -421,6 +476,13 @@ public class ParquetFileInspector implements AutoCloseable {
 
   /**
    * Add a value to JSON object, handling different types.
+   * <p>
+   * Handles primitives (String, Number, Boolean), byte arrays (converted to UTF-8),
+   * Maps (recursively converted to JsonObject), and Lists (converted to JsonArray).
+   *
+   * @param obj the JsonObject to add the value to
+   * @param name the property name
+   * @param value the value to add (can be null)
    */
   private void addValueToJson(JsonObject obj, String name, Object value) {
     if (value == null) {
@@ -467,6 +529,11 @@ public class ParquetFileInspector implements AutoCloseable {
 
   /**
    * Inspect basic file information.
+   * <p>
+   * Appends file path, size, format version, row count, row group count,
+   * and column counts to the StringBuilder.
+   *
+   * @param sb the StringBuilder to append the information to
    */
   private void inspectFileInfo(StringBuilder sb) {
     sb.append("FILE INFORMATION\n");
@@ -501,6 +568,11 @@ public class ParquetFileInspector implements AutoCloseable {
 
   /**
    * Inspect schema structure.
+   * <p>
+   * Appends both logical columns (user-facing view) and physical columns
+   * (storage view) with their types and properties.
+   *
+   * @param sb the StringBuilder to append the schema information to
    */
   private void inspectSchema(StringBuilder sb) {
     sb.append("SCHEMA STRUCTURE\n");
@@ -526,6 +598,12 @@ public class ParquetFileInspector implements AutoCloseable {
 
   /**
    * Describe a logical column.
+   * <p>
+   * Formats the column name and type information for display. Handles primitive
+   * types, map types, and other logical types.
+   *
+   * @param col the logical column descriptor
+   * @return a formatted string describing the column
    */
   private String describeLogicalColumn(LogicalColumnDescriptor col) {
     if (col.isPrimitive()) {
@@ -545,6 +623,12 @@ public class ParquetFileInspector implements AutoCloseable {
 
   /**
    * Describe a physical column.
+   * <p>
+   * Formats the column with repetition type, physical type, path, and
+   * definition/repetition levels for display.
+   *
+   * @param col the column descriptor
+   * @return a formatted string describing the physical column
    */
   private String describePhysicalColumn(ColumnDescriptor col) {
     StringBuilder desc = new StringBuilder();
@@ -574,6 +658,11 @@ public class ParquetFileInspector implements AutoCloseable {
 
   /**
    * Inspect row group information.
+   * <p>
+   * Appends information about each row group including row count, byte size,
+   * column count, and compression ratio.
+   *
+   * @param sb the StringBuilder to append the row group information to
    */
   private void inspectRowGroups(StringBuilder sb) {
     sb.append("ROW GROUPS\n");
@@ -611,6 +700,12 @@ public class ParquetFileInspector implements AutoCloseable {
 
   /**
    * Inspect column chunk details for first row group.
+   * <p>
+   * Appends detailed information about each column chunk in the first row group,
+   * including type, compression codec, sizes, compression ratio, data page offset,
+   * and statistics (null count, distinct count, min, max).
+   *
+   * @param sb the StringBuilder to append the column chunk details to
    */
   private void inspectColumnChunks(StringBuilder sb) {
     sb.append("COLUMN CHUNK DETAILS (First Row Group)\n");
@@ -671,6 +766,11 @@ public class ParquetFileInspector implements AutoCloseable {
 
   /**
    * Sample data from the file with location information.
+   * <p>
+   * Appends sample rows from the file, including row group index and row index
+   * within the group. The number of samples depends on total row count.
+   *
+   * @param sb the StringBuilder to append the sample data to
    */
   private void inspectDataSampling(StringBuilder sb) {
     sb.append("DATA SAMPLING\n");
@@ -747,6 +847,13 @@ public class ParquetFileInspector implements AutoCloseable {
 
   /**
    * Format a statistic value based on its type.
+   * <p>
+   * Converts byte array statistics to human-readable strings based on the
+   * physical type. Handles numeric types, booleans, strings, and binary data.
+   *
+   * @param value the statistic value as a byte array
+   * @param type the physical type of the column
+   * @return a formatted string representation of the statistic value
    */
   private String formatStatisticValue(byte[] value, Type type) {
     if (value == null || value.length == 0) {
@@ -811,6 +918,13 @@ public class ParquetFileInspector implements AutoCloseable {
 
   /**
    * Convert bytes to hex string (limited to maxBytes).
+   * <p>
+   * Converts a byte array to its hexadecimal string representation, limiting
+   * the output to a maximum number of bytes and adding "..." if truncated.
+   *
+   * @param bytes the byte array to convert
+   * @param maxBytes the maximum number of bytes to convert
+   * @return a hexadecimal string representation
    */
   private String bytesToHex(byte[] bytes, int maxBytes) {
     if (bytes == null || bytes.length == 0) {
@@ -830,6 +944,13 @@ public class ParquetFileInspector implements AutoCloseable {
 
   /**
    * Format a value for display.
+   * <p>
+   * Converts column values to human-readable strings, handling nulls, strings,
+   * byte arrays, maps, and lists. Long strings and large collections are
+   * truncated with ellipsis.
+   *
+   * @param value the value to format (can be null)
+   * @return a formatted string representation of the value
    */
   private String formatValue(Object value) {
     if (value == null) {
@@ -902,6 +1023,11 @@ public class ParquetFileInspector implements AutoCloseable {
 
   /**
    * Get a summary statistics report.
+   * <p>
+   * Provides a concise summary of file statistics including total rows,
+   * file size, average row size, and overall compression metrics.
+   *
+   * @return a formatted text summary of file statistics
    */
   public String getStatisticsSummary() {
     StringBuilder sb = new StringBuilder();
@@ -940,6 +1066,12 @@ public class ParquetFileInspector implements AutoCloseable {
 
   /**
    * Close the inspector and underlying reader.
+   * <p>
+   * Releases resources associated with the Parquet file reader. This method
+   * should be called when the inspector is no longer needed, preferably using
+   * try-with-resources.
+   *
+   * @throws IOException if an I/O error occurs while closing the reader
    */
   @Override
   public void close() throws IOException {
@@ -950,6 +1082,20 @@ public class ParquetFileInspector implements AutoCloseable {
 
   /**
    * Main method for command-line usage.
+   * <p>
+   * Provides a command-line interface to inspect Parquet files. Supports
+   * multiple output formats (text, JSON) and modes (full report, statistics only).
+   * <p>
+   * Usage: java ParquetFileInspector &lt;parquet-file&gt; [options]
+   * <p>
+   * Options:
+   * <ul>
+   *   <li>--stats-only: Show only statistics summary (text format)</li>
+   *   <li>--json: Output in JSON format</li>
+   *   <li>--json-pretty: Output in pretty-printed JSON format</li>
+   * </ul>
+   *
+   * @param args command-line arguments
    */
   public static void main(String[] args) {
     if (args.length < 1) {
