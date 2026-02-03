@@ -10,10 +10,35 @@ import org.parquet.model.LogicalColumnDescriptor;
 import org.parquet.model.RowColumnGroup;
 
 /**
- * Example demonstrating how to read Parquet files with Map<String, String> columns
+ * Example application demonstrating how to read Parquet files containing MAP columns.
+ * <p>
+ * This utility reads a Parquet file with Map&lt;String, String&gt; columns and displays:
+ * <ul>
+ *   <li>Schema information including column names and types</li>
+ *   <li>The first 10 rows of data with MAP values expanded</li>
+ *   <li>Summary statistics including total row count</li>
+ * </ul>
+ * <p>
+ * Usage: {@code java MapColumnExample <parquet-file-path>}
+ * <p>
+ * Example:
+ * <pre>
+ * mvn exec:java -Dexec.mainClass="org.parquet.util.MapColumnExample" \
+ *   -Dexec.args="src/test/data/data_with_map_column.parquet"
+ * </pre>
  */
 public class MapColumnExample {
 
+  /**
+   * Main entry point for the MapColumnExample utility.
+   * <p>
+   * Reads and displays the contents of a Parquet file containing MAP columns.
+   * The program will print the schema, display up to 10 rows with expanded MAP values,
+   * and provide a summary of the total row count.
+   *
+   * @param args command-line arguments; expects a single argument: the path to a Parquet file
+   * @throws IOException if an error occurs while reading the Parquet file
+   */
   public static void main(String[] args) throws IOException {
     if (args.length < 1) {
       System.err.println("Usage: java MapColumnExample <parquet-file-with-maps>");

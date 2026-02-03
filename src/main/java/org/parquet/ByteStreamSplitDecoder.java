@@ -22,11 +22,11 @@ public class ByteStreamSplitDecoder {
   private final int bytesPerValue;
 
   /**
-   * Create a decoder for BYTE_STREAM_SPLIT encoded data
+   * Creates a decoder for BYTE_STREAM_SPLIT encoded data.
    *
-   * @param buffer        The buffer containing encoded data
-   * @param numValues     Number of values to decode
-   * @param bytesPerValue Bytes per value (4 for FLOAT, 8 for DOUBLE)
+   * @param buffer        the buffer containing encoded data positioned at the start of the encoded stream
+   * @param numValues     the number of values to decode
+   * @param bytesPerValue the number of bytes per value (4 for FLOAT, 8 for DOUBLE)
    */
   public ByteStreamSplitDecoder(ByteBuffer buffer, int numValues, int bytesPerValue) {
     this.buffer = buffer;
@@ -35,7 +35,14 @@ public class ByteStreamSplitDecoder {
   }
 
   /**
-   * Decode float values (4 bytes per value)
+   * Decodes BYTE_STREAM_SPLIT encoded data into float values.
+   * <p>
+   * This method reconstructs float values by reading bytes from separate byte streams
+   * and reassembling them in little-endian order. The buffer position is advanced
+   * by {@code 4 * numValues} bytes after decoding.
+   *
+   * @return an array of decoded float values
+   * @throws IllegalArgumentException if bytesPerValue is not 4
    */
   public float[] decodeFloat() {
     if (bytesPerValue != 4) {
@@ -65,7 +72,14 @@ public class ByteStreamSplitDecoder {
   }
 
   /**
-   * Decode double values (8 bytes per value)
+   * Decodes BYTE_STREAM_SPLIT encoded data into double values.
+   * <p>
+   * This method reconstructs double values by reading bytes from separate byte streams
+   * and reassembling them in little-endian order. The buffer position is advanced
+   * by {@code 8 * numValues} bytes after decoding.
+   *
+   * @return an array of decoded double values
+   * @throws IllegalArgumentException if bytesPerValue is not 8
    */
   public double[] decodeDouble() {
     if (bytesPerValue != 8) {

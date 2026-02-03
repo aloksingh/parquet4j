@@ -4,6 +4,7 @@ import java.io.IOException;
 import org.parquet.codec.GzipCompressor;
 import org.parquet.codec.Lz4Compressor;
 import org.parquet.codec.SnappyCompressor;
+import org.parquet.codec.UncompressedCompressor;
 import org.parquet.codec.ZstdCompressor;
 import org.parquet.model.CompressionCodec;
 import org.parquet.model.ParquetException;
@@ -24,16 +25,6 @@ public interface Compressor {
       case ZSTD -> new ZstdCompressor();
       default -> throw new ParquetException("Unsupported compression codec: " + codec);
     };
-  }
-
-  /**
-   * No-op compressor for uncompressed data
-   */
-  class UncompressedCompressor implements Compressor {
-    @Override
-    public byte[] compress(byte[] uncompressed) {
-      return uncompressed;
-    }
   }
 
 }

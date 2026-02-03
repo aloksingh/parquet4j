@@ -12,14 +12,37 @@ import org.parquet.DeltaLengthByteArrayDecoder;
 import org.parquet.RleDecoder;
 
 /**
- * Holds decoded values from a column
+ * Represents a Parquet column with methods to decode values from various encodings.
+ * <p>
+ * This class handles the decoding of column data from Parquet files, supporting multiple
+ * physical types (INT32, INT64, FLOAT, DOUBLE, BYTE_ARRAY, BOOLEAN) and various encodings
+ * including PLAIN, PLAIN_DICTIONARY, RLE_DICTIONARY, DELTA_BINARY_PACKED, DELTA_BYTE_ARRAY,
+ * DELTA_LENGTH_BYTE_ARRAY, and BYTE_STREAM_SPLIT.
+ * <p>
+ * It supports both Data Page V1 and Data Page V2 formats, and handles nullability through
+ * definition levels and nested structures (lists, maps) through repetition levels.
  */
 public class ColumnValues {
+  /** The physical type of the column data */
   private final Type type;
+
+  /** List of pages containing the column data (may include dictionary and data pages) */
   private final List<Page> pages;
+
+  /** Column descriptor containing metadata like max definition/repetition levels */
   private final ColumnDescriptor columnDescriptor;
+
+  /** Logical column descriptor for semantic type information */
   private final LogicalColumnDescriptor logicalColumnDescriptor;
 
+  /**
+   * Constructs a ColumnValues instance.
+   *
+   * @param type the physical type of the column
+   * @param pages list of pages containing the column data
+   * @param columnDescriptor metadata descriptor for the column
+   * @param logicalColumnDescriptor logical type descriptor for the column
+   */
   public ColumnValues(Type type, List<Page> pages,
                       ColumnDescriptor columnDescriptor,
                       LogicalColumnDescriptor logicalColumnDescriptor) {
@@ -29,20 +52,46 @@ public class ColumnValues {
     this.logicalColumnDescriptor = logicalColumnDescriptor;
   }
 
+  /**
+   * Returns the physical type of this column.
+   *
+   * @return the Type enum value
+   */
   public Type getType() {
     return type;
   }
 
+  /**
+   * Returns the list of pages for this column.
+   *
+   * @return list of Page objects (dictionary and data pages)
+   */
   public List<Page> getPages() {
     return pages;
   }
 
+  /**
+   * Returns the logical column descriptor.
+   *
+   * @return the LogicalColumnDescriptor instance
+   */
   public LogicalColumnDescriptor getLogicalColumnDescriptor() {
     return logicalColumnDescriptor;
   }
 
   /**
-   * Decode all values as integers (for INT32 type with PLAIN or PLAIN_DICTIONARY encoding)
+   * Decodes all column values as 32-bit integers.
+   * <p>
+   * Supports INT32 physical type with the following encodings:
+   * <ul>
+   *   <li>PLAIN - values stored directly as 4-byte little-endian integers</li>
+   *   <li>PLAIN_DICTIONARY / RLE_DICTIONARY - values referenced via dictionary indices</li>
+   *   <li>DELTA_BINARY_PACKED - delta-encoded integers for better compression</li>
+   * </ul>
+   * Handles both Data Page V1 and V2 formats, including null values via definition levels.
+   *
+   * @return list of Integer values, with null entries for null values
+   * @throws ParquetException if column type is not INT32 or encoding is unsupported
    */
   public List<Integer> decodeAsInt32() {
     if (type != Type.INT32) {
@@ -229,9 +278,18 @@ public class ColumnValues {
   }
 
   /**
-   * Read definition levels from Data Page V2 and return array where:
-   * - 0 = null value
-   * - 1 = non-null value (for optional columns with max_def_level = 1)
+   * Reads definition levels from a Data Page V2.
+   * <p>
+   * Definition levels indicate nullability in the column data:
+   * <ul>
+   *   <li>0 = null value</li>
+   *   <li>1 = non-null value (for optional columns with max_def_level = 1)</li>
+   *   <li>Higher values indicate nested structure presence</li>
+   * </ul>
+   *
+   * @param dataPageV2 the Data Page V2 to read from
+   * @param columnDescriptor descriptor containing max definition level
+   * @return array of definition levels, one per value
    */
   private int[] readDefinitionLevelsV2(Page.DataPageV2 dataPageV2,
                                        ColumnDescriptor columnDescriptor) {
@@ -263,7 +321,10 @@ public class ColumnValues {
   }
 
   /**
-   * Calculate bit width needed to represent a value
+   * Calculates the minimum bit width needed to represent values from 0 to maxValue.
+   *
+   * @param maxValue the maximum value to represent
+   * @return the number of bits required (0 if maxValue is 0)
    */
   private int getBitWidth(int maxValue) {
     if (maxValue == 0) {
@@ -273,7 +334,14 @@ public class ColumnValues {
   }
 
   /**
-   * Decode all values as longs (for INT64 type with PLAIN or dictionary encoding)
+   * Decodes all column values as 64-bit long integers.
+   * <p>
+   * Supports INT64 physical type with PLAIN, PLAIN_DICTIONARY, RLE_DICTIONARY,
+   * and DELTA_BINARY_PACKED encodings. Handles both Data Page V1 and V2 formats,
+   * including null values via definition levels.
+   *
+   * @return list of Long values, with null entries for null values
+   * @throws ParquetException if column type is not INT64 or encoding is unsupported
    */
   public List<Long> decodeAsInt64() {
     if (type != Type.INT64) {
@@ -454,7 +522,14 @@ public class ColumnValues {
   }
 
   /**
-   * Decode all values as floats (for FLOAT type with PLAIN or dictionary encoding)
+   * Decodes all column values as single-precision floating point numbers.
+   * <p>
+   * Supports FLOAT physical type with PLAIN, PLAIN_DICTIONARY, RLE_DICTIONARY,
+   * and BYTE_STREAM_SPLIT encodings. BYTE_STREAM_SPLIT provides better compression
+   * for floating point data by separating bytes of each float value.
+   *
+   * @return list of Float values, with null entries for null values
+   * @throws ParquetException if column type is not FLOAT or encoding is unsupported
    */
   public List<Float> decodeAsFloat() {
     if (type != Type.FLOAT) {
@@ -587,7 +662,14 @@ public class ColumnValues {
   }
 
   /**
-   * Decode all values as doubles (for DOUBLE type with PLAIN or dictionary encoding)
+   * Decodes all column values as double-precision floating point numbers.
+   * <p>
+   * Supports DOUBLE physical type with PLAIN, PLAIN_DICTIONARY, RLE_DICTIONARY,
+   * and BYTE_STREAM_SPLIT encodings. BYTE_STREAM_SPLIT provides better compression
+   * for floating point data by separating bytes of each double value.
+   *
+   * @return list of Double values, with null entries for null values
+   * @throws ParquetException if column type is not DOUBLE or encoding is unsupported
    */
   public List<Double> decodeAsDouble() {
     if (type != Type.DOUBLE) {
@@ -720,7 +802,18 @@ public class ColumnValues {
   }
 
   /**
-   * Decode all values as byte arrays (for BYTE_ARRAY type with PLAIN or dictionary encoding)
+   * Decodes all column values as byte arrays.
+   * <p>
+   * Supports BYTE_ARRAY physical type with the following encodings:
+   * <ul>
+   *   <li>PLAIN - length-prefixed byte arrays (4-byte little-endian length + data)</li>
+   *   <li>PLAIN_DICTIONARY / RLE_DICTIONARY - dictionary-encoded references</li>
+   *   <li>DELTA_BYTE_ARRAY - delta encoding for byte arrays with common prefixes</li>
+   *   <li>DELTA_LENGTH_BYTE_ARRAY - delta encoding of lengths followed by data</li>
+   * </ul>
+   *
+   * @return list of byte arrays, with null entries for null values
+   * @throws ParquetException if column type is not BYTE_ARRAY or encoding is unsupported
    */
   public List<byte[]> decodeAsByteArray() {
     if (type != Type.BYTE_ARRAY) {
@@ -987,7 +1080,13 @@ public class ColumnValues {
   }
 
   /**
-   * Decode byte array values as strings
+   * Decodes byte array column values as UTF-8 strings.
+   * <p>
+   * This is a convenience method that decodes BYTE_ARRAY data and converts each
+   * byte array to a String using UTF-8 encoding. Null byte arrays result in null strings.
+   *
+   * @return list of String values, with null entries for null values
+   * @throws ParquetException if column type is not BYTE_ARRAY or encoding is unsupported
    */
   public List<String> decodeAsString() {
     List<byte[]> byteArrays = decodeAsByteArray();
@@ -1003,7 +1102,14 @@ public class ColumnValues {
   }
 
   /**
-   * Decode all values as booleans (for BOOLEAN type with PLAIN or RLE encoding)
+   * Decodes all column values as booleans.
+   * <p>
+   * Supports BOOLEAN physical type with PLAIN (bit-packed) and RLE encodings.
+   * Booleans are stored efficiently using bit-packing (8 booleans per byte) or
+   * RLE encoding for runs of repeated values.
+   *
+   * @return list of Boolean values, with null entries for null values
+   * @throws ParquetException if column type is not BOOLEAN or encoding is unsupported
    */
   public List<Boolean> decodeAsBoolean() {
     if (type != Type.BOOLEAN) {
@@ -1149,8 +1255,17 @@ public class ColumnValues {
   }
 
   /**
-   * Read RLE-encoded boolean values
-   * This is a simplified implementation for the common case
+   * Reads RLE-encoded boolean values from a buffer.
+   * <p>
+   * RLE/bit-packed hybrid encoding uses run headers to indicate either:
+   * <ul>
+   *   <li>RLE run (header & 1 == 0): repeated value, length = header >> 1</li>
+   *   <li>Bit-packed run (header & 1 == 1): bit-packed values, count = (header >> 1) * 8</li>
+   * </ul>
+   *
+   * @param buffer the buffer containing RLE-encoded data
+   * @param numValues the number of boolean values to read
+   * @return array of decoded boolean values
    */
   private boolean[] readRleBooleans(ByteBuffer buffer, int numValues) {
     boolean[] result = new boolean[numValues];
@@ -1184,8 +1299,15 @@ public class ColumnValues {
   }
 
   /**
-   * Read RLE-encoded boolean values with a specified bit-width
-   * Data Page V2 may use bit-width > 1 for booleans
+   * Reads RLE-encoded boolean values with a specified bit-width.
+   * <p>
+   * Data Page V2 may use bit-width greater than 1 for booleans. Non-zero values
+   * are treated as true, zero values as false.
+   *
+   * @param buffer the buffer containing RLE-encoded data
+   * @param numValues the number of boolean values to read
+   * @param bitWidth the bit-width used for encoding (typically 1 for booleans)
+   * @return array of decoded boolean values
    */
   private boolean[] readRleBooleansWithBitWidth(ByteBuffer buffer, int numValues, int bitWidth) {
     if (bitWidth == 1) {
@@ -1207,7 +1329,13 @@ public class ColumnValues {
   }
 
   /**
-   * Read an unsigned variable-length integer (used in RLE encoding)
+   * Reads an unsigned variable-length integer from the buffer.
+   * <p>
+   * Uses little-endian base-128 encoding where each byte contains 7 bits of data
+   * and the MSB indicates whether more bytes follow (1) or this is the last byte (0).
+   *
+   * @param buffer the buffer to read from
+   * @return the decoded unsigned integer value
    */
   private int readUnsignedVarInt(ByteBuffer buffer) {
     int value = 0;
@@ -1228,7 +1356,13 @@ public class ColumnValues {
   }
 
   /**
-   * Calculate the minimum bit width needed to represent values 0 to maxValue-1
+   * Calculates the minimum bit width needed to represent values from 0 to maxValue-1.
+   * <p>
+   * This is used for determining how many bits are needed for RLE encoding and
+   * dictionary indices.
+   *
+   * @param maxValue the exclusive upper bound (values range from 0 to maxValue-1)
+   * @return the minimum number of bits required
    */
   private static int bitWidth(int maxValue) {
     if (maxValue <= 1) {
@@ -1264,7 +1398,18 @@ public class ColumnValues {
   }
 
   /**
-   * Read dictionary indices from a data page
+   * Reads dictionary indices from a Data Page V1.
+   * <p>
+   * Format: [1-byte bit-width] [RLE/bit-packed hybrid data]
+   * <p>
+   * The bit-width indicates how many bits are needed to represent dictionary indices.
+   * The RLE data follows using the RLE/bit-packed hybrid encoding scheme.
+   *
+   * @param buffer the buffer to read from
+   * @param dictionarySize the size of the dictionary (for validation)
+   * @param numValues the number of indices to decode
+   * @return array of dictionary indices
+   * @throws ParquetException if an index is out of bounds
    */
   private int[] readDictionaryIndices(ByteBuffer buffer, int dictionarySize, int numValues) {
     // Dictionary indices in Data Page V1 use RLE/bit-packed hybrid encoding:
@@ -1312,18 +1457,45 @@ public class ColumnValues {
   }
 
   /**
-   * Read dictionary indices from a data page (legacy version for flat columns)
+   * Reads dictionary indices from a data page (legacy version for flat columns).
+   *
+   * @param buffer the buffer to read from
+   * @param dictionarySize the size of the dictionary (for validation)
+   * @param dataPage the data page containing the number of values
+   * @return array of dictionary indices
    */
   private int[] readDictionaryIndices(ByteBuffer buffer, int dictionarySize,
                                       Page.DataPage dataPage) {
     return readDictionaryIndices(buffer, dictionarySize, dataPage.numValues());
   }
 
+  /**
+   * Reads dictionary indices from a Data Page V2 (wrapper using page's value count).
+   *
+   * @param buffer the buffer to read from
+   * @param dictionarySize the size of the dictionary (for validation)
+   * @param dataPageV2 the Data Page V2 containing the number of values
+   * @return array of dictionary indices
+   */
   private int[] readDictionaryIndicesV2(ByteBuffer buffer, int dictionarySize,
                                         Page.DataPageV2 dataPageV2) {
     return readDictionaryIndicesV2(buffer, dictionarySize, dataPageV2, dataPageV2.numValues());
   }
 
+  /**
+   * Reads dictionary indices from a Data Page V2.
+   * <p>
+   * Format: [1-byte bit-width] [RLE/bit-packed hybrid data]
+   * <p>
+   * Similar to V1 but without a 4-byte length prefix.
+   *
+   * @param buffer the buffer to read from
+   * @param dictionarySize the size of the dictionary (for validation)
+   * @param dataPageV2 the Data Page V2 (for encoding verification)
+   * @param count the number of indices to decode
+   * @return array of dictionary indices
+   * @throws ParquetException if encoding is unsupported or indices are out of bounds
+   */
   private int[] readDictionaryIndicesV2(ByteBuffer buffer, int dictionarySize,
                                         Page.DataPageV2 dataPageV2, int count) {
     // Data Page V2 uses RLE_DICTIONARY encoding for dictionary indices
@@ -1438,7 +1610,17 @@ public class ColumnValues {
   }
 
   /**
-   * Read repetition or definition levels from the buffer
+   * Reads repetition or definition levels from a Data Page V1 buffer.
+   * <p>
+   * Format: [4-byte little-endian length] [RLE/bit-packed hybrid data]
+   * <p>
+   * Levels are RLE-encoded with a bit-width calculated from maxLevel.
+   *
+   * @param buffer the buffer to read from (position will be advanced)
+   * @param levelByteLen the total byte length of the level data (including 4-byte prefix)
+   * @param numValues the number of level values to decode
+   * @param maxLevel the maximum level value (determines bit-width)
+   * @return array of level values
    */
   private int[] readLevels(ByteBuffer buffer, int levelByteLen, int numValues, int maxLevel) {
     // Levels are RLE-encoded
@@ -1467,10 +1649,17 @@ public class ColumnValues {
   }
 
   /**
-   * Read levels from Data Page V2 format
-   * Format: RLE data directly (no bit-width prefix)
-   * Bit-width is calculated from maxLevel
-   * If buffer is empty/null, all values are at max level
+   * Reads levels from a Data Page V2 format buffer.
+   * <p>
+   * Format: RLE data directly (no bit-width prefix, no 4-byte length prefix)
+   * <p>
+   * Bit-width is calculated from maxLevel. If buffer is empty/null, all values
+   * are assumed to be at max level (i.e., all non-null).
+   *
+   * @param buffer the buffer to read from (may be null or empty)
+   * @param numValues the number of level values expected
+   * @param maxLevel the maximum level value (determines bit-width)
+   * @return array of level values
    */
   private int[] readLevelsV2(ByteBuffer buffer, int numValues, int maxLevel) {
     if (buffer == null || !buffer.hasRemaining()) {
@@ -1498,8 +1687,16 @@ public class ColumnValues {
   }
 
   /**
-   * Read primitive values from buffer based on page encoding and type
-   * This version is for nested structures where levels have already been read
+   * Reads primitive values from buffer based on page encoding and type.
+   * <p>
+   * This version is for nested structures where levels have already been read.
+   * Only non-null values (those with definition level at max) are stored in the buffer.
+   *
+   * @param buffer the buffer to read from (positioned after level data)
+   * @param dataPage the data page containing encoding information
+   * @param dictionary optional dictionary for dictionary-encoded data (may be null)
+   * @param defLevels definition levels array to determine null positions
+   * @return list of decoded primitive values (only non-null values)
    */
   private List<Object> readPrimitiveValues(ByteBuffer buffer, Page.DataPage dataPage,
                                            Object[] dictionary, int[] defLevels) {
@@ -1555,7 +1752,16 @@ public class ColumnValues {
   }
 
   /**
-   * Read dictionary indices without a length prefix (for nested structures)
+   * Reads dictionary indices without a 4-byte length prefix.
+   * <p>
+   * Used for nested structures where the RLE data is stored directly without
+   * a length prefix. Bit-width is calculated from dictionary size.
+   *
+   * @param buffer the buffer to read from
+   * @param dictionarySize the size of the dictionary (determines bit-width)
+   * @param numValues the number of indices to decode
+   * @return array of dictionary indices
+   * @throws ParquetException if an index is out of bounds
    */
   private int[] readDictionaryIndicesWithoutLength(ByteBuffer buffer, int dictionarySize,
                                                    int numValues) {
@@ -1592,7 +1798,13 @@ public class ColumnValues {
   }
 
   /**
-   * Build a dictionary from a DictionaryPage
+   * Builds a dictionary array from a DictionaryPage.
+   * <p>
+   * Dictionary pages contain PLAIN-encoded values that can be referenced by
+   * indices in dictionary-encoded data pages.
+   *
+   * @param dictPage the dictionary page to decode
+   * @return array of decoded dictionary values
    */
   private Object[] buildDictionary(Page.DictionaryPage dictPage) {
     ByteBuffer buffer = dictPage.data().duplicate();
@@ -1609,7 +1821,18 @@ public class ColumnValues {
   }
 
   /**
-   * Read a single PLAIN encoded value based on the column type
+   * Reads a single PLAIN-encoded value from the buffer based on column type.
+   * <p>
+   * PLAIN encoding stores values in their native binary format:
+   * <ul>
+   *   <li>INT32/INT64/FLOAT/DOUBLE: fixed-width binary values</li>
+   *   <li>BYTE_ARRAY: 4-byte length prefix + data bytes</li>
+   *   <li>BOOLEAN: single bit (but typically bit-packed separately)</li>
+   * </ul>
+   *
+   * @param buffer the buffer to read from
+   * @return the decoded value as an Object
+   * @throws ParquetException if the type is unsupported
    */
   private Object readPlainValue(ByteBuffer buffer) {
     switch (type) {
@@ -1634,7 +1857,23 @@ public class ColumnValues {
   }
 
   /**
-   * Reconstruct lists from repetition levels, definition levels, and primitive values
+   * Reconstructs lists from repetition levels, definition levels, and primitive values.
+   * <p>
+   * List structure encoding in Parquet:
+   * <ul>
+   *   <li>repLevel = 0: Start of a new list</li>
+   *   <li>repLevel = 1: Additional element in current list</li>
+   *   <li>defLevel = 0: Null list</li>
+   *   <li>defLevel = 1: Empty list</li>
+   *   <li>defLevel >= maxDefLevel: Non-null element</li>
+   * </ul>
+   *
+   * @param repLevels repetition levels indicating list boundaries
+   * @param defLevels definition levels indicating null values
+   * @param primitiveValues decoded non-null primitive values
+   * @param elementDecoder function to convert primitive values to element type
+   * @param result output list to append decoded lists to
+   * @param <T> the element type
    */
   private <T> void reconstructLists(int[] repLevels, int[] defLevels,
                                     List<Object> primitiveValues,
@@ -1782,9 +2021,20 @@ public class ColumnValues {
   }
 
   /**
-   * Reconstruct maps from repetition levels, definition levels, and primitive values
-   * Note: This is a simplified implementation. Full MAP support requires reading
-   * both key and value columns separately.
+   * Reconstructs maps from repetition levels, definition levels, and primitive values.
+   * <p>
+   * <strong>Note:</strong> This is a simplified placeholder implementation. Full MAP support
+   * requires reading both key and value columns separately using
+   * {@link #decodeMapFromKeyValueColumns}.
+   *
+   * @param repLevels repetition levels indicating map boundaries
+   * @param defLevels definition levels indicating null values
+   * @param primitiveValues decoded primitive values
+   * @param keyDecoder function to convert primitive values to key type
+   * @param valueDecoder function to convert primitive values to value type
+   * @param result output list to append decoded maps to
+   * @param <K> the key type
+   * @param <V> the value type
    */
   private <K, V> void reconstructMaps(int[] repLevels, int[] defLevels,
                                       List<Object> primitiveValues,
@@ -2025,7 +2275,10 @@ public class ColumnValues {
   }
 
   /**
-   * Find the dictionary page for a column, or null if not found
+   * Finds the dictionary page for a column.
+   *
+   * @param column the column to search for a dictionary page
+   * @return array of dictionary values, or null if no dictionary page found
    */
   private static Object[] findDictionary(ColumnValues column) {
     for (Page page : column.pages) {
@@ -2123,7 +2376,17 @@ public class ColumnValues {
   }
 
   /**
-   * Helper method to read primitive values - version for Data Page V2
+   * Reads primitive values from a Data Page V2 buffer.
+   * <p>
+   * This is an overloaded version that accepts an explicit encoding parameter
+   * for Data Page V2 decoding. Handles PLAIN and dictionary encodings.
+   *
+   * @param buffer the buffer to read from
+   * @param dataPage the data page (null for Data Page V2)
+   * @param dictionary optional dictionary array (may be null)
+   * @param defLevels definition levels to determine null positions
+   * @param encoding the encoding to use for decoding
+   * @return list of decoded primitive values (only non-null values)
    */
   private List<Object> readPrimitiveValues(ByteBuffer buffer, Page.DataPage dataPage,
                                            Object[] dictionary, int[] defLevels,
@@ -2174,7 +2437,12 @@ public class ColumnValues {
   }
 
   /**
-   * Get the maximum definition level for this column
+   * Returns the maximum definition level for this column.
+   * <p>
+   * The maximum definition level indicates the deepest level of nesting where
+   * a value can be defined. For simple optional columns, this is 1.
+   *
+   * @return the maximum definition level
    */
   private int getMaxDefinitionLevel() {
     if (columnDescriptor != null) {
@@ -2185,7 +2453,13 @@ public class ColumnValues {
   }
 
   /**
-   * Get the maximum repetition level for this column
+   * Returns the maximum repetition level for this column.
+   * <p>
+   * The maximum repetition level indicates the deepest level of nesting with
+   * repeated elements (lists/maps). For flat columns, this is 0; for columns
+   * inside one level of list, this is 1.
+   *
+   * @return the maximum repetition level
    */
   private int getMaxRepetitionLevel() {
     if (columnDescriptor != null) {
