@@ -20,6 +20,12 @@ public class NestedStructureReader {
   private final SerializedFileReader.RowGroupReader rowGroupReader;
   private final SchemaDescriptor schema;
 
+  /**
+   * Constructs a new NestedStructureReader.
+   *
+   * @param rowGroupReader the row group reader to use for reading column data
+   * @param schema the schema descriptor containing column metadata
+   */
   public NestedStructureReader(SerializedFileReader.RowGroupReader rowGroupReader,
                                SchemaDescriptor schema) {
     this.rowGroupReader = rowGroupReader;
@@ -32,18 +38,25 @@ public class NestedStructureReader {
    * are in separate columns.
    * <p>
    * Schema example:
+   * <pre>
    * optional group my_map (MAP) {
-   * repeated group key_value {
-   * required binary key (UTF8);
-   * optional binary value (UTF8);
+   *   repeated group key_value {
+   *     required binary key (UTF8);
+   *     optional binary value (UTF8);
+   *   }
    * }
-   * }
+   * </pre>
    *
-   * @param keyColumnIndex   The column index for map keys
-   * @param valueColumnIndex The column index for map values
-   * @param keyDecoder       Function to decode key values
-   * @param valueDecoder     Function to decode value values
-   * @return List of maps
+   * @param <K> the type of keys in the map
+   * @param <V> the type of values in the map
+   * @param keyColumnIndex the column index for map keys
+   * @param valueColumnIndex the column index for map values
+   * @param keyDecoder function to decode key values from their raw representation
+   * @param valueDecoder function to decode value values from their raw representation
+   * @return list of maps, where each map corresponds to one row. Null values represent
+   *         rows where the map itself is null.
+   * @throws IOException if an I/O error occurs while reading the columns
+   * @throws ParquetException if the key and value columns have mismatched structures
    */
   public <K, V> List<Map<K, V>> readMap(int keyColumnIndex, int valueColumnIndex,
                                         java.util.function.Function<Object, K> keyDecoder,
@@ -91,10 +104,17 @@ public class NestedStructureReader {
   /**
    * Read a STRUCT structure from Parquet.
    * Structs are represented as multiple columns that need to be combined.
+   * Each column represents one field of the struct, and all columns must have
+   * the same number of rows.
    *
-   * @param columnIndices Array of column indices that form the struct
-   * @param fieldNames    Names of the fields in the struct
-   * @return List of structs represented as maps (field name -> value)
+   * @param columnIndices array of column indices that form the struct
+   * @param fieldNames names of the fields in the struct, must match the length
+   *                   of columnIndices
+   * @return list of structs represented as maps (field name to value), where each
+   *         map corresponds to one row
+   * @throws IOException if an I/O error occurs while reading the columns
+   * @throws IllegalArgumentException if columnIndices and fieldNames have different lengths
+   * @throws ParquetException if columns have mismatched row counts or unsupported types
    */
   public List<Map<String, Object>> readStruct(int[] columnIndices, String[] fieldNames)
       throws IOException {
@@ -160,9 +180,18 @@ public class NestedStructureReader {
   /**
    * Find column indices for a given path prefix.
    * This is useful for finding all columns that belong to a struct or map.
+   * <p>
+   * For example, if the schema has columns with paths:
+   * <ul>
+   *   <li>["my_map", "key_value", "key"]</li>
+   *   <li>["my_map", "key_value", "value"]</li>
+   *   <li>["other_field"]</li>
+   * </ul>
+   * Then calling this method with pathPrefix ["my_map", "key_value"] would return
+   * the indices of the first two columns.
    *
-   * @param pathPrefix The prefix to match (e.g., ["my_map", "key_value"])
-   * @return List of column indices that match the prefix
+   * @param pathPrefix the prefix to match (e.g., ["my_map", "key_value"])
+   * @return list of column indices that match the prefix, in schema order
    */
   public List<Integer> findColumnsByPathPrefix(String[] pathPrefix) {
     List<Integer> result = new ArrayList<>();
