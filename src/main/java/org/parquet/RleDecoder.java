@@ -52,7 +52,10 @@ public class RleDecoder {
   }
 
   /**
-   * Read all values from the RLE-encoded buffer
+   * Read all values from the RLE-encoded buffer.
+   *
+   * @return Array containing all decoded values
+   * @throws ParquetException if the buffer contains fewer values than expected
    */
   public int[] readAll() {
     // Special case: if we expect 0 values, return empty array
@@ -135,7 +138,13 @@ public class RleDecoder {
   }
 
   /**
-   * Read an unsigned variable-length integer
+   * Read an unsigned variable-length integer from the buffer.
+   * <p>
+   * Variable-length integers use the LEB128 encoding where the high bit
+   * of each byte indicates whether more bytes follow.
+   *
+   * @return The decoded unsigned integer value
+   * @throws ParquetException if the varint exceeds the maximum representable value
    */
   private int readUnsignedVarInt() {
     int value = 0;
@@ -159,7 +168,13 @@ public class RleDecoder {
   }
 
   /**
-   * Read a single bit-packed value of the specified bit width
+   * Read a single bit-packed value of the specified bit width.
+   * <p>
+   * This method reads the minimum number of bytes needed to represent
+   * a value with the given bit width, in little-endian order.
+   *
+   * @param bitWidth The number of bits used to represent the value (0-32)
+   * @return The decoded value
    */
   private int readBitPackedValue(int bitWidth) {
     if (bitWidth == 0) {
@@ -228,13 +243,22 @@ public class RleDecoder {
   }
 
   /**
-   * Helper class to unpack bit-packed values
+   * Helper class to unpack bit-packed values from a byte array.
+   * <p>
+   * This class reads values sequentially from a byte array where values
+   * are packed tightly with no padding, using LSB-to-MSB bit ordering.
    */
   private static class BitUnpacker {
     private final byte[] data;
     private final int bitWidth;
     private int bitOffset;
 
+    /**
+     * Create a new bit unpacker.
+     *
+     * @param data     Byte array containing packed values
+     * @param bitWidth Number of bits per value
+     */
     BitUnpacker(byte[] data, int bitWidth) {
       this.data = data;
       this.bitWidth = bitWidth;
@@ -242,7 +266,12 @@ public class RleDecoder {
     }
 
     /**
-     * Unpack the next value
+     * Unpack the next value from the bit-packed data.
+     * <p>
+     * Reads bitWidth bits from the current position, advancing the
+     * internal bit offset for the next call.
+     *
+     * @return The unpacked value
      */
     int unpack() {
       if (bitWidth == 0) {

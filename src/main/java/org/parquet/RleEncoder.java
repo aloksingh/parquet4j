@@ -35,9 +35,10 @@ public class RleEncoder {
   private final ByteArrayOutputStream buffer;
 
   /**
-   * Create an RLE encoder
+   * Create an RLE encoder.
    *
    * @param bitWidth Bit width of values (0-32)
+   * @throws IllegalArgumentException If bitWidth is not between 0 and 32
    */
   public RleEncoder(int bitWidth) {
     if (bitWidth < 0 || bitWidth > 32) {
@@ -48,10 +49,11 @@ public class RleEncoder {
   }
 
   /**
-   * Encode a list of values using RLE/Bit-Packing Hybrid encoding
+   * Encode a list of values using RLE/Bit-Packing Hybrid encoding.
    *
    * @param values Values to encode
-   * @return Encoded bytes with 4-byte length prefix
+   * @return Encoded bytes with 4-byte little-endian length prefix
+   * @throws IOException If an I/O error occurs during encoding
    */
   public byte[] encode(List<Integer> values) throws IOException {
     if (values.isEmpty()) {
@@ -100,7 +102,11 @@ public class RleEncoder {
   }
 
   /**
-   * Encode a simple array of values
+   * Encode a simple array of values using RLE/Bit-Packing Hybrid encoding.
+   *
+   * @param values Array of values to encode
+   * @return Encoded bytes with 4-byte little-endian length prefix
+   * @throws IOException If an I/O error occurs during encoding
    */
   public byte[] encode(int[] values) throws IOException {
     List<Integer> list = new ArrayList<>(values.length);
@@ -111,7 +117,11 @@ public class RleEncoder {
   }
 
   /**
-   * Get the length of an RLE run starting at the given position
+   * Get the length of an RLE run starting at the given position.
+   *
+   * @param values List of values to analyze
+   * @param start Starting position in the list
+   * @return Length of consecutive identical values starting at the given position
    */
   private int getRleRunLength(List<Integer> values, int start) {
     if (start >= values.size()) {
@@ -132,6 +142,10 @@ public class RleEncoder {
    * Get the length of a bit-packed run starting at the given position.
    * A bit-packed run continues until we encounter a long RLE run.
    * We always pack in multiples of 8 values.
+   *
+   * @param values List of values to analyze
+   * @param start Starting position in the list
+   * @return Length of values suitable for bit-packing (at least 1)
    */
   private int getBitPackRunLength(List<Integer> values, int start) {
     int length = 0;
@@ -160,7 +174,12 @@ public class RleEncoder {
   }
 
   /**
-   * Write an RLE run
+   * Write an RLE run to the buffer.
+   * Encodes the run length and the repeated value according to the Parquet RLE format.
+   *
+   * @param value The value to repeat
+   * @param length Number of times the value is repeated
+   * @throws IOException If an I/O error occurs while writing
    */
   private void writeRleRun(int value, int length) throws IOException {
     // RLE header: (length << 1) with LSB = 0 to indicate RLE
@@ -171,7 +190,13 @@ public class RleEncoder {
   }
 
   /**
-   * Write a bit-packed run
+   * Write a bit-packed run to the buffer.
+   * Packs values tightly according to the configured bit width, padding to multiples of 8 values.
+   *
+   * @param values List of values to encode
+   * @param start Starting position in the list
+   * @param length Number of values to bit-pack
+   * @throws IOException If an I/O error occurs while writing
    */
   private void writeBitPackedRun(List<Integer> values, int start, int length) throws IOException {
     // Pad to multiple of 8 if needed
@@ -204,6 +229,9 @@ public class RleEncoder {
   /**
    * Bit-pack values according to the bit width.
    * Values are packed from LSB to MSB, matching the Parquet spec.
+   *
+   * @param values Array of values to bit-pack
+   * @throws IOException If an I/O error occurs while writing
    */
   private void bitPackValues(int[] values) throws IOException {
     if (bitWidth == 0) {
@@ -245,7 +273,10 @@ public class RleEncoder {
   }
 
   /**
-   * Write a value using the fixed width (rounded up to next byte)
+   * Write a value using the fixed width (rounded up to next byte).
+   *
+   * @param value The value to write
+   * @throws IOException If an I/O error occurs while writing
    */
   private void writeFixedWidthValue(int value) throws IOException {
     if (bitWidth == 0) {
@@ -261,7 +292,10 @@ public class RleEncoder {
   }
 
   /**
-   * Write an unsigned variable-length integer
+   * Write an unsigned variable-length integer using the VarInt encoding.
+   *
+   * @param value The integer value to encode
+   * @throws IOException If an I/O error occurs while writing
    */
   private void writeUnsignedVarInt(int value) throws IOException {
     while ((value & ~0x7F) != 0) {
@@ -272,7 +306,10 @@ public class RleEncoder {
   }
 
   /**
-   * Calculate the bit width needed to represent a maximum value
+   * Calculate the bit width needed to represent a maximum value.
+   *
+   * @param maxValue The maximum value to represent
+   * @return Minimum number of bits needed to represent the value
    */
   public static int bitWidth(int maxValue) {
     if (maxValue == 0) {
