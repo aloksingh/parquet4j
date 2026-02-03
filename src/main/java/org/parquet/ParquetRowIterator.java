@@ -18,7 +18,24 @@ import org.parquet.model.SimpleRowColumnGroup;
 import org.parquet.model.Type;
 
 /**
- * Iterator that reads Parquet files row by row across all row groups
+ * Iterator that reads Parquet files row by row across all row groups.
+ *
+ * <p>This iterator reads entire row groups into memory at once for efficient access,
+ * automatically loading the next row group when the current one is exhausted.
+ * It handles both primitive columns and map columns (key-value pairs).
+ *
+ * <p>Usage example:
+ * <pre>{@code
+ * try (ParquetRowIterator iterator = new ParquetRowIterator(fileReader)) {
+ *   while (iterator.hasNext()) {
+ *     RowColumnGroup row = iterator.next();
+ *     // Process row...
+ *   }
+ * }
+ * }</pre>
+ *
+ * @see RowColumnGroupIterator
+ * @see SerializedFileReader
  */
 public class ParquetRowIterator implements RowColumnGroupIterator {
   private final SerializedFileReader fileReader;
@@ -52,15 +69,21 @@ public class ParquetRowIterator implements RowColumnGroupIterator {
   }
 
   /**
-   * Create an iterator for a Parquet file (will close the file reader when done)
+   * Create an iterator for a Parquet file.
+   * The file reader will be closed automatically when {@link #close()} is called.
+   *
+   * @param fileReader The file reader to iterate over
    */
   public ParquetRowIterator(SerializedFileReader fileReader) {
     this(fileReader, true);
   }
 
   /**
-   * Load a row group into memory
-   * Reads LOGICAL columns (primitives and maps)
+   * Load a row group into memory.
+   * Reads LOGICAL columns (primitives and maps) and stores them for iteration.
+   *
+   * @param rowGroupIndex The index of the row group to load
+   * @throws ParquetException If reading the row group fails
    */
   private void loadRowGroup(int rowGroupIndex) {
     try {
@@ -96,7 +119,11 @@ public class ParquetRowIterator implements RowColumnGroupIterator {
   }
 
   /**
-   * Find the physical column index for a given column descriptor
+   * Find the physical column index for a given column descriptor.
+   *
+   * @param physicalCol The column descriptor to search for
+   * @return The physical index of the column in the schema
+   * @throws ParquetException If the physical column is not found
    */
   private int findPhysicalColumnIndex(ColumnDescriptor physicalCol) {
     for (int i = 0; i < schema.getNumColumns(); i++) {
@@ -108,7 +135,14 @@ public class ParquetRowIterator implements RowColumnGroupIterator {
   }
 
   /**
-   * Decode a map column from its key and value physical columns
+   * Decode a map column from its key and value physical columns.
+   * Keys are always decoded as strings, and values are decoded based on their physical type.
+   *
+   * @param rowGroupReader The row group reader to read columns from
+   * @param mapMetadata Metadata describing the map structure (key/value column indices and types)
+   * @return A list of maps, one per row, with string keys and typed values
+   * @throws IOException If reading the columns fails
+   * @throws ParquetException If the map structure is invalid or contains unsupported types
    */
   private List<Map<String, Object>> decodeMapColumn(
       SerializedFileReader.RowGroupReader rowGroupReader,
@@ -204,7 +238,14 @@ public class ParquetRowIterator implements RowColumnGroupIterator {
 
 
   /**
-   * Decode a column based on its type
+   * Decode a column based on its physical type.
+   * Byte arrays are decoded as UTF-8 strings by default.
+   * Unsupported types return a list of nulls.
+   *
+   * @param columnValues The column values to decode
+   * @param descriptor The column descriptor containing type information
+   * @return A list of decoded values, one per row
+   * @throws ParquetException If decoding fails
    */
   private List<Object> decodeColumn(ColumnValues columnValues,
                                     ColumnDescriptor descriptor) {
@@ -253,6 +294,11 @@ public class ParquetRowIterator implements RowColumnGroupIterator {
     }
   }
 
+  /**
+   * Check if there are more rows to iterate.
+   *
+   * @return true if there are more rows in the current row group or more row groups to read
+   */
   @Override
   public boolean hasNext() {
     if (currentRowGroupData == null) {
@@ -268,6 +314,13 @@ public class ParquetRowIterator implements RowColumnGroupIterator {
     return currentRowGroupIndex + 1 < fileReader.getNumRowGroups();
   }
 
+  /**
+   * Get the next row from the Parquet file.
+   * Automatically loads the next row group when the current one is exhausted.
+   *
+   * @return A RowColumnGroup containing the values for all logical columns in the row
+   * @throws NoSuchElementException If there are no more rows to read
+   */
   @Override
   public RowColumnGroup next() {
     if (!hasNext()) {
@@ -293,7 +346,10 @@ public class ParquetRowIterator implements RowColumnGroupIterator {
   }
 
   /**
-   * Close the underlying file reader if we own it
+   * Close the underlying file reader if this iterator owns it.
+   * Only closes the file reader if closeFileReader was set to true during construction.
+   *
+   * @throws IOException If closing the file reader fails
    */
   public void close() throws IOException {
     if (closeFileReader) {
@@ -302,14 +358,18 @@ public class ParquetRowIterator implements RowColumnGroupIterator {
   }
 
   /**
-   * Get the total number of rows that will be iterated
+   * Get the total number of rows that will be iterated across all row groups.
+   *
+   * @return The total row count from the file metadata
    */
   public long getTotalRowCount() {
     return fileReader.getTotalRowCount();
   }
 
   /**
-   * Get the schema for the rows being iterated
+   * Get the schema for the rows being iterated.
+   *
+   * @return The schema descriptor containing all logical column definitions
    */
   public SchemaDescriptor getSchema() {
     return schema;

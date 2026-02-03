@@ -30,14 +30,26 @@ import shaded.parquet.org.apache.thrift.protocol.TCompactProtocol;
 import shaded.parquet.org.apache.thrift.transport.TIOStreamTransport;
 
 /**
- * Reads Parquet file metadata from the footer
+ * Reads Parquet file metadata from the footer.
+ *
+ * <p>This class provides utilities to read and parse Parquet file metadata stored in the
+ * file footer. It handles Thrift deserialization and converts the metadata into our
+ * internal representation including schema, row groups, and column statistics.
  */
 public class ParquetMetadataReader {
   private static final byte[] MAGIC = "PAR1".getBytes(StandardCharsets.UTF_8);
   private static final int FOOTER_SIZE = 8; // 4 bytes footer length + 4 bytes magic
 
   /**
-   * Read metadata from a Parquet file
+   * Reads metadata from a Parquet file.
+   *
+   * <p>This method reads the Parquet file footer, validates the magic number,
+   * and deserializes the metadata using Thrift protocol.
+   *
+   * @param reader the ChunkReader for reading file contents
+   * @return the parsed ParquetMetadata containing schema and row group information
+   * @throws IOException if an I/O error occurs while reading the file
+   * @throws ParquetException if the file is not a valid Parquet file or metadata is corrupt
    */
   public static ParquetMetadata readMetadata(ChunkReader reader) throws IOException {
     long fileLen = reader.length();
@@ -72,7 +84,15 @@ public class ParquetMetadataReader {
   }
 
   /**
-   * Parse metadata from Thrift-encoded bytes
+   * Parses metadata from Thrift-encoded bytes.
+   *
+   * <p>Uses Apache Thrift's TCompactProtocol to deserialize the FileMetaData structure
+   * from the byte buffer.
+   *
+   * @param buffer the ByteBuffer containing Thrift-encoded metadata
+   * @return the parsed ParquetMetadata
+   * @throws IOException if an I/O error occurs during parsing
+   * @throws ParquetException if the Thrift deserialization fails
    */
   private static ParquetMetadata parseMetadata(ByteBuffer buffer) throws IOException {
     try {
@@ -93,7 +113,17 @@ public class ParquetMetadataReader {
   }
 
   /**
-   * Convert Thrift metadata to our metadata classes
+   * Converts Thrift metadata to our internal metadata classes.
+   *
+   * <p>This method performs the following conversions:
+   * <ul>
+   *   <li>Schema elements to ColumnDescriptors and LogicalColumnDescriptors</li>
+   *   <li>Key-value metadata to a Map</li>
+   *   <li>Row groups and column chunks with statistics</li>
+   * </ul>
+   *
+   * @param thriftMetadata the FileMetaData from Thrift deserialization
+   * @return the converted ParquetMetadata with our internal representation
    */
   private static ParquetMetadata convertFromThrift(FileMetaData thriftMetadata) {
     // Convert schema
@@ -213,7 +243,19 @@ public class ParquetMetadataReader {
   }
 
   /**
-   * Recursively build column descriptors from schema elements
+   * Recursively builds column descriptors from schema elements.
+   *
+   * <p>Traverses the schema tree depth-first, computing definition and repetition levels
+   * based on field repetition types (OPTIONAL, REQUIRED, REPEATED). Primitive columns
+   * are added to the columns list, while groups are recursively processed.
+   *
+   * @param schemaElements the list of all schema elements from the file
+   * @param index the current index in schemaElements to process
+   * @param currentPath the path from the root to the current element
+   * @param currentDefLevel the current definition level
+   * @param currentRepLevel the current repetition level
+   * @param columns the list to add discovered ColumnDescriptors to
+   * @return the next index to process after this element and its children
    */
   private static int buildColumns(List<SchemaElement> schemaElements, int index,
                                   String[] currentPath, int currentDefLevel,
@@ -263,6 +305,13 @@ public class ParquetMetadataReader {
     }
   }
 
+  /**
+   * Appends a name to the current path array.
+   *
+   * @param currentPath the existing path array
+   * @param name the name to append
+   * @return a new array with the name appended
+   */
   private static String[] appendToPath(String[] currentPath, String name) {
     String[] newPath = new String[currentPath.length + 1];
     System.arraycopy(currentPath, 0, newPath, 0, currentPath.length);
@@ -271,7 +320,16 @@ public class ParquetMetadataReader {
   }
 
   /**
-   * Build logical columns from physical columns (detect MAPs, etc.)
+   * Builds logical columns from physical columns by detecting complex types.
+   *
+   * <p>This method scans physical columns to identify logical structures such as MAPs.
+   * MAP columns follow the pattern: {@code mapName.key_value.{key, value}}.
+   * Physical columns that are part of a MAP are combined into a single LogicalColumnDescriptor,
+   * while standalone columns become PRIMITIVE logical columns.
+   *
+   * @param physicalColumns the list of physical ColumnDescriptors
+   * @param schemaElements the schema elements (currently unused but available for future extensions)
+   * @return a list of LogicalColumnDescriptors representing the logical schema
    */
   public static List<LogicalColumnDescriptor> buildLogicalColumns(
       List<ColumnDescriptor> physicalColumns,
@@ -351,7 +409,13 @@ public class ParquetMetadataReader {
 
 
   /**
-   * Read header magic bytes to verify this is a Parquet file
+   * Reads and verifies the header magic bytes to confirm this is a Parquet file.
+   *
+   * <p>Valid Parquet files start with the magic bytes "PAR1".
+   *
+   * @param reader the ChunkReader for reading file contents
+   * @return {@code true} if the file has valid Parquet magic bytes, {@code false} otherwise
+   * @throws IOException if an I/O error occurs while reading the file
    */
   public static boolean verifyMagic(ChunkReader reader) throws IOException {
     if (reader.length() < 4) {
