@@ -14,7 +14,12 @@ public class LogicalColumnDescriptor {
   private final ListMetadata listMetadata;  // For lists only
 
   /**
-   * Constructor for primitive columns
+   * Constructor for primitive columns.
+   *
+   * @param name the name of the column
+   * @param logicalType the logical type of the column
+   * @param physicalType the physical type of the column
+   * @param physicalDescriptor the physical column descriptor
    */
   public LogicalColumnDescriptor(String name, LogicalType logicalType, Type physicalType,
                                  ColumnDescriptor physicalDescriptor) {
@@ -27,7 +32,11 @@ public class LogicalColumnDescriptor {
   }
 
   /**
-   * Constructor for map columns
+   * Constructor for map columns.
+   *
+   * @param name the name of the column
+   * @param logicalType the logical type of the column
+   * @param mapMetadata the map metadata containing key and value descriptors
    */
   public LogicalColumnDescriptor(String name, LogicalType logicalType, MapMetadata mapMetadata) {
     this.name = name;
@@ -39,7 +48,11 @@ public class LogicalColumnDescriptor {
   }
 
   /**
-   * Constructor for list columns
+   * Constructor for list columns.
+   *
+   * @param name the name of the column
+   * @param logicalType the logical type of the column
+   * @param listMetadata the list metadata containing element descriptor
    */
   public LogicalColumnDescriptor(String name, LogicalType logicalType, ListMetadata listMetadata) {
     this.name = name;
