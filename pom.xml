@@ -1,11 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
 
-    <groupId>org.parquet</groupId>
+    <groupId>io.github.aloksingh</groupId>
     <artifactId>parquet4j</artifactId>
-    <version>0.1.1-SNAPSHOT</version>
+    <version>0.1.1</version>
 
     <name>parquet4j</name>
     <description>A minimal library to read and write Parquet files.</description>
@@ -158,7 +157,7 @@
                 <version>${central-publishing-maven-plugin.version}</version>
                 <extensions>true</extensions>
                 <configuration>
-                    <publishingServerId>central</publishingServerId>
+                    <publishingServerId>maven-central</publishingServerId>
                 </configuration>
             </plugin>
         </plugins>
@@ -169,4 +168,10 @@
             <url>https://maven.pkg.github.com/aloksingh/parquet4j</url>
         </repository>
     </distributionManagement>
+    <scm>
+        <connection>scm:git:git@github.com:aloksingh/parquet4j.git</connection>
+        <url>scm:git:git@github.com:aloksingh/parquet4j.git</url>
+        <developerConnection>scm:git:git@github.com:aloksingh/parquet4j.git</developerConnection>
+        <tag>parquet4j-0.1.0</tag>
+    </scm>
 </project>

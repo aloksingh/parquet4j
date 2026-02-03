@@ -12,15 +12,20 @@
       <id>github</id>
       <repositories>
         <repository>
-          <id>central</id>
-          <url>https://repo.maven.apache.org/maven2</url>
-        </repository>
-        <repository>
           <id>github</id>
           <url>https://maven.pkg.github.com/aloksingh/parquet4j</url>
           <snapshots>
             <enabled>true</enabled>
           </snapshots>
+        </repository>
+      </repositories>
+    </profile>
+    <profile>
+      <id>maven-central</id>
+      <repositories>
+        <repository>
+          <id>central</id>
+          <url>https://repo.maven.apache.org/maven2</url>
         </repository>
       </repositories>
     </profile>

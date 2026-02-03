@@ -282,16 +282,16 @@ Format:
 
 This Dogma specification is based on the Java implementation in this repository. Key source files:
 
-- [`ParquetMetadataReader.java`](../src/main/java/org/parquet/ParquetMetadataReader.java): Reads file metadata from
+- [`ParquetMetadataReader.java`](../src/main/java/io/github/aloksingh/parquet/ParquetMetadataReader.java): Reads file metadata from
   footer
-- [`PageReader.java`](../src/main/java/org/parquet/PageReader.java): Reads pages from column chunks
-- [`SerializedFileReader.java`](../src/main/java/org/parquet/SerializedFileReader.java): Main entry point for reading
+- [`PageReader.java`](../src/main/java/io/github/aloksingh/parquet/PageReader.java): Reads pages from column chunks
+- [`SerializedFileReader.java`](../src/main/java/io/github/aloksingh/parquet/SerializedFileReader.java): Main entry point for reading
   Parquet files
-- [`model/Type.java`](../src/main/java/org/parquet/model/Type.java): Physical type enumeration
-- [`model/Encoding.java`](../src/main/java/org/parquet/model/Encoding.java): Encoding type enumeration
-- [`model/CompressionCodec.java`](../src/main/java/org/parquet/model/CompressionCodec.java): Compression codec
+- [`model/Type.java`](../src/main/java/io/github/aloksingh/parquet/model/Type.java): Physical type enumeration
+- [`model/Encoding.java`](../src/main/java/io/github/aloksingh/parquet/model/Encoding.java): Encoding type enumeration
+- [`model/CompressionCodec.java`](../src/main/java/io/github/aloksingh/parquet/model/CompressionCodec.java): Compression codec
   enumeration
-- [`model/Page.java`](../src/main/java/org/parquet/model/Page.java): Page data structures
+- [`model/Page.java`](../src/main/java/io/github/aloksingh/parquet/model/Page.java): Page data structures
 
 ## Using the Dogma Specification
 
