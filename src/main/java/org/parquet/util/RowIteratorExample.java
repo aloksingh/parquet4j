@@ -6,10 +6,32 @@ import org.parquet.RowColumnGroupIterator;
 import org.parquet.model.RowColumnGroup;
 
 /**
- * Example demonstrating how to use the row-by-row iterator for Parquet files
+ * Example demonstrating how to use the row-by-row iterator for Parquet files.
+ *
+ * <p>This class provides multiple examples of different approaches to iterate through
+ * Parquet file rows using the {@link RowColumnGroupIterator}. Each example demonstrates
+ * a different pattern for accessing and processing row data.
+ *
+ * <h2>Examples included:</h2>
+ * <ul>
+ *   <li>Basic iteration using try-with-resources</li>
+ *   <li>Accessing specific columns by index</li>
+ *   <li>Enhanced for-each style iteration</li>
+ *   <li>Accessing columns by name</li>
+ * </ul>
+ *
+ * @see SerializedFileReader
+ * @see RowColumnGroupIterator
+ * @see RowColumnGroup
  */
 public class RowIteratorExample {
 
+  /**
+   * Main method demonstrating various approaches to iterating through Parquet file rows.
+   *
+   * @param args command line arguments where the first argument should be the path to a Parquet file
+   * @throws IOException if an error occurs while reading the Parquet file
+   */
   public static void main(String[] args) throws IOException {
     if (args.length < 1) {
       System.err.println("Usage: java RowIteratorExample <parquet-file>");
