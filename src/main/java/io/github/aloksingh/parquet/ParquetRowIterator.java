@@ -37,7 +37,7 @@ import io.github.aloksingh.parquet.model.Type;
  * @see RowColumnGroupIterator
  * @see SerializedFileReader
  */
-public class ParquetRowIterator implements RowColumnGroupIterator {
+public class ParquetRowIterator implements RowColumnGroupIterator, AutoCloseable {
   private final SerializedFileReader fileReader;
   private final SchemaDescriptor schema;
   private final boolean closeFileReader;

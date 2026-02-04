@@ -6,7 +6,17 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import io.github.aloksingh.parquet.model.ColumnDescriptor;
+import io.github.aloksingh.parquet.model.LogicalColumnDescriptor;
+import io.github.aloksingh.parquet.model.LogicalType;
+import io.github.aloksingh.parquet.model.ParquetMetadata;
+import io.github.aloksingh.parquet.model.RowColumnGroup;
+import io.github.aloksingh.parquet.model.SchemaDescriptor;
+import io.github.aloksingh.parquet.model.SimpleRowColumnGroup;
+import io.github.aloksingh.parquet.model.Type;
 import java.io.File;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -16,14 +26,6 @@ import java.util.Map;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
-import io.github.aloksingh.parquet.model.ColumnDescriptor;
-import io.github.aloksingh.parquet.model.LogicalColumnDescriptor;
-import io.github.aloksingh.parquet.model.LogicalType;
-import io.github.aloksingh.parquet.model.ParquetMetadata;
-import io.github.aloksingh.parquet.model.RowColumnGroup;
-import io.github.aloksingh.parquet.model.SchemaDescriptor;
-import io.github.aloksingh.parquet.model.SimpleRowColumnGroup;
-import io.github.aloksingh.parquet.model.Type;
 
 /**
  * Test suite for writing MAP logical type columns with ParquetFileWriter.
@@ -197,7 +199,7 @@ class ParquetWriterMapTest {
         "log_schema",
         logicalColumns
     );
-    Path outputFile = tempDir.resolve("roundtrip_map.parquet");
+    Path outputFile = tempDir.resolve("complex_row.parquet");
 
     // Write test data
     List<Map<String, String>> expectedMaps = new ArrayList<>();
@@ -241,6 +243,109 @@ class ParquetWriterMapTest {
       // Verify schema - we expect 3 physical columns (id, key, value)
       SchemaDescriptor readSchema = reader.getSchema();
       assertEquals(9, readSchema.getNumColumns(), "Should have 3 physical columns");
+
+      // Verify we have 2 logical columns (id, item map)
+      assertEquals(8, readSchema.getNumLogicalColumns(), "Should have 8 logical columns");
+
+      // Read rows
+      RowColumnGroupIterator iterator = reader.rowIterator();
+      List<Map<String, String>> actualMaps = new ArrayList<>();
+
+      while (iterator.hasNext()) {
+        RowColumnGroup row = iterator.next();
+        Object mapValue = row.getColumnValue("message");
+
+        if (mapValue == null) {
+          actualMaps.add(null);
+        } else if (mapValue instanceof Map) {
+          @SuppressWarnings("unchecked")
+          Map<String, String> map = (Map<String, String>) mapValue;
+          actualMaps.add(map);
+        } else {
+          fail("Expected Map or null, got: " + mapValue.getClass());
+        }
+      }
+
+      // Verify maps match
+      assertEquals(expectedMaps.size(), actualMaps.size());
+      for (int i = 0; i < expectedMaps.size(); i++) {
+        Map<String, String> expected = expectedMaps.get(i);
+        Map<String, String> actual = actualMaps.get(i);
+
+        if (expected == null) {
+          assertNull(actual, "Row " + i + " should be NULL");
+        } else if (expected.isEmpty()) {
+          assertNotNull(actual, "Row " + i + " should not be NULL");
+          assertTrue(actual.isEmpty(), "Row " + i + " should be empty");
+        } else {
+          assertEquals(expected, actual, "Row " + i + " map mismatch");
+        }
+      }
+    }
+
+    System.out.println("Map round-trip test successful!");
+  }
+
+  void testLocalLogFile() throws Exception{
+    LogicalColumnDescriptor messageCol = SchemaDescriptor.createMapColumn(
+        "message",
+        Type.BYTE_ARRAY,  // String key
+        Type.BYTE_ARRAY,  // String value
+        true,   // map itself is optional
+        true// values can be NULL
+    );
+
+    List<LogicalColumnDescriptor> logicalColumns = Arrays.asList(
+        toLogicalColumn("id", Type.BYTE_ARRAY, 0),
+        toLogicalColumn("application", Type.BYTE_ARRAY, 1),
+        toLogicalColumn("timestamp", Type.INT64, 1),
+        toLogicalColumn("level", Type.BYTE_ARRAY, 1),
+        toLogicalColumn("hostname", Type.BYTE_ARRAY, 1),
+        toLogicalColumn("process", Type.BYTE_ARRAY, 1),
+        toLogicalColumn("message_text", Type.BYTE_ARRAY, 1),
+        messageCol
+    );
+
+    var schema = SchemaDescriptor.fromLogicalColumns(
+        "log_schema",
+        logicalColumns
+    );
+    Path outputFile = new File("/home/alok/work/parquet4j/src/test/data/log_data.parquet").toPath();
+    List<String> jsonLines=
+        Files.readAllLines(new File("/home/alok/work/parquet4j/local/sample.jsonl").toPath());
+    ObjectMapper objectMapper = new ObjectMapper();
+    List<Map> expectedMaps = new ArrayList<>();
+    try (ParquetFileWriter writer = new ParquetFileWriter(outputFile, schema)) {
+      for (String jsonLine : jsonLines) {
+        Map jsonData = objectMapper.readValue(jsonLine, Map.class);
+        if (jsonData != null && !jsonData.isEmpty()) {
+          long ts = System.currentTimeMillis();
+          Object[] row = new Object[schema.getNumLogicalColumns()];
+          int idx = 0;
+          row[idx++] = UUID.randomUUID().toString();
+          row[idx++] = jsonData.getOrDefault("application", "-");
+          row[idx++] = ts;
+          row[idx++] = "DEBUG";
+          row[idx++] = jsonData.getOrDefault("hostname", "host1");
+          row[idx++] = jsonData.getOrDefault("process", "proc1");
+          Map mapMessage = (Map) jsonData.getOrDefault("message", Map.of());
+          row[idx++] = String.valueOf(mapMessage);
+          row[idx++] = mapMessage;
+          writer.addRow(new SimpleRowColumnGroup(schema, row));
+          expectedMaps.add(mapMessage);
+        }
+      }
+    }
+    // Read data back
+    try (SerializedFileReader reader = new SerializedFileReader(outputFile)) {
+      ParquetMetadata metadata = reader.getMetadata();
+
+      // Verify metadata
+      assertEquals(expectedMaps.size(), metadata.fileMetadata().numRows());
+
+      // Verify schema - we expect 3 physical columns (id, key, value)
+      SchemaDescriptor readSchema = reader.getSchema();
+      assertEquals(9, readSchema.getNumColumns(), "Should have 9 physical columns");
 
       // Verify we have 2 logical columns (id, item map)
       assertEquals(8, readSchema.getNumLogicalColumns(), "Should have 8 logical columns");
@@ -406,6 +511,62 @@ class ParquetWriterMapTest {
 
     System.out.println("Multiple rows with maps test successful!");
   }
+
+  @Test
+  void testWriteMapsWithNulls() throws Exception {
+    LogicalColumnDescriptor idCol = new LogicalColumnDescriptor(
+        "id",
+        LogicalType.PRIMITIVE,
+        Type.INT64,
+        new ColumnDescriptor(Type.INT32, new String[] {"id"}, 0, 0, 0)
+    );
+
+    LogicalColumnDescriptor mapCol = SchemaDescriptor.createMapColumn(
+        "item",
+        Type.BYTE_ARRAY,  // String key
+        Type.BYTE_ARRAY,  // String value
+        true,   // map itself is optional
+        true    // values can be NULL
+    );
+
+    SchemaDescriptor schema = SchemaDescriptor.fromLogicalColumns(
+        "maps_table",
+        Arrays.asList(idCol, mapCol)
+    );
+
+    Path outputFile = tempDir.resolve("large_map_with_nulls_java.parquet");
+
+    int numRows = 100000;
+    try (ParquetFileWriter writer = new ParquetFileWriter(outputFile, schema)) {
+      long rowId = 0;
+      for (int i = 0; i < numRows; i++) {
+        Map<String, String> map = new LinkedHashMap<>();
+        map.put("key1", "value"+ (i+1));
+        map.put("key2", "value"+ (i+2));
+        writer.addRow(createMapRow(schema, rowId, map));
+        rowId = rowId + 1;
+        map = new LinkedHashMap<>();
+        map.put("key3", "value"+ (i+1));
+        writer.addRow(createMapRow(schema, rowId, map));
+        rowId = rowId + 1;
+        map = new LinkedHashMap<>();
+        map.put("key4", null);
+        writer.addRow(createMapRow(schema, rowId, map));
+        rowId = rowId + 1;
+        map = new LinkedHashMap<>();
+        writer.addRow(createMapRow(schema, rowId, map));
+        rowId = rowId + 1;
+      }
+    }
+
+    // Read back and verify
+    try (SerializedFileReader reader = new SerializedFileReader(outputFile)) {
+      assertEquals(numRows*4, reader.getTotalRowCount());
+    }
+
+    System.out.println("Multiple rows with maps test successful!");
+  }
+
 
   /**
    * Helper to create a row with map data
