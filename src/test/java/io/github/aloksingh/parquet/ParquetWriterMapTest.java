@@ -199,8 +199,7 @@ class ParquetWriterMapTest {
         "log_schema",
         logicalColumns
     );
-    Path outputFile =
-        tempDir.resolve("/home/alok/work/parquet4j/src/test/data/complex_row.parquet");
+    Path outputFile = tempDir.resolve("complex_row.parquet");
 
     // Write test data
     List<Map<String, String>> expectedMaps = new ArrayList<>();
