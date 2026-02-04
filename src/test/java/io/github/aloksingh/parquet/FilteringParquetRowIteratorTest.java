@@ -1,13 +1,28 @@
 package io.github.aloksingh.parquet;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import io.github.aloksingh.parquet.model.LogicalColumnDescriptor;
 import io.github.aloksingh.parquet.model.RowColumnGroup;
-import io.github.aloksingh.parquet.util.filter.*;
+import io.github.aloksingh.parquet.util.filter.ColumnEqualFilter;
+import io.github.aloksingh.parquet.util.filter.ColumnFilter;
+import io.github.aloksingh.parquet.util.filter.ColumnFilterSet;
+import io.github.aloksingh.parquet.util.filter.ColumnFilters;
+import io.github.aloksingh.parquet.util.filter.ColumnGreaterThanFilter;
+import io.github.aloksingh.parquet.util.filter.ColumnGreaterThanOrEqualFilter;
+import io.github.aloksingh.parquet.util.filter.ColumnIsNotNullFilter;
+import io.github.aloksingh.parquet.util.filter.ColumnIsNullFilter;
+import io.github.aloksingh.parquet.util.filter.ColumnLessThanFilter;
+import io.github.aloksingh.parquet.util.filter.ColumnLessThanOrEqualFilter;
+import io.github.aloksingh.parquet.util.filter.ColumnNotEqualFilter;
+import io.github.aloksingh.parquet.util.filter.ColumnPrefixFilter;
+import io.github.aloksingh.parquet.util.filter.FilterJoinType;
+import io.github.aloksingh.parquet.util.filter.FilterOperator;
 import java.io.IOException;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.NoSuchElementException;
 import org.junit.jupiter.api.Test;
 
@@ -29,8 +44,9 @@ class FilteringParquetRowIteratorTest {
     try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
       // Use a simple equality filter for value 4 (from the first row we know id=4)
       ColumnFilter filter = new ColumnEqualFilter(4);
+      ParquetRowIterator baseIterator = new ParquetRowIterator(reader, false);
       FilteringParquetRowIterator iterator =
-          new FilteringParquetRowIterator(reader, filter, false);
+          new FilteringParquetRowIterator(baseIterator, filter);
 
       int count = 0;
       while (iterator.hasNext() && count < 10) {
@@ -63,9 +79,10 @@ class FilteringParquetRowIteratorTest {
     try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
       // Filter for id > 5 (or any reasonable threshold)
       ColumnFilter filter = new ColumnGreaterThanFilter(5);
+      ParquetRowIterator baseIterator = new ParquetRowIterator(reader, false);
 
       try (FilteringParquetRowIterator iterator =
-               new FilteringParquetRowIterator(reader, filter, false)) {
+               new FilteringParquetRowIterator(baseIterator, filter)) {
 
         int count = 0;
         while (iterator.hasNext()) {
@@ -103,9 +120,10 @@ class FilteringParquetRowIteratorTest {
 
     try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
       ColumnFilter filter = new ColumnLessThanFilter(3);
+      ParquetRowIterator baseIterator = new ParquetRowIterator(reader, false);
 
       try (FilteringParquetRowIterator iterator =
-               new FilteringParquetRowIterator(reader, filter, false)) {
+               new FilteringParquetRowIterator(baseIterator, filter)) {
 
         int count = 0;
         while (iterator.hasNext()) {
@@ -127,7 +145,7 @@ class FilteringParquetRowIteratorTest {
           assertTrue(hasValueLessThan3, "Row should have at least one value < 3");
           count++;
         }
-
+        assertEquals(8, count, "Should find 8 rows");
         System.out.println("Found " + count + " rows with values < 3");
       }
     }
@@ -143,8 +161,9 @@ class FilteringParquetRowIteratorTest {
     try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
       // Filter for values != null (simpler test)
       ColumnFilter filter = new ColumnNotEqualFilter(Integer.MAX_VALUE);
+      ParquetRowIterator baseIterator = new ParquetRowIterator(reader, false);
       FilteringParquetRowIterator iterator =
-          new FilteringParquetRowIterator(reader, filter, false);
+          new FilteringParquetRowIterator(baseIterator, filter);
 
       int count = 0;
       while (iterator.hasNext() && count < 10) {
@@ -172,9 +191,10 @@ class FilteringParquetRowIteratorTest {
           new ColumnGreaterThanFilter(2),
           new ColumnLessThanFilter(8)
       };
+      ParquetRowIterator baseIterator = new ParquetRowIterator(reader, false);
 
       try (FilteringParquetRowIterator iterator =
-               new FilteringParquetRowIterator(reader, filters, false)) {
+               new FilteringParquetRowIterator(baseIterator, filters)) {
 
         int count = 0;
         while (iterator.hasNext()) {
@@ -216,9 +236,10 @@ class FilteringParquetRowIteratorTest {
           new ColumnGreaterThanOrEqualFilter(3),
           new ColumnLessThanOrEqualFilter(6)
       );
+      ParquetRowIterator baseIterator = new ParquetRowIterator(reader, false);
 
       try (FilteringParquetRowIterator iterator =
-               new FilteringParquetRowIterator(reader, filterSet, false)) {
+               new FilteringParquetRowIterator(baseIterator, filterSet)) {
 
         int count = 0;
         while (iterator.hasNext()) {
@@ -246,9 +267,10 @@ class FilteringParquetRowIteratorTest {
           new ColumnEqualFilter(0),
           new ColumnEqualFilter(7)
       );
+      ParquetRowIterator baseIterator = new ParquetRowIterator(reader, false);
 
       try (FilteringParquetRowIterator iterator =
-               new FilteringParquetRowIterator(reader, filterSet, false)) {
+               new FilteringParquetRowIterator(baseIterator, filterSet)) {
 
         int count = 0;
         while (iterator.hasNext()) {
@@ -283,9 +305,10 @@ class FilteringParquetRowIteratorTest {
     try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
       // Filter for strings starting with a common prefix
       ColumnFilter filter = new ColumnPrefixFilter("a");
+      ParquetRowIterator baseIterator = new ParquetRowIterator(reader, false);
 
       try (FilteringParquetRowIterator iterator =
-               new FilteringParquetRowIterator(reader, filter, false)) {
+               new FilteringParquetRowIterator(baseIterator, filter)) {
 
         int count = 0;
         while (iterator.hasNext()) {
@@ -320,9 +343,10 @@ class FilteringParquetRowIteratorTest {
     try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
       // Filter for impossibly large value
       ColumnFilter filter = new ColumnGreaterThanFilter(Integer.MAX_VALUE);
+      ParquetRowIterator baseIterator = new ParquetRowIterator(reader, false);
 
       try (FilteringParquetRowIterator iterator =
-               new FilteringParquetRowIterator(reader, filter, false)) {
+               new FilteringParquetRowIterator(baseIterator, filter)) {
 
         assertFalse(iterator.hasNext(), "Should have no matching rows");
 
@@ -341,9 +365,10 @@ class FilteringParquetRowIteratorTest {
 
     try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
       ColumnFilter filter = new ColumnIsNullFilter();
+      ParquetRowIterator baseIterator = new ParquetRowIterator(reader, false);
 
       try (FilteringParquetRowIterator iterator =
-               new FilteringParquetRowIterator(reader, filter, false)) {
+               new FilteringParquetRowIterator(baseIterator, filter)) {
 
         int count = 0;
         while (iterator.hasNext()) {
@@ -376,8 +401,9 @@ class FilteringParquetRowIteratorTest {
 
     try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
       ColumnFilter filter = new ColumnIsNotNullFilter();
+      ParquetRowIterator baseIterator = new ParquetRowIterator(reader, false);
       FilteringParquetRowIterator iterator =
-          new FilteringParquetRowIterator(reader, filter, false);
+          new FilteringParquetRowIterator(baseIterator, filter);
 
       int count = 0;
       while (iterator.hasNext() && count < 10) {
@@ -410,9 +436,10 @@ class FilteringParquetRowIteratorTest {
 
     try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
       ColumnFilter filter = new ColumnGreaterThanFilter(0);
+      ParquetRowIterator baseIterator = new ParquetRowIterator(reader, false);
 
       try (FilteringParquetRowIterator iterator =
-               new FilteringParquetRowIterator(reader, filter, false)) {
+               new FilteringParquetRowIterator(baseIterator, filter)) {
 
         if (iterator.hasNext()) {
           // Call hasNext multiple times
@@ -449,8 +476,9 @@ class FilteringParquetRowIteratorTest {
     ColumnFilter filter = new ColumnIsNotNullFilter();
     int filteredRows = 0;
     try (SerializedFileReader reader = new SerializedFileReader(filePath);
+         ParquetRowIterator baseIterator = new ParquetRowIterator(reader, false);
          FilteringParquetRowIterator iterator =
-             new FilteringParquetRowIterator(reader, filter, false)) {
+             new FilteringParquetRowIterator(baseIterator, filter)) {
       while (iterator.hasNext()) {
         RowColumnGroup row = iterator.next();
         assertNotNull(row);
@@ -462,8 +490,9 @@ class FilteringParquetRowIteratorTest {
 
     // After iteration, hasNext should return false
     try (SerializedFileReader reader = new SerializedFileReader(filePath);
+         ParquetRowIterator baseIterator = new ParquetRowIterator(reader, false);
          FilteringParquetRowIterator iterator =
-             new FilteringParquetRowIterator(reader, filter, false)) {
+             new FilteringParquetRowIterator(baseIterator, filter)) {
       while (iterator.hasNext()) {
         iterator.next();
       }
@@ -482,8 +511,9 @@ class FilteringParquetRowIteratorTest {
     // Test with empty filter array - should not crash
     ColumnFilter[] emptyFilters = new ColumnFilter[0];
     try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
+      ParquetRowIterator baseIterator = new ParquetRowIterator(reader, false);
       FilteringParquetRowIterator iterator =
-          new FilteringParquetRowIterator(reader, emptyFilters, false);
+          new FilteringParquetRowIterator(baseIterator, emptyFilters);
 
       int count = 0;
       while (iterator.hasNext() && count < 10) {
@@ -507,9 +537,10 @@ class FilteringParquetRowIteratorTest {
     try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
       // Create a generic filter
       ColumnFilter filter = new ColumnIsNotNullFilter();
+      ParquetRowIterator baseIterator = new ParquetRowIterator(reader, false);
 
       try (FilteringParquetRowIterator iterator =
-               new FilteringParquetRowIterator(reader, filter, false)) {
+               new FilteringParquetRowIterator(baseIterator, filter)) {
 
         int count = 0;
         while (iterator.hasNext()) {
@@ -540,9 +571,10 @@ class FilteringParquetRowIteratorTest {
       System.out.println("File has " + reader.getNumRowGroups() + " row groups");
 
       ColumnFilter filter = new ColumnGreaterThanFilter(5);
+      ParquetRowIterator baseIterator = new ParquetRowIterator(reader, false);
 
       try (FilteringParquetRowIterator iterator =
-               new FilteringParquetRowIterator(reader, filter, false)) {
+               new FilteringParquetRowIterator(baseIterator, filter)) {
 
         int count = 0;
         while (iterator.hasNext()) {
@@ -569,9 +601,10 @@ class FilteringParquetRowIteratorTest {
 
     try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
       ColumnFilter filter = new ColumnIsNotNullFilter();
+      ParquetRowIterator baseIterator = new ParquetRowIterator(reader, false);
 
       try (FilteringParquetRowIterator iterator =
-               new FilteringParquetRowIterator(reader, filter)) {
+               new FilteringParquetRowIterator(baseIterator, filter)) {
 
         assertNotNull(iterator.getSchema());
         assertTrue(iterator.getSchema().getNumLogicalColumns() > 0);
@@ -588,9 +621,10 @@ class FilteringParquetRowIteratorTest {
 
     try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
       ColumnFilter filter = new ColumnIsNotNullFilter();
+      ParquetRowIterator baseIterator = new ParquetRowIterator(reader, false);
 
       try (FilteringParquetRowIterator iterator =
-               new FilteringParquetRowIterator(reader, filter)) {
+               new FilteringParquetRowIterator(baseIterator, filter)) {
 
         long totalRowCount = iterator.getTotalRowCount();
         assertTrue(totalRowCount > 0, "Total row count should be positive");
@@ -608,8 +642,9 @@ class FilteringParquetRowIteratorTest {
     SerializedFileReader reader = new SerializedFileReader(filePath);
 
     ColumnFilter filter = new ColumnIsNotNullFilter();
+    ParquetRowIterator baseIterator = new ParquetRowIterator(reader, true);
     FilteringParquetRowIterator iterator =
-        new FilteringParquetRowIterator(reader, filter, true);
+        new FilteringParquetRowIterator(baseIterator, filter);
 
     // Read one row
     if (iterator.hasNext()) {
@@ -632,9 +667,10 @@ class FilteringParquetRowIteratorTest {
 
       // Create filter using factory
       ColumnFilter filter = columnFilters.createFilter(FilterOperator.gt, 3);
+      ParquetRowIterator baseIterator = new ParquetRowIterator(reader, false);
 
       try (FilteringParquetRowIterator iterator =
-               new FilteringParquetRowIterator(reader, filter, false)) {
+               new FilteringParquetRowIterator(baseIterator, filter)) {
 
         int count = 0;
         while (iterator.hasNext()) {

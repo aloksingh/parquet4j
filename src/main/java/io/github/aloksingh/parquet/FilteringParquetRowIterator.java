@@ -9,7 +9,7 @@ import java.util.NoSuchElementException;
 /**
  * A filtering iterator for Parquet files that applies column filters during iteration.
  *
- * <p>This iterator extends {@link ParquetRowIterator} and filters rows based on one or more
+ * <p>This iterator wraps a {@link ParquetRowIterator} and filters rows based on one or more
  * {@link ColumnFilter} predicates. Only rows that match ALL specified filters are returned.
  * The filtering is applied lazily during iteration for memory efficiency.
  *
@@ -24,8 +24,9 @@ import java.util.NoSuchElementException;
  * ColumnFilterSet filterSet = new ColumnFilterSet(FilterJoinType.All,
  *     new ColumnNameFilter("age", ageFilter));
  *
+ * ParquetRowIterator baseIterator = new ParquetRowIterator(fileReader);
  * try (FilteringParquetRowIterator iterator =
- *         new FilteringParquetRowIterator(fileReader, filterSet)) {
+ *         new FilteringParquetRowIterator(baseIterator, filterSet)) {
  *   while (iterator.hasNext()) {
  *     RowColumnGroup row = iterator.next();
  *     // Process filtered row...
@@ -37,7 +38,8 @@ import java.util.NoSuchElementException;
  * @see ColumnFilter
  * @see io.github.aloksingh.parquet.util.filter.ColumnFilterSet
  */
-public class FilteringParquetRowIterator extends ParquetRowIterator {
+public class FilteringParquetRowIterator implements RowColumnGroupIterator, AutoCloseable {
+  private final ParquetRowIterator delegate;
   private final ColumnFilter[] filters;
   private RowColumnGroup nextMatchingRow;
   private boolean hasSearchedForNext;
@@ -45,14 +47,11 @@ public class FilteringParquetRowIterator extends ParquetRowIterator {
   /**
    * Create a filtering iterator with a single column filter.
    *
-   * @param fileReader      The file reader to iterate over
-   * @param filter          The column filter to apply
-   * @param closeFileReader Whether to close the file reader when done
+   * @param delegate The base iterator to filter
+   * @param filter   The column filter to apply
    */
-  public FilteringParquetRowIterator(SerializedFileReader fileReader,
-                                     ColumnFilter filter,
-                                     boolean closeFileReader) {
-    super(fileReader, closeFileReader);
+  public FilteringParquetRowIterator(ParquetRowIterator delegate, ColumnFilter filter) {
+    this.delegate = delegate;
     this.filters = new ColumnFilter[]{filter};
     this.nextMatchingRow = null;
     this.hasSearchedForNext = false;
@@ -62,40 +61,14 @@ public class FilteringParquetRowIterator extends ParquetRowIterator {
    * Create a filtering iterator with multiple column filters.
    * A row must match ALL filters to be included in the results.
    *
-   * @param fileReader      The file reader to iterate over
-   * @param filters         The column filters to apply (AND semantics)
-   * @param closeFileReader Whether to close the file reader when done
+   * @param delegate The base iterator to filter
+   * @param filters  The column filters to apply (AND semantics)
    */
-  public FilteringParquetRowIterator(SerializedFileReader fileReader,
-                                     ColumnFilter[] filters,
-                                     boolean closeFileReader) {
-    super(fileReader, closeFileReader);
+  public FilteringParquetRowIterator(ParquetRowIterator delegate, ColumnFilter[] filters) {
+    this.delegate = delegate;
     this.filters = filters != null ? filters : new ColumnFilter[0];
     this.nextMatchingRow = null;
     this.hasSearchedForNext = false;
-  }
-
-  /**
-   * Create a filtering iterator with a single column filter.
-   * The file reader will be closed automatically when {@link #close()} is called.
-   *
-   * @param fileReader The file reader to iterate over
-   * @param filter     The column filter to apply
-   */
-  public FilteringParquetRowIterator(SerializedFileReader fileReader, ColumnFilter filter) {
-    this(fileReader, filter, true);
-  }
-
-  /**
-   * Create a filtering iterator with multiple column filters.
-   * The file reader will be closed automatically when {@link #close()} is called.
-   * A row must match ALL filters to be included in the results.
-   *
-   * @param fileReader The file reader to iterate over
-   * @param filters    The column filters to apply (AND semantics)
-   */
-  public FilteringParquetRowIterator(SerializedFileReader fileReader, ColumnFilter[] filters) {
-    this(fileReader, filters, true);
   }
 
   /**
@@ -153,15 +126,15 @@ public class FilteringParquetRowIterator extends ParquetRowIterator {
 
     // Iterate through rows until we find one that matches
     try {
-      while (super.hasNext()) {
+      while (delegate.hasNext()) {
         try {
-          RowColumnGroup row = super.next();
+          RowColumnGroup row = delegate.next();
           if (matchesFilters(row)) {
             nextMatchingRow = row;
             break;
           }
         } catch (NoSuchElementException e) {
-          // Parent iterator exhausted unexpectedly, stop searching
+          // Delegate iterator exhausted unexpectedly, stop searching
           break;
         }
       }
@@ -214,5 +187,33 @@ public class FilteringParquetRowIterator extends ParquetRowIterator {
       count++;
     }
     return count;
+  }
+
+  /**
+   * Close the underlying iterator.
+   *
+   * @throws IOException If closing the iterator fails
+   */
+  @Override
+  public void close() throws IOException {
+    delegate.close();
+  }
+
+  /**
+   * Get the total number of rows in the underlying data (before filtering).
+   *
+   * @return The total row count from the file metadata
+   */
+  public long getTotalRowCount() {
+    return delegate.getTotalRowCount();
+  }
+
+  /**
+   * Get the schema for the rows being iterated.
+   *
+   * @return The schema descriptor containing all logical column definitions
+   */
+  public io.github.aloksingh.parquet.model.SchemaDescriptor getSchema() {
+    return delegate.getSchema();
   }
 }
