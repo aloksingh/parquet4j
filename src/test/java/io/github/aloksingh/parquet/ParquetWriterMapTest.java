@@ -7,6 +7,14 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.github.aloksingh.parquet.model.ColumnDescriptor;
+import io.github.aloksingh.parquet.model.LogicalColumnDescriptor;
+import io.github.aloksingh.parquet.model.LogicalType;
+import io.github.aloksingh.parquet.model.ParquetMetadata;
+import io.github.aloksingh.parquet.model.RowColumnGroup;
+import io.github.aloksingh.parquet.model.SchemaDescriptor;
+import io.github.aloksingh.parquet.model.SimpleRowColumnGroup;
+import io.github.aloksingh.parquet.model.Type;
 import java.io.File;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -18,14 +26,6 @@ import java.util.Map;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
-import io.github.aloksingh.parquet.model.ColumnDescriptor;
-import io.github.aloksingh.parquet.model.LogicalColumnDescriptor;
-import io.github.aloksingh.parquet.model.LogicalType;
-import io.github.aloksingh.parquet.model.ParquetMetadata;
-import io.github.aloksingh.parquet.model.RowColumnGroup;
-import io.github.aloksingh.parquet.model.SchemaDescriptor;
-import io.github.aloksingh.parquet.model.SimpleRowColumnGroup;
-import io.github.aloksingh.parquet.model.Type;
 
 /**
  * Test suite for writing MAP logical type columns with ParquetFileWriter.
@@ -199,7 +199,8 @@ class ParquetWriterMapTest {
         "log_schema",
         logicalColumns
     );
-    Path outputFile = new File("/home/alok/work/parquet4j/src/test/data/complex_row.parquet").toPath();
+    Path outputFile =
+        tempDir.resolve("/home/alok/work/parquet4j/src/test/data/complex_row.parquet");
 
     // Write test data
     List<Map<String, String>> expectedMaps = new ArrayList<>();
