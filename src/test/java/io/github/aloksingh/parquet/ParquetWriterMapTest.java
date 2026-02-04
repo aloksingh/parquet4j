@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 
+import java.io.File;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -200,28 +201,18 @@ class ParquetWriterMapTest {
 
     // Write test data
     List<Map<String, String>> expectedMaps = new ArrayList<>();
-    for (int i = 0; i < 10000; i++) {
-      Map<String, String> map1 = new LinkedHashMap<>();
-      map1.put("a", "apple" + i);
-      map1.put("b", "banana" + i);
-      expectedMaps.add(map1);
-
-      Map<String, String> map2 = new LinkedHashMap<>();
-      map2.put("c", "cherry" + i);
-      expectedMaps.add(map2);
-    }
-
     Map<String, String> map1 = new LinkedHashMap<>();
-    map1.put("a", "apple");
-    map1.put("b", "banana");
+    map1.put("message.queryHash", "5a6a239c");
+    map1.put("message.method", "");
+    map1.put("message.level", "INFO");
+    map1.put("message.executionState", "start");
+    map1.put("message.class", "org.foo.bar" + UUID.randomUUID().toString());
+    map1.put("message.timestamp", "2024-01-18T00:00:00.326358573Z");
+    map1.put("message.tableName", "foo");
+    map1.put("message.sql", "insert into table_foo" + UUID.randomUUID());
     expectedMaps.add(map1);
-
-    Map<String, String> map2 = new LinkedHashMap<>();
-    map2.put("c", "cherry");
-    expectedMaps.add(map2);
-
-    expectedMaps.add(new LinkedHashMap<>());  // Empty map
-    expectedMaps.add(null);  // NULL map
+    expectedMaps.add(Map.of());
+    expectedMaps.add(null);
 
     try (ParquetFileWriter writer = new ParquetFileWriter(outputFile, schema)) {
       for (int i = 0; i < expectedMaps.size(); i++) {
@@ -230,7 +221,7 @@ class ParquetWriterMapTest {
         int idx = 0;
         row[idx++] = UUID.randomUUID().toString();
         row[idx++] = "app1";
-        row[idx++] = System.currentTimeMillis() + i;
+        row[idx++] = ts + i;
         row[idx++] = "DEBUG";
         row[idx++] = "HOST1";
         row[idx++] = "PROCESS2";

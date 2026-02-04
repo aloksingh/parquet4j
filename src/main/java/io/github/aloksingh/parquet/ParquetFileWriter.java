@@ -333,7 +333,12 @@ public class ParquetFileWriter implements ParquetWriter {
   private List<ColumnChunk> writeMapColumnChunks(LogicalColumnDescriptor logicalCol,
                                                  List<RowColumnGroup> rows) throws IOException {
     MapMetadata mapMeta = logicalCol.getMapMetadata();
-    MapColumnWriter mapWriter = new MapColumnWriter(mapMeta.keyType(), mapMeta.valueType());
+    MapColumnWriter mapWriter = new MapColumnWriter(
+        mapMeta.keyType(),
+        mapMeta.valueType(),
+        mapMeta.keyDescriptor().maxDefinitionLevel(),
+        mapMeta.valueDescriptor().maxDefinitionLevel()
+    );
 
     // Extract map values from rows
     List<Map<?, ?>> maps = new ArrayList<>();

@@ -24,16 +24,22 @@ public class MapColumnWriter {
 
   private final Type keyType;
   private final Type valueType;
+  private final int keyMaxDefLevel;
+  private final int valueMaxDefLevel;
 
   /**
    * Create a map column writer for specific key/value types.
    *
    * @param keyType the type of the map keys
    * @param valueType the type of the map values
+   * @param keyMaxDefLevel the maximum definition level for keys
+   * @param valueMaxDefLevel the maximum definition level for values
    */
-  public MapColumnWriter(Type keyType, Type valueType) {
+  public MapColumnWriter(Type keyType, Type valueType, int keyMaxDefLevel, int valueMaxDefLevel) {
     this.keyType = keyType;
     this.valueType = valueType;
+    this.keyMaxDefLevel = keyMaxDefLevel;
+    this.valueMaxDefLevel = valueMaxDefLevel;
   }
 
   /**
@@ -120,14 +126,14 @@ public class MapColumnWriter {
   /**
    * Calculate definition levels for map keys.
    * <p>
-   * Definition level meanings (max def level = 2):
+   * Definition level meanings depend on whether the map itself is optional:
    * <ul>
-   * <li>0 = Map is NULL</li>
+   * <li>0 = Map is NULL (only if map is optional)</li>
    * <li>1 = Map is empty (defined but has no entries)</li>
-   * <li>2 = Key is present (keys are always required/non-null)</li>
+   * <li>keyMaxDefLevel = Key is present (keys are always required/non-null)</li>
    * </ul>
    * <p>
-   * Example:
+   * Example (with optional map):
    * <pre>
    * Row 0: {a: 1, b: 2}  -&gt; levels: [2, 2]
    * Row 1: {c: 3}        -&gt; levels: [2]
@@ -141,15 +147,25 @@ public class MapColumnWriter {
   public List<Integer> calculateKeyDefinitionLevels(List<Map<?, ?>> maps) {
     List<Integer> levels = new ArrayList<>();
 
+    // Definition levels for MAP keys:
+    // - 0: map is NULL (only if map is optional, i.e., keyMaxDefLevel >= 2)
+    // - mapLevel: map exists but is empty (this is keyMaxDefLevel - 1)
+    // - keyMaxDefLevel: key is present (keys are always required in key_value group)
+
+    // Determine the "map exists" level based on whether the map itself can be null
+    // If keyMaxDefLevel == 2: map is optional, so 0=NULL, 1=empty, 2=present
+    // If keyMaxDefLevel == 1: map is required, so 0=empty, 1=present
+    int mapExistsLevel = keyMaxDefLevel - 1;
+
     for (Map<?, ?> map : maps) {
       if (map == null) {
         levels.add(0);  // NULL map
       } else if (map.isEmpty()) {
-        levels.add(1);  // Empty map
+        levels.add(mapExistsLevel);  // Empty map (map exists but no entries)
       } else {
-        // Each key is present (level 2)
+        // Each key is present (at max definition level)
         for (int i = 0; i < map.size(); i++) {
-          levels.add(2);
+          levels.add(keyMaxDefLevel);
         }
       }
     }
@@ -160,15 +176,15 @@ public class MapColumnWriter {
   /**
    * Calculate definition levels for map values.
    * <p>
-   * Definition level meanings (max def level = 3):
+   * Definition level meanings depend on whether the map and values are optional:
    * <ul>
-   * <li>0 = Map is NULL</li>
-   * <li>1 = Map is empty (defined but has no entries)</li>
-   * <li>2 = Entry exists but value is NULL</li>
-   * <li>3 = Value is present (non-null)</li>
+   * <li>0 = Map is NULL (only if map is optional)</li>
+   * <li>emptyLevel = Map is empty (defined but has no entries)</li>
+   * <li>valueMaxDefLevel-1 = Entry exists but value is NULL (only if values are optional)</li>
+   * <li>valueMaxDefLevel = Value is present (non-null)</li>
    * </ul>
    * <p>
-   * Example:
+   * Example (with optional map and optional values):
    * <pre>
    * Row 0: {a: 1, b: null}  -&gt; levels: [3, 2]
    * Row 1: {c: 3}           -&gt; levels: [3]
@@ -182,15 +198,40 @@ public class MapColumnWriter {
   public List<Integer> calculateValueDefinitionLevels(List<Map<?, ?>> maps) {
     List<Integer> levels = new ArrayList<>();
 
+    // Definition levels for MAP values:
+    // Values are optional if valueMaxDefLevel > keyMaxDefLevel
+    //
+    // Example 1: optional map, optional values (keyMax=2, valueMax=3):
+    //   - 0: map is NULL
+    //   - 1: map exists but is empty
+    //   - 2: entry exists, but value is NULL
+    //   - 3: value is present
+    //
+    // Example 2: optional map, required values (keyMax=2, valueMax=2):
+    //   - 0: map is NULL
+    //   - 1: map exists but is empty
+    //   - 2: value is present (values can't be NULL)
+    //
+    // The "map exists but is empty" level is always keyMaxDefLevel - 1
+    // This is the same level for both keys and values
+    int mapExistsLevel = keyMaxDefLevel - 1;
+
+    // Values are optional if there's an extra level beyond keys
+    boolean valuesOptional = (valueMaxDefLevel > keyMaxDefLevel);
+
     for (Map<?, ?> map : maps) {
       if (map == null) {
         levels.add(0);  // NULL map
       } else if (map.isEmpty()) {
-        levels.add(1);  // Empty map
+        levels.add(mapExistsLevel);  // Empty map (must match key column!)
       } else {
         // Check each value
         for (Map.Entry<?, ?> entry : map.entrySet()) {
-          levels.add(entry.getValue() == null ? 2 : 3);
+          if (entry.getValue() == null && valuesOptional) {
+            levels.add(valueMaxDefLevel - 1);  // NULL value (entry exists, value is NULL)
+          } else {
+            levels.add(valueMaxDefLevel);  // Present value
+          }
         }
       }
     }
