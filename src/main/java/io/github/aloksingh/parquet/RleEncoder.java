@@ -50,6 +50,9 @@ public class RleEncoder {
 
   /**
    * Encode a list of values using RLE/Bit-Packing Hybrid encoding.
+   * <p>
+   * For Data Page V1: Returns [4-byte length][encoded data]
+   * The 4-byte length is required by the Parquet spec for Data Page V1 format.
    *
    * @param values Values to encode
    * @return Encoded bytes with 4-byte little-endian length prefix
@@ -81,8 +84,13 @@ public class RleEncoder {
         // Only use bit-packing if we have at least 8 values
         // Otherwise, use RLE for small runs to avoid padding issues
         if (bitPackRunLength >= 8) {
-          writeBitPackedRun(values, i, bitPackRunLength);
-          i += bitPackRunLength;
+          // IMPORTANT: Round down to multiple of 8 to avoid padding issues
+          // Bit-packing always encodes in groups of 8, so we should only encode
+          // complete groups. Otherwise, padding will consume values that should
+          // be part of the next run.
+          int roundedLength = (bitPackRunLength / 8) * 8;
+          writeBitPackedRun(values, i, roundedLength);
+          i += roundedLength;
         } else {
           // Small run: encode each value individually with RLE
           writeRleRun(values.get(i), rleRunLength);
@@ -92,6 +100,7 @@ public class RleEncoder {
     }
 
     // Prepend the length as a 4-byte little-endian integer
+    // This is required by Parquet Data Page V1 format
     byte[] encodedData = buffer.toByteArray();
     ByteBuffer result = ByteBuffer.allocate(4 + encodedData.length);
     result.order(ByteOrder.LITTLE_ENDIAN);
