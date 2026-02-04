@@ -286,9 +286,7 @@ class ParquetWriterMapTest {
     System.out.println("Map round-trip test successful!");
   }
 
-
-  @Test
-  void testLogFile() throws Exception{
+  void testLocalLogFile() throws Exception{
     LogicalColumnDescriptor messageCol = SchemaDescriptor.createMapColumn(
         "message",
         Type.BYTE_ARRAY,  // String key
