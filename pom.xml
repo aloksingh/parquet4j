@@ -4,7 +4,7 @@
 
     <groupId>io.github.aloksingh</groupId>
     <artifactId>parquet4j</artifactId>
-    <version>0.1.6-SNAPSHOT</version>
+    <version>0.1.6</version>
 
     <name>parquet4j</name>
     <description>A minimal library to read and write Parquet files.</description>
