@@ -3,14 +3,14 @@ package io.github.aloksingh.parquet;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 
-import java.io.IOException;
-import java.math.BigDecimal;
-import java.util.List;
-import org.junit.jupiter.api.Test;
 import io.github.aloksingh.parquet.model.ColumnDescriptor;
 import io.github.aloksingh.parquet.model.ParquetMetadata;
 import io.github.aloksingh.parquet.model.SchemaDescriptor;
 import io.github.aloksingh.parquet.model.Type;
+import java.io.IOException;
+import java.math.BigDecimal;
+import java.util.List;
+import org.junit.jupiter.api.Test;
 
 /**
  * Tests for reading INT64-encoded DECIMAL data.
@@ -33,7 +33,7 @@ class Int64DecimalTest {
   void testInt64DecimalFileStructure() throws IOException {
     String filePath = "src/test/data/int64_decimal.parquet";
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
       ParquetMetadata metadata = reader.getMetadata();
       SchemaDescriptor schema = reader.getSchema();
 
@@ -52,8 +52,8 @@ class Int64DecimalTest {
   void testInt64DecimalValues() throws IOException {
     String filePath = "src/test/data/int64_decimal.parquet";
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
-      SerializedFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
+      ParquetFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
 
       // Read INT64 values (unscaled)
       List<Long> unscaledValues = rowGroup.readColumn(0).decodeAsInt64();
@@ -79,8 +79,8 @@ class Int64DecimalTest {
   void testInt64DecimalConversion() throws IOException {
     String filePath = "src/test/data/int64_decimal.parquet";
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
-      SerializedFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
+      ParquetFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
 
       // Read INT64 values
       List<Long> unscaledValues = rowGroup.readColumn(0).decodeAsInt64();
@@ -107,8 +107,8 @@ class Int64DecimalTest {
   void testInt64DecimalFirstTenValues() throws IOException {
     String filePath = "src/test/data/int64_decimal.parquet";
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
-      SerializedFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
+      ParquetFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
       List<Long> unscaledValues = rowGroup.readColumn(0).decodeAsInt64();
 
       int scale = 2;
@@ -135,8 +135,8 @@ class Int64DecimalTest {
   void testInt64DecimalLastFiveValues() throws IOException {
     String filePath = "src/test/data/int64_decimal.parquet";
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
-      SerializedFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
+      ParquetFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
       List<Long> unscaledValues = rowGroup.readColumn(0).decodeAsInt64();
 
       int scale = 2;
@@ -165,8 +165,8 @@ class Int64DecimalTest {
   void testInt64DecimalNoNulls() throws IOException {
     String filePath = "src/test/data/int64_decimal.parquet";
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
-      SerializedFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
+      ParquetFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
       List<Long> values = rowGroup.readColumn(0).decodeAsInt64();
 
       // Verify no null values
@@ -180,8 +180,8 @@ class Int64DecimalTest {
   void testInt64DecimalScaleCalculation() throws IOException {
     String filePath = "src/test/data/int64_decimal.parquet";
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
-      SerializedFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
+      ParquetFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
       List<Long> unscaledValues = rowGroup.readColumn(0).decodeAsInt64();
 
       // DECIMAL(10, 2) means scale = 2

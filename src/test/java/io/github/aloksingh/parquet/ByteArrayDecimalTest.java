@@ -3,16 +3,16 @@ package io.github.aloksingh.parquet;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 
-import java.io.IOException;
-import java.math.BigDecimal;
-import java.math.BigInteger;
-import java.util.List;
-import org.junit.jupiter.api.Test;
 import io.github.aloksingh.parquet.model.ColumnDescriptor;
 import io.github.aloksingh.parquet.model.ColumnValues;
 import io.github.aloksingh.parquet.model.ParquetMetadata;
 import io.github.aloksingh.parquet.model.SchemaDescriptor;
 import io.github.aloksingh.parquet.model.Type;
+import java.io.IOException;
+import java.math.BigDecimal;
+import java.math.BigInteger;
+import java.util.List;
+import org.junit.jupiter.api.Test;
 
 /**
  * Tests for reading BYTE_ARRAY DECIMAL type from Parquet files
@@ -33,7 +33,7 @@ class ByteArrayDecimalTest {
   void testReadByteArrayDecimalMetadata() throws IOException {
     String filePath = TEST_DATA_DIR + "byte_array_decimal.parquet";
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
       // Verify file metadata
       ParquetMetadata metadata = reader.getMetadata();
       assertNotNull(metadata);
@@ -59,8 +59,8 @@ class ByteArrayDecimalTest {
   void testReadByteArrayDecimalValues() throws IOException {
     String filePath = TEST_DATA_DIR + "byte_array_decimal.parquet";
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
-      SerializedFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
+      ParquetFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
 
       // Read the decimal column as byte arrays
       ColumnValues values = rowGroup.readColumn(0);
@@ -108,8 +108,8 @@ class ByteArrayDecimalTest {
   void testConvertByteArrayToDecimal() throws IOException {
     String filePath = TEST_DATA_DIR + "byte_array_decimal.parquet";
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
-      SerializedFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
+      ParquetFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
 
       // Read the decimal column as byte arrays
       ColumnValues values = rowGroup.readColumn(0);
@@ -148,8 +148,8 @@ class ByteArrayDecimalTest {
   void testDecimalValueRange() throws IOException {
     String filePath = TEST_DATA_DIR + "byte_array_decimal.parquet";
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
-      SerializedFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
+      ParquetFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
       ColumnValues values = rowGroup.readColumn(0);
       List<byte[]> byteArrayValues = values.decodeAsByteArray();
 

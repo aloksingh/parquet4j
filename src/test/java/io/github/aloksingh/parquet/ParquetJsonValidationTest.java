@@ -9,6 +9,10 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import io.github.aloksingh.parquet.model.ColumnDescriptor;
+import io.github.aloksingh.parquet.model.RowColumnGroup;
+import io.github.aloksingh.parquet.model.SchemaDescriptor;
+import io.github.aloksingh.parquet.model.Type;
 import java.io.FileReader;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -23,10 +27,6 @@ import java.util.Random;
 import java.util.stream.Stream;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
-import io.github.aloksingh.parquet.model.ColumnDescriptor;
-import io.github.aloksingh.parquet.model.RowColumnGroup;
-import io.github.aloksingh.parquet.model.SchemaDescriptor;
-import io.github.aloksingh.parquet.model.Type;
 
 /**
  * Validates Java Parquet reader against exported JSON data.
@@ -78,7 +78,7 @@ public class ParquetJsonValidationTest {
     SchemaDescriptor schema = null;
     boolean readSucceeded = false;
 
-    try (SerializedFileReader parquetReader = new SerializedFileReader(testCase.parquetPath)) {
+    try (ParquetFileReader parquetReader = new ParquetFileReader(testCase.parquetPath)) {
       RowColumnGroupIterator iterator = parquetReader.rowIterator();
       schema = parquetReader.getSchema();
 

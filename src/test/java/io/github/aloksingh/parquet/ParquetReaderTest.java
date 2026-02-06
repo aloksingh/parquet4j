@@ -6,9 +6,6 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import java.io.IOException;
-import java.util.List;
-import org.junit.jupiter.api.Test;
 import io.github.aloksingh.parquet.model.ColumnDescriptor;
 import io.github.aloksingh.parquet.model.ColumnValues;
 import io.github.aloksingh.parquet.model.Page;
@@ -16,6 +13,9 @@ import io.github.aloksingh.parquet.model.ParquetException;
 import io.github.aloksingh.parquet.model.ParquetMetadata;
 import io.github.aloksingh.parquet.model.SchemaDescriptor;
 import io.github.aloksingh.parquet.model.Type;
+import java.io.IOException;
+import java.util.List;
+import org.junit.jupiter.api.Test;
 
 /**
  * Tests for Parquet reader implementation
@@ -28,7 +28,7 @@ class ParquetReaderTest {
   void testReadMetadata() throws IOException {
     String filePath = TEST_DATA_DIR + "alltypes_plain.parquet";
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
       ParquetMetadata metadata = reader.getMetadata();
 
       assertNotNull(metadata);
@@ -44,10 +44,10 @@ class ParquetReaderTest {
   void testReadAllTypesPlain() throws IOException {
     String filePath = TEST_DATA_DIR + "alltypes_plain.parquet";
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
       assertEquals(1, reader.getNumRowGroups());
 
-      SerializedFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
+      ParquetFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
       assertTrue(rowGroup.getNumColumns() > 0);
       assertTrue(rowGroup.getNumRows() > 0);
 
@@ -73,8 +73,8 @@ class ParquetReaderTest {
   void testReadInt32Values() throws IOException {
     String filePath = TEST_DATA_DIR + "alltypes_plain.parquet";
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
-      SerializedFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
+      ParquetFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
       SchemaDescriptor schema = reader.getSchema();
 
       // Find an INT32 column
@@ -106,8 +106,8 @@ class ParquetReaderTest {
   void testReadStringValues() throws IOException {
     String filePath = TEST_DATA_DIR + "alltypes_plain.parquet";
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
-      SerializedFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
+      ParquetFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
       SchemaDescriptor schema = reader.getSchema();
 
       // Find a BYTE_ARRAY column (typically strings)
@@ -135,8 +135,8 @@ class ParquetReaderTest {
   void testReadBooleanValues() throws IOException {
     String filePath = TEST_DATA_DIR + "alltypes_plain.parquet";
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
-      SerializedFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
+      ParquetFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
       SchemaDescriptor schema = reader.getSchema();
 
       // Find a BOOLEAN column
@@ -171,8 +171,8 @@ class ParquetReaderTest {
   void testReadFloatValues() throws IOException {
     String filePath = TEST_DATA_DIR + "alltypes_plain.parquet";
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
-      SerializedFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
+      ParquetFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
       SchemaDescriptor schema = reader.getSchema();
 
       // Find a FLOAT column
@@ -200,12 +200,12 @@ class ParquetReaderTest {
   void testReadSnappyCompressed() throws IOException {
     String filePath = TEST_DATA_DIR + "alltypes_plain.snappy.parquet";
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
       System.out.println("\n=== Testing Snappy compressed file ===");
       reader.printMetadata();
 
       // Verify we can read data
-      SerializedFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
+      ParquetFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
       assertTrue(rowGroup.getNumRows() > 0);
 
       // Read first column
@@ -228,7 +228,7 @@ class ParquetReaderTest {
       String filePath = TEST_DATA_DIR + fileName;
       System.out.println("\n=== Testing file: " + fileName + " ===");
 
-      try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
+      try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
         ParquetMetadata metadata = reader.getMetadata();
         assertNotNull(metadata);
         assertTrue(metadata.getNumRowGroups() > 0);
@@ -246,7 +246,7 @@ class ParquetReaderTest {
   @Test
   void testInvalidFile() {
     assertThrows(ParquetException.class, () -> {
-      try (SerializedFileReader reader = new SerializedFileReader("pom.xml")) {
+      try (ParquetFileReader reader = new ParquetFileReader("pom.xml")) {
         reader.getMetadata();
       }
     });

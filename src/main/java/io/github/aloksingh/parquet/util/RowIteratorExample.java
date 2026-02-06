@@ -1,9 +1,9 @@
 package io.github.aloksingh.parquet.util;
 
-import java.io.IOException;
-import io.github.aloksingh.parquet.SerializedFileReader;
+import io.github.aloksingh.parquet.ParquetFileReader;
 import io.github.aloksingh.parquet.RowColumnGroupIterator;
 import io.github.aloksingh.parquet.model.RowColumnGroup;
+import java.io.IOException;
 
 /**
  * Example demonstrating how to use the row-by-row iterator for Parquet files.
@@ -20,7 +20,7 @@ import io.github.aloksingh.parquet.model.RowColumnGroup;
  *   <li>Accessing columns by name</li>
  * </ul>
  *
- * @see SerializedFileReader
+ * @see ParquetFileReader
  * @see RowColumnGroupIterator
  * @see RowColumnGroup
  */
@@ -49,7 +49,7 @@ public class RowIteratorExample {
 
     // Example 1: Basic iteration using try-with-resources
     System.out.println("=== Example 1: Basic Row Iteration ===");
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
       RowColumnGroupIterator iterator = reader.rowIterator();
 
       int rowCount = 0;
@@ -64,7 +64,7 @@ public class RowIteratorExample {
 
     // Example 2: Accessing specific columns
     System.out.println("\n=== Example 2: Accessing Specific Columns ===");
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
       RowColumnGroupIterator iterator = reader.rowIterator();
 
       int rowCount = 0;
@@ -86,7 +86,7 @@ public class RowIteratorExample {
 
     // Example 3: Enhanced for-each style iteration
     System.out.println("\n=== Example 3: Enhanced For-Each Iteration ===");
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
       RowColumnGroupIterator iterator = reader.rowIterator();
 
       int rowCount = 0;
@@ -101,7 +101,7 @@ public class RowIteratorExample {
 
     // Example 4: Accessing columns by name
     System.out.println("\n=== Example 4: Accessing Columns by Name ===");
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
       RowColumnGroupIterator iterator = reader.rowIterator();
 
       if (iterator.hasNext()) {

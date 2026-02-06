@@ -4,12 +4,12 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 
-import java.io.IOException;
-import java.util.List;
-import org.junit.jupiter.api.Test;
 import io.github.aloksingh.parquet.model.ColumnDescriptor;
 import io.github.aloksingh.parquet.model.ColumnValues;
 import io.github.aloksingh.parquet.model.SchemaDescriptor;
+import java.io.IOException;
+import java.util.List;
+import org.junit.jupiter.api.Test;
 
 /**
  * Tests for reading repeated groups without LIST annotation.
@@ -37,8 +37,8 @@ public class RepeatedNoAnnotationTest {
   void testReadRepeatedNoAnnotation() throws IOException {
     String filePath = "src/test/data/repeated_no_annotation.parquet";
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
-      SerializedFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
+      ParquetFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
       SchemaDescriptor schema = reader.getSchema();
 
       System.out.println("=== Testing repeated_no_annotation.parquet ===");

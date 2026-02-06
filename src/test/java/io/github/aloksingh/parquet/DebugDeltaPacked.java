@@ -1,18 +1,18 @@
 package io.github.aloksingh.parquet;
 
-import java.io.IOException;
-import java.nio.ByteBuffer;
-import java.util.List;
 import io.github.aloksingh.parquet.model.ColumnDescriptor;
 import io.github.aloksingh.parquet.model.Page;
 import io.github.aloksingh.parquet.model.SchemaDescriptor;
+import java.io.IOException;
+import java.nio.ByteBuffer;
+import java.util.List;
 
 public class DebugDeltaPacked {
   public static void main(String[] args) throws IOException {
     String filePath = "src/test/data/delta_binary_packed.parquet";
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
-      SerializedFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
+      ParquetFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
       SchemaDescriptor schema = reader.getSchema();
 
       // Find column 'bitwidth0'

@@ -4,11 +4,11 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 
+import io.github.aloksingh.parquet.model.ColumnValues;
+import io.github.aloksingh.parquet.model.SchemaDescriptor;
 import java.io.IOException;
 import java.util.List;
 import org.junit.jupiter.api.Test;
-import io.github.aloksingh.parquet.model.ColumnValues;
-import io.github.aloksingh.parquet.model.SchemaDescriptor;
 
 /**
  * Tests for reading LIST logical type
@@ -19,8 +19,8 @@ public class ListTypeTest {
   void testReadInt64List() throws IOException {
     String filePath = "src/test/data/list_columns.parquet";
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
-      SerializedFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
+      ParquetFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
       SchemaDescriptor schema = reader.getSchema();
 
       System.out.println("=== Testing list_columns.parquet ===");
@@ -73,8 +73,8 @@ public class ListTypeTest {
   void testReadStringList() throws IOException {
     String filePath = "src/test/data/list_columns.parquet";
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
-      SerializedFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
+      ParquetFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
 
       // Read the utf8_list column (column 1)
       System.out.println("\n=== Reading utf8_list column ===");

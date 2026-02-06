@@ -285,7 +285,8 @@ This Dogma specification is based on the Java implementation in this repository.
 - [`ParquetMetadataReader.java`](../src/main/java/io/github/aloksingh/parquet/ParquetMetadataReader.java): Reads file metadata from
   footer
 - [`PageReader.java`](../src/main/java/io/github/aloksingh/parquet/PageReader.java): Reads pages from column chunks
-- [`SerializedFileReader.java`](../src/main/java/io/github/aloksingh/parquet/SerializedFileReader.java): Main entry point for reading
+- [`ParquetFileReader.java`](../src/main/java/io/github/aloksingh/parquet/ParquetFileReader.java): Main entry point for
+  reading
   Parquet files
 - [`model/Type.java`](../src/main/java/io/github/aloksingh/parquet/model/Type.java): Physical type enumeration
 - [`model/Encoding.java`](../src/main/java/io/github/aloksingh/parquet/model/Encoding.java): Encoding type enumeration

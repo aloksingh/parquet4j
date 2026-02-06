@@ -5,14 +5,14 @@ import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import java.io.IOException;
-import java.util.Map;
-import org.junit.jupiter.api.Test;
+import io.github.aloksingh.parquet.ParquetFileReader;
 import io.github.aloksingh.parquet.RowColumnGroupIterator;
-import io.github.aloksingh.parquet.SerializedFileReader;
 import io.github.aloksingh.parquet.model.LogicalColumnDescriptor;
 import io.github.aloksingh.parquet.model.RowColumnGroup;
 import io.github.aloksingh.parquet.model.SchemaDescriptor;
+import java.io.IOException;
+import java.util.Map;
+import org.junit.jupiter.api.Test;
 
 /**
  * Tests for RowColumnGroupIterator with all data types
@@ -50,7 +50,7 @@ public class RowColumnGroupIteratorAllTypesTest {
   void testAllTypesSchemaDetection() throws IOException {
     String filePath = TEST_DATA_DIR + TEST_FILE;
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
       SchemaDescriptor schema = reader.getSchema();
 
       // Should have 9 logical columns
@@ -99,7 +99,7 @@ public class RowColumnGroupIteratorAllTypesTest {
   void testAllTypesBasicIteration() throws IOException {
     String filePath = TEST_DATA_DIR + TEST_FILE;
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
       RowColumnGroupIterator iterator = reader.rowIterator();
 
       // Should have 1000 total rows
@@ -124,7 +124,7 @@ public class RowColumnGroupIteratorAllTypesTest {
   void testAllTypesKnownValues() throws IOException {
     String filePath = TEST_DATA_DIR + TEST_FILE;
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
       RowColumnGroupIterator iterator = reader.rowIterator();
 
       // Row 0
@@ -229,7 +229,7 @@ public class RowColumnGroupIteratorAllTypesTest {
   void testAllTypesAccessByIndex() throws IOException {
     String filePath = TEST_DATA_DIR + TEST_FILE;
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
       RowColumnGroupIterator iterator = reader.rowIterator();
 
       assertTrue(iterator.hasNext());
@@ -265,7 +265,7 @@ public class RowColumnGroupIteratorAllTypesTest {
   void testAllTypesToString() throws IOException {
     String filePath = TEST_DATA_DIR + TEST_FILE;
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
       RowColumnGroupIterator iterator = reader.rowIterator();
 
       assertTrue(iterator.hasNext());
@@ -285,7 +285,7 @@ public class RowColumnGroupIteratorAllTypesTest {
   void testAllTypesAllRowsValid() throws IOException {
     String filePath = TEST_DATA_DIR + TEST_FILE;
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
       RowColumnGroupIterator iterator = reader.rowIterator();
 
       int rowCount = 0;
@@ -341,7 +341,7 @@ public class RowColumnGroupIteratorAllTypesTest {
 
     long startTime = System.currentTimeMillis();
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
       RowColumnGroupIterator iterator = reader.rowIterator();
 
       int rowCount = 0;
@@ -379,7 +379,7 @@ public class RowColumnGroupIteratorAllTypesTest {
   void testMapTypesCorrect() throws IOException {
     String filePath = TEST_DATA_DIR + TEST_FILE;
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
       RowColumnGroupIterator iterator = reader.rowIterator();
 
       // Check first 10 rows
@@ -422,7 +422,7 @@ public class RowColumnGroupIteratorAllTypesTest {
   void testNumericTypePrecision() throws IOException {
     String filePath = TEST_DATA_DIR + TEST_FILE;
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
       RowColumnGroupIterator iterator = reader.rowIterator();
 
       assertTrue(iterator.hasNext());
@@ -451,7 +451,7 @@ public class RowColumnGroupIteratorAllTypesTest {
   void testMapValueConsistency() throws IOException {
     String filePath = TEST_DATA_DIR + TEST_FILE;
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
       RowColumnGroupIterator iterator = reader.rowIterator();
 
       // Check first few rows to verify map value patterns

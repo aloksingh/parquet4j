@@ -3,13 +3,13 @@ package io.github.aloksingh.parquet;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 
-import java.io.IOException;
-import java.util.List;
-import org.junit.jupiter.api.Test;
 import io.github.aloksingh.parquet.model.ColumnDescriptor;
 import io.github.aloksingh.parquet.model.ParquetMetadata;
 import io.github.aloksingh.parquet.model.SchemaDescriptor;
 import io.github.aloksingh.parquet.model.Type;
+import java.io.IOException;
+import java.util.List;
+import org.junit.jupiter.api.Test;
 
 /**
  * Tests for reading files with concatenated GZIP members.
@@ -35,7 +35,7 @@ class ConcatenatedGzipMembersTest {
   void testConcatenatedGzipMembersFileStructure() throws IOException {
     String filePath = "src/test/data/concatenated_gzip_members.parquet";
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
       ParquetMetadata metadata = reader.getMetadata();
       SchemaDescriptor schema = reader.getSchema();
 
@@ -54,8 +54,8 @@ class ConcatenatedGzipMembersTest {
   void testConcatenatedGzipMembersSequentialValues() throws IOException {
     String filePath = "src/test/data/concatenated_gzip_members.parquet";
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
-      SerializedFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
+      ParquetFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
       List<Long> values = rowGroup.readColumn(0).decodeAsInt64();
 
       assertEquals(513, values.size(), "Should have 513 total values");
@@ -72,8 +72,8 @@ class ConcatenatedGzipMembersTest {
   void testConcatenatedGzipMembersFirstTenValues() throws IOException {
     String filePath = "src/test/data/concatenated_gzip_members.parquet";
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
-      SerializedFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
+      ParquetFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
       List<Long> values = rowGroup.readColumn(0).decodeAsInt64();
 
       // Verify first 10 values: 1, 2, 3, ..., 10
@@ -88,8 +88,8 @@ class ConcatenatedGzipMembersTest {
   void testConcatenatedGzipMembersLastTenValues() throws IOException {
     String filePath = "src/test/data/concatenated_gzip_members.parquet";
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
-      SerializedFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
+      ParquetFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
       List<Long> values = rowGroup.readColumn(0).decodeAsInt64();
 
       // Verify last 10 values: 504, 505, ..., 513
@@ -104,8 +104,8 @@ class ConcatenatedGzipMembersTest {
   void testConcatenatedGzipMembersMiddleValues() throws IOException {
     String filePath = "src/test/data/concatenated_gzip_members.parquet";
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
-      SerializedFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
+      ParquetFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
       List<Long> values = rowGroup.readColumn(0).decodeAsInt64();
 
       // Verify middle values around row 256 (halfway point)
@@ -120,8 +120,8 @@ class ConcatenatedGzipMembersTest {
   void testConcatenatedGzipMembersNoNulls() throws IOException {
     String filePath = "src/test/data/concatenated_gzip_members.parquet";
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
-      SerializedFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
+      ParquetFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
       List<Long> values = rowGroup.readColumn(0).decodeAsInt64();
 
       // Verify no null values
@@ -135,8 +135,8 @@ class ConcatenatedGzipMembersTest {
   void testConcatenatedGzipMembersValueRange() throws IOException {
     String filePath = "src/test/data/concatenated_gzip_members.parquet";
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
-      SerializedFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
+      ParquetFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
       List<Long> values = rowGroup.readColumn(0).decodeAsInt64();
 
       // Find min/max values
@@ -160,13 +160,13 @@ class ConcatenatedGzipMembersTest {
   void testConcatenatedGzipMembersGzipDecompression() throws IOException {
     String filePath = "src/test/data/concatenated_gzip_members.parquet";
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
       ParquetMetadata metadata = reader.getMetadata();
 
       // Verify GZIP compression is used
       // This is implicit - if decompression fails, reading will fail
 
-      SerializedFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
+      ParquetFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
       List<Long> values = rowGroup.readColumn(0).decodeAsInt64();
 
       // If we can successfully read all 513 values, GZIP decompression worked

@@ -1,13 +1,13 @@
 package io.github.aloksingh.parquet.util;
 
+import io.github.aloksingh.parquet.ParquetFileReader;
+import io.github.aloksingh.parquet.RowColumnGroupIterator;
+import io.github.aloksingh.parquet.model.LogicalColumnDescriptor;
+import io.github.aloksingh.parquet.model.RowColumnGroup;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import io.github.aloksingh.parquet.SerializedFileReader;
-import io.github.aloksingh.parquet.RowColumnGroupIterator;
-import io.github.aloksingh.parquet.model.LogicalColumnDescriptor;
-import io.github.aloksingh.parquet.model.RowColumnGroup;
 
 /**
  * Example application demonstrating how to read Parquet files containing MAP columns.
@@ -61,7 +61,7 @@ public class MapColumnExample {
     System.out.println("File: " + filePath);
     System.out.println();
     List<LogicalColumnDescriptor> mapColumns = new ArrayList<>();
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
       // Print schema info
       System.out.println("Schema:");
       System.out.println("  Total columns: " + reader.getSchema().getNumLogicalColumns());

@@ -3,14 +3,14 @@ package io.github.aloksingh.parquet;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.github.aloksingh.parquet.model.ColumnDescriptor;
+import io.github.aloksingh.parquet.model.ColumnValues;
+import io.github.aloksingh.parquet.model.SchemaDescriptor;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
-import io.github.aloksingh.parquet.model.ColumnDescriptor;
-import io.github.aloksingh.parquet.model.ColumnValues;
-import io.github.aloksingh.parquet.model.SchemaDescriptor;
 
 /**
  * Tests for reading nested structures (nested lists, structs)
@@ -21,8 +21,8 @@ public class NestedStructureTest {
   void testReadNestedLists() throws IOException {
     String filePath = "src/test/data/nested_lists.snappy.parquet";
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
-      SerializedFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
+      ParquetFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
       SchemaDescriptor schema = reader.getSchema();
 
       System.out.println("=== Testing nested_lists.snappy.parquet ===");
@@ -66,8 +66,8 @@ public class NestedStructureTest {
   void testReadStructure() throws IOException {
     String filePath = "src/test/data/nested_structs.rust.parquet";
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
-      SerializedFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
+      ParquetFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
       SchemaDescriptor schema = reader.getSchema();
 
       System.out.println("\n=== Testing nested_structs.rust.parquet ===");
@@ -129,8 +129,8 @@ public class NestedStructureTest {
   void testNullList() throws IOException {
     String filePath = "src/test/data/null_list.parquet";
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
-      SerializedFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
+      ParquetFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
       SchemaDescriptor schema = reader.getSchema();
 
       System.out.println("\n=== Testing null_list.parquet ===");
@@ -167,8 +167,8 @@ public class NestedStructureTest {
   void testOldListStructure() throws IOException {
     String filePath = "src/test/data/old_list_structure.parquet";
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
-      SerializedFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
+      ParquetFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
       SchemaDescriptor schema = reader.getSchema();
 
       System.out.println("\n=== Testing old_list_structure.parquet ===");

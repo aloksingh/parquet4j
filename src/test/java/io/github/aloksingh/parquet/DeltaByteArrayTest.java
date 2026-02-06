@@ -5,14 +5,14 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import java.io.IOException;
-import java.util.List;
-import org.junit.jupiter.api.Test;
 import io.github.aloksingh.parquet.model.ColumnDescriptor;
 import io.github.aloksingh.parquet.model.ColumnValues;
 import io.github.aloksingh.parquet.model.ParquetMetadata;
 import io.github.aloksingh.parquet.model.SchemaDescriptor;
 import io.github.aloksingh.parquet.model.Type;
+import java.io.IOException;
+import java.util.List;
+import org.junit.jupiter.api.Test;
 
 /**
  * Tests for reading DELTA_BYTE_ARRAY encoding.
@@ -41,7 +41,7 @@ public class DeltaByteArrayTest {
   void testDeltaByteArrayFileStructure() throws IOException {
     String filePath = "src/test/data/delta_byte_array.parquet";
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
       ParquetMetadata metadata = reader.getMetadata();
       SchemaDescriptor schema = reader.getSchema();
 
@@ -63,8 +63,8 @@ public class DeltaByteArrayTest {
   void testDeltaByteArrayCustomerId() throws IOException {
     String filePath = "src/test/data/delta_byte_array.parquet";
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
-      SerializedFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
+      ParquetFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
 
       // Read c_customer_id column (index 0)
       List<String> values = rowGroup.readColumn(0).decodeAsString();
@@ -94,8 +94,8 @@ public class DeltaByteArrayTest {
   void testDeltaByteArraySalutationWithNulls() throws IOException {
     String filePath = "src/test/data/delta_byte_array.parquet";
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
-      SerializedFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
+      ParquetFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
 
       // Read c_salutation column (index 1) - has nulls
       List<String> values = rowGroup.readColumn(1).decodeAsString();
@@ -124,8 +124,8 @@ public class DeltaByteArrayTest {
   void testDeltaByteArrayFirstName() throws IOException {
     String filePath = "src/test/data/delta_byte_array.parquet";
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
-      SerializedFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
+      ParquetFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
 
       // Read c_first_name column (index 2)
       List<String> values = rowGroup.readColumn(2).decodeAsString();
@@ -150,9 +150,9 @@ public class DeltaByteArrayTest {
   void testDeltaByteArrayAllColumns() throws IOException {
     String filePath = "src/test/data/delta_byte_array.parquet";
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
       SchemaDescriptor schema = reader.getSchema();
-      SerializedFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
+      ParquetFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
 
       // Verify we can read all columns with DELTA_BYTE_ARRAY encoding
       for (int i = 0; i < schema.getNumColumns(); i++) {
@@ -172,8 +172,8 @@ public class DeltaByteArrayTest {
   void testDeltaByteArrayValueRanges() throws IOException {
     String filePath = "src/test/data/delta_byte_array.parquet";
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
-      SerializedFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
+      ParquetFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
 
       // Test c_salutation - should have specific values
       List<String> salutations = rowGroup.readColumn(1).decodeAsString();

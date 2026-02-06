@@ -5,14 +5,14 @@ import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import java.io.IOException;
-import java.util.Map;
-import org.junit.jupiter.api.Test;
+import io.github.aloksingh.parquet.ParquetFileReader;
 import io.github.aloksingh.parquet.RowColumnGroupIterator;
-import io.github.aloksingh.parquet.SerializedFileReader;
 import io.github.aloksingh.parquet.model.LogicalColumnDescriptor;
 import io.github.aloksingh.parquet.model.RowColumnGroup;
 import io.github.aloksingh.parquet.model.SchemaDescriptor;
+import java.io.IOException;
+import java.util.Map;
+import org.junit.jupiter.api.Test;
 
 /**
  * Tests for RowColumnGroupIterator with Map<String, String> columns using GZIP compression
@@ -41,7 +41,7 @@ public class RowColumnGroupIteratorMapGzipTest {
   void testMapSchemaDetection() throws IOException {
     String filePath = TEST_DATA_DIR + TEST_FILE;
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
       SchemaDescriptor schema = reader.getSchema();
 
       // Should have 2 logical columns
@@ -63,7 +63,7 @@ public class RowColumnGroupIteratorMapGzipTest {
   void testMapColumnBasicIteration() throws IOException {
     String filePath = TEST_DATA_DIR + TEST_FILE;
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
       RowColumnGroupIterator iterator = reader.rowIterator();
 
       // Should have 200,000 total rows
@@ -88,7 +88,7 @@ public class RowColumnGroupIteratorMapGzipTest {
   void testMapColumnKnownValues() throws IOException {
     String filePath = TEST_DATA_DIR + TEST_FILE;
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
       RowColumnGroupIterator iterator = reader.rowIterator();
 
       // Row 0: id=1, item={"key1": "value1", "key2": "value2"}
@@ -160,7 +160,7 @@ public class RowColumnGroupIteratorMapGzipTest {
   void testMapColumnAccessByIndex() throws IOException {
     String filePath = TEST_DATA_DIR + TEST_FILE;
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
       RowColumnGroupIterator iterator = reader.rowIterator();
 
       assertTrue(iterator.hasNext());
@@ -181,7 +181,7 @@ public class RowColumnGroupIteratorMapGzipTest {
   void testMapColumnToString() throws IOException {
     String filePath = TEST_DATA_DIR + TEST_FILE;
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
       RowColumnGroupIterator iterator = reader.rowIterator();
 
       assertTrue(iterator.hasNext());
@@ -200,7 +200,7 @@ public class RowColumnGroupIteratorMapGzipTest {
   void testMapColumnAllRowsValid() throws IOException {
     String filePath = TEST_DATA_DIR + TEST_FILE;
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
       RowColumnGroupIterator iterator = reader.rowIterator();
 
       int rowCount = 0;
@@ -231,7 +231,7 @@ public class RowColumnGroupIteratorMapGzipTest {
 
     long startTime = System.currentTimeMillis();
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
       RowColumnGroupIterator iterator = reader.rowIterator();
 
       int rowCount = 0;
@@ -262,7 +262,7 @@ public class RowColumnGroupIteratorMapGzipTest {
   void testMapKeysAndValuesAreStrings() throws IOException {
     String filePath = TEST_DATA_DIR + TEST_FILE;
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
       RowColumnGroupIterator iterator = reader.rowIterator();
 
       // Check first 100 rows
@@ -288,7 +288,7 @@ public class RowColumnGroupIteratorMapGzipTest {
   void testGzipCompressionDoesNotAffectDataAccuracy() throws IOException {
     String filePath = TEST_DATA_DIR + TEST_FILE;
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
       RowColumnGroupIterator iterator = reader.rowIterator();
 
       // Sample rows at different positions to verify data integrity
@@ -318,7 +318,7 @@ public class RowColumnGroupIteratorMapGzipTest {
   void testMapSizeVariation() throws IOException {
     String filePath = TEST_DATA_DIR + TEST_FILE;
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
       RowColumnGroupIterator iterator = reader.rowIterator();
 
       // First 10 rows should show the pattern of alternating map sizes

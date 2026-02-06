@@ -4,12 +4,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import java.nio.file.Path;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
 import io.github.aloksingh.parquet.model.ColumnDescriptor;
 import io.github.aloksingh.parquet.model.LogicalColumnDescriptor;
 import io.github.aloksingh.parquet.model.LogicalType;
@@ -18,6 +12,12 @@ import io.github.aloksingh.parquet.model.RowColumnGroup;
 import io.github.aloksingh.parquet.model.SchemaDescriptor;
 import io.github.aloksingh.parquet.model.SimpleRowColumnGroup;
 import io.github.aloksingh.parquet.model.Type;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 /**
  * Round-trip test to verify we can write and then read back Parquet files.
@@ -72,7 +72,7 @@ class ParquetWriterRoundtripTest {
     }
 
     // Read data back
-    try (SerializedFileReader reader = new SerializedFileReader(outputFile)) {
+    try (ParquetFileReader reader = new ParquetFileReader(outputFile)) {
       ParquetMetadata metadata = reader.getMetadata();
 
       // Verify metadata
@@ -144,7 +144,7 @@ class ParquetWriterRoundtripTest {
     }
 
     // Read data back
-    try (SerializedFileReader reader = new SerializedFileReader(outputFile)) {
+    try (ParquetFileReader reader = new ParquetFileReader(outputFile)) {
       ParquetMetadata metadata = reader.getMetadata();
       assertEquals(numRows, metadata.fileMetadata().numRows());
 
@@ -225,7 +225,7 @@ class ParquetWriterRoundtripTest {
     }
 
     // Read data back
-    try (SerializedFileReader reader = new SerializedFileReader(outputFile)) {
+    try (ParquetFileReader reader = new ParquetFileReader(outputFile)) {
       ParquetRowIterator iterator = (ParquetRowIterator) reader.rowIterator();
 
       // First row

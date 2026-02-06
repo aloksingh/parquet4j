@@ -1,15 +1,15 @@
 package io.github.aloksingh.parquet;
 
-import java.io.IOException;
-import java.util.ArrayList;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
 import io.github.aloksingh.parquet.model.ColumnDescriptor;
 import io.github.aloksingh.parquet.model.ColumnValues;
 import io.github.aloksingh.parquet.model.ParquetException;
 import io.github.aloksingh.parquet.model.SchemaDescriptor;
 import io.github.aloksingh.parquet.model.Type;
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 
 /**
  * Utility class for reading nested structures (MAP, STRUCT) from Parquet files.
@@ -17,7 +17,7 @@ import io.github.aloksingh.parquet.model.Type;
  */
 public class NestedStructureReader {
 
-  private final SerializedFileReader.RowGroupReader rowGroupReader;
+  private final ParquetFileReader.RowGroupReader rowGroupReader;
   private final SchemaDescriptor schema;
 
   /**
@@ -26,7 +26,7 @@ public class NestedStructureReader {
    * @param rowGroupReader the row group reader to use for reading column data
    * @param schema the schema descriptor containing column metadata
    */
-  public NestedStructureReader(SerializedFileReader.RowGroupReader rowGroupReader,
+  public NestedStructureReader(ParquetFileReader.RowGroupReader rowGroupReader,
                                SchemaDescriptor schema) {
     this.rowGroupReader = rowGroupReader;
     this.schema = schema;

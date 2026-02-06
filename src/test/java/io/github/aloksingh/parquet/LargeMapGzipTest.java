@@ -4,10 +4,10 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import java.io.IOException;
-import org.junit.jupiter.api.Test;
 import io.github.aloksingh.parquet.model.LogicalColumnDescriptor;
 import io.github.aloksingh.parquet.model.SchemaDescriptor;
+import java.io.IOException;
+import org.junit.jupiter.api.Test;
 
 /**
  * Tests for reading large_map_gzip.parquet file
@@ -42,7 +42,7 @@ public class LargeMapGzipTest {
 
   @Test
   void testFileMetadata() throws IOException {
-    try (SerializedFileReader reader = new SerializedFileReader(TEST_FILE)) {
+    try (ParquetFileReader reader = new ParquetFileReader(TEST_FILE)) {
       // Verify total row count
       assertEquals(EXPECTED_ROW_COUNT, reader.getTotalRowCount());
 
@@ -53,7 +53,7 @@ public class LargeMapGzipTest {
 
   @Test
   void testSchemaStructure() throws IOException {
-    try (SerializedFileReader reader = new SerializedFileReader(TEST_FILE)) {
+    try (ParquetFileReader reader = new ParquetFileReader(TEST_FILE)) {
       SchemaDescriptor schema = reader.getSchema();
 
       // Should have 8 logical columns
@@ -78,7 +78,7 @@ public class LargeMapGzipTest {
   @Test
   void testRowIteratorCanBeCreated() throws IOException {
     // Verify we can at least create an iterator
-    try (SerializedFileReader reader = new SerializedFileReader(TEST_FILE)) {
+    try (ParquetFileReader reader = new ParquetFileReader(TEST_FILE)) {
       RowColumnGroupIterator iterator = reader.rowIterator();
       assertNotNull(iterator);
       assertTrue(iterator.hasNext());
@@ -87,7 +87,7 @@ public class LargeMapGzipTest {
 
   @Test
   void testPhysicalColumnCount() throws IOException {
-    try (SerializedFileReader reader = new SerializedFileReader(TEST_FILE)) {
+    try (ParquetFileReader reader = new ParquetFileReader(TEST_FILE)) {
       SchemaDescriptor schema = reader.getSchema();
 
       // Should have 9 physical columns (map expands to 2 physical columns)
@@ -101,7 +101,7 @@ public class LargeMapGzipTest {
 
   @Test
   void testGzipCompressionInMetadata() throws IOException {
-    try (SerializedFileReader reader = new SerializedFileReader(TEST_FILE)) {
+    try (ParquetFileReader reader = new ParquetFileReader(TEST_FILE)) {
       // Verify that the file uses GZIP compression
       var metadata = reader.getMetadata();
       assertNotNull(metadata);
@@ -113,7 +113,7 @@ public class LargeMapGzipTest {
 
   @Test
   void testMapLogicalType() throws IOException {
-    try (SerializedFileReader reader = new SerializedFileReader(TEST_FILE)) {
+    try (ParquetFileReader reader = new ParquetFileReader(TEST_FILE)) {
       SchemaDescriptor schema = reader.getSchema();
 
       LogicalColumnDescriptor messageCol = schema.getLogicalColumn(7);

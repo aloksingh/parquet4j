@@ -2,13 +2,13 @@ package io.github.aloksingh.parquet;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
-import java.io.IOException;
-import java.util.List;
-import org.junit.jupiter.api.Test;
 import io.github.aloksingh.parquet.model.ColumnDescriptor;
 import io.github.aloksingh.parquet.model.ColumnValues;
 import io.github.aloksingh.parquet.model.SchemaDescriptor;
 import io.github.aloksingh.parquet.model.Type;
+import java.io.IOException;
+import java.util.List;
+import org.junit.jupiter.api.Test;
 
 /**
  * Test for BYTE_STREAM_SPLIT encoding support
@@ -20,8 +20,8 @@ public class ByteStreamSplitTest {
     // Read the parquet file with BYTE_STREAM_SPLIT encoding
     String filePath = "src/test/data/byte_stream_split.zstd.parquet";
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
-      SerializedFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
+      ParquetFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
       SchemaDescriptor schema = reader.getSchema();
 
       // Find the f32 column (should be column 0)
@@ -57,8 +57,8 @@ public class ByteStreamSplitTest {
     // Read the parquet file with BYTE_STREAM_SPLIT encoding
     String filePath = "src/test/data/byte_stream_split.zstd.parquet";
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
-      SerializedFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
+      ParquetFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
       SchemaDescriptor schema = reader.getSchema();
 
       // Find the f64 column (should be column 1)
@@ -94,8 +94,8 @@ public class ByteStreamSplitTest {
     // Test reading both columns together
     String filePath = "src/test/data/byte_stream_split.zstd.parquet";
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
-      SerializedFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
+      ParquetFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
 
       // Read both columns
       ColumnValues f32Column = rowGroup.readColumn(0);

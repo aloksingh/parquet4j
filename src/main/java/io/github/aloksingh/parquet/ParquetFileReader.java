@@ -1,14 +1,14 @@
 package io.github.aloksingh.parquet;
 
-import java.io.IOException;
-import java.nio.file.Path;
-import java.util.List;
 import io.github.aloksingh.parquet.model.ColumnDescriptor;
 import io.github.aloksingh.parquet.model.ColumnValues;
 import io.github.aloksingh.parquet.model.LogicalColumnDescriptor;
 import io.github.aloksingh.parquet.model.Page;
 import io.github.aloksingh.parquet.model.ParquetMetadata;
 import io.github.aloksingh.parquet.model.SchemaDescriptor;
+import java.io.IOException;
+import java.nio.file.Path;
+import java.util.List;
 
 /**
  * Main class for reading Parquet files.
@@ -19,7 +19,7 @@ import io.github.aloksingh.parquet.model.SchemaDescriptor;
  *
  * <p>Example usage:
  * <pre>{@code
- * try (SerializedFileReader reader = new SerializedFileReader("data.parquet")) {
+ * try (ParquetFileReader reader = new ParquetFileReader("data.parquet")) {
  *   System.out.println("Total rows: " + reader.getTotalRowCount());
  *   RowGroupReader rowGroup = reader.getRowGroup(0);
  *   ColumnValues column = rowGroup.readColumn(0);
@@ -30,7 +30,7 @@ import io.github.aloksingh.parquet.model.SchemaDescriptor;
  * @see RowGroupReader
  * @see RowColumnGroupIterator
  */
-public class SerializedFileReader implements AutoCloseable {
+public class ParquetFileReader implements AutoCloseable {
   private final ChunkReader chunkReader;
   private final ParquetMetadata metadata;
   private final boolean ownsChunkReader;
@@ -44,7 +44,7 @@ public class SerializedFileReader implements AutoCloseable {
    * @param filePath the path to the Parquet file
    * @throws IOException if an I/O error occurs while reading the file or metadata
    */
-  public SerializedFileReader(String filePath) throws IOException {
+  public ParquetFileReader(String filePath) throws IOException {
     this(Path.of(filePath));
   }
 
@@ -57,7 +57,7 @@ public class SerializedFileReader implements AutoCloseable {
    * @param path the path to the Parquet file
    * @throws IOException if an I/O error occurs while reading the file or metadata
    */
-  public SerializedFileReader(Path path) throws IOException {
+  public ParquetFileReader(Path path) throws IOException {
     this.chunkReader = new FileChunkReader(path);
     this.ownsChunkReader = true;
     this.metadata = ParquetMetadataReader.readMetadata(chunkReader);
@@ -73,7 +73,7 @@ public class SerializedFileReader implements AutoCloseable {
    * @param chunkReader the chunk reader to use for reading file data
    * @throws IOException if an I/O error occurs while reading metadata
    */
-  public SerializedFileReader(ChunkReader chunkReader) throws IOException {
+  public ParquetFileReader(ChunkReader chunkReader) throws IOException {
     this.chunkReader = chunkReader;
     this.ownsChunkReader = false;
     this.metadata = ParquetMetadataReader.readMetadata(chunkReader);
@@ -169,7 +169,7 @@ public class SerializedFileReader implements AutoCloseable {
    * <p>A row group contains a subset of rows from the file and provides access
    * to individual columns within that row group.
    *
-   * @see SerializedFileReader#getRowGroup(int)
+   * @see ParquetFileReader#getRowGroup(int)
    */
   public static class RowGroupReader {
     private final ChunkReader chunkReader;
