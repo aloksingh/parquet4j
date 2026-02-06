@@ -5,13 +5,13 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import java.io.IOException;
-import java.util.List;
-import org.junit.jupiter.api.Test;
 import io.github.aloksingh.parquet.model.ColumnDescriptor;
 import io.github.aloksingh.parquet.model.ParquetMetadata;
 import io.github.aloksingh.parquet.model.SchemaDescriptor;
 import io.github.aloksingh.parquet.model.Type;
+import java.io.IOException;
+import java.util.List;
+import org.junit.jupiter.api.Test;
 
 /**
  * Tests for reading files with DELTA_BINARY_PACKED and DELTA_BYTE_ARRAY encodings
@@ -39,7 +39,7 @@ public class DeltaEncodingRequiredColumnTest {
   void testFileStructure() throws IOException {
     String filePath = "src/test/data/delta_encoding_required_column.parquet";
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
       ParquetMetadata metadata = reader.getMetadata();
       SchemaDescriptor schema = reader.getSchema();
 
@@ -61,8 +61,8 @@ public class DeltaEncodingRequiredColumnTest {
   void testDeltaBinaryPackedInt32() throws IOException {
     String filePath = "src/test/data/delta_encoding_required_column.parquet";
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
-      SerializedFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
+      ParquetFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
 
       // Read c_customer_sk column (index 0) - descending sequence
       List<Integer> values = rowGroup.readColumn(0).decodeAsInt32();
@@ -96,8 +96,8 @@ public class DeltaEncodingRequiredColumnTest {
   void testDeltaBinaryPackedBirthColumns() throws IOException {
     String filePath = "src/test/data/delta_encoding_required_column.parquet";
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
-      SerializedFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
+      ParquetFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
 
       // Test c_birth_day (column 6)
       List<Integer> birthDays = rowGroup.readColumn(6).decodeAsInt32();
@@ -132,8 +132,8 @@ public class DeltaEncodingRequiredColumnTest {
   void testDeltaByteArrayCustomerId() throws IOException {
     String filePath = "src/test/data/delta_encoding_required_column.parquet";
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
-      SerializedFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
+      ParquetFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
 
       // Read c_customer_id column (index 9)
       List<String> values = rowGroup.readColumn(9).decodeAsString();
@@ -158,8 +158,8 @@ public class DeltaEncodingRequiredColumnTest {
   void testDeltaByteArrayNames() throws IOException {
     String filePath = "src/test/data/delta_encoding_required_column.parquet";
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
-      SerializedFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
+      ParquetFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
 
       // Test c_salutation (column 10)
       List<String> salutations = rowGroup.readColumn(10).decodeAsString();
@@ -198,9 +198,9 @@ public class DeltaEncodingRequiredColumnTest {
   void testAllIntegerColumns() throws IOException {
     String filePath = "src/test/data/delta_encoding_required_column.parquet";
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
       SchemaDescriptor schema = reader.getSchema();
-      SerializedFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
+      ParquetFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
 
       // Read all integer columns (0-8) and verify they all have 100 non-null values
       for (int i = 0; i < 9; i++) {
@@ -225,9 +225,9 @@ public class DeltaEncodingRequiredColumnTest {
   void testAllStringColumns() throws IOException {
     String filePath = "src/test/data/delta_encoding_required_column.parquet";
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
       SchemaDescriptor schema = reader.getSchema();
-      SerializedFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
+      ParquetFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
 
       // Read all string columns (9-16) and verify they all have 100 non-null values
       for (int i = 9; i < schema.getNumColumns(); i++) {
@@ -252,8 +252,8 @@ public class DeltaEncodingRequiredColumnTest {
   void testMixedColumnReading() throws IOException {
     String filePath = "src/test/data/delta_encoding_required_column.parquet";
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
-      SerializedFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
+      ParquetFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
 
       // Read multiple columns to test that decoders don't interfere with each other
       List<Integer> customerSk = rowGroup.readColumn(0).decodeAsInt32();

@@ -9,8 +9,8 @@ Example:
     python3 pyarrow_inspect.py src/test/data/lz4_raw_compressed.parquet
 """
 
-import sys
 import pyarrow.parquet as pq
+import sys
 
 
 def inspect_parquet(file_path, max_rows=20):
@@ -116,7 +116,7 @@ def generate_junit_template(file_path, table):
 void test{test_name}() throws IOException {{
     String filePath = TEST_DATA_DIR + "{file_name}";
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {{
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {{
         RowColumnGroupIterator iterator = reader.rowIterator();
 
         // Expected row count

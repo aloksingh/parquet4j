@@ -5,9 +5,6 @@ import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import java.io.IOException;
-import java.util.List;
-import org.junit.jupiter.api.Test;
 import io.github.aloksingh.parquet.model.ColumnDescriptor;
 import io.github.aloksingh.parquet.model.ColumnValues;
 import io.github.aloksingh.parquet.model.Encoding;
@@ -15,6 +12,9 @@ import io.github.aloksingh.parquet.model.Page;
 import io.github.aloksingh.parquet.model.ParquetMetadata;
 import io.github.aloksingh.parquet.model.SchemaDescriptor;
 import io.github.aloksingh.parquet.model.Type;
+import java.io.IOException;
+import java.util.List;
+import org.junit.jupiter.api.Test;
 
 /**
  * Tests for reading DELTA_BINARY_PACKED encoded data.
@@ -36,7 +36,7 @@ public class DeltaBinaryPackedTest {
   void testDeltaBinaryPackedFileStructure() throws IOException {
     String filePath = "src/test/data/delta_binary_packed.parquet";
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
       ParquetMetadata metadata = reader.getMetadata();
       SchemaDescriptor schema = reader.getSchema();
 
@@ -59,8 +59,8 @@ public class DeltaBinaryPackedTest {
   void testDeltaBinaryPackedPageStructure() throws IOException {
     String filePath = "src/test/data/delta_binary_packed.parquet";
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
-      SerializedFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
+      ParquetFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
       SchemaDescriptor schema = reader.getSchema();
 
       // Test a few columns to ensure pages can be read
@@ -91,8 +91,8 @@ public class DeltaBinaryPackedTest {
   void testBitwidth0AllSameValues() throws IOException {
     String filePath = "src/test/data/delta_binary_packed.parquet";
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
-      SerializedFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
+      ParquetFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
       SchemaDescriptor schema = reader.getSchema();
 
       int idx = findColumnIndex(schema, "bitwidth0");
@@ -113,8 +113,8 @@ public class DeltaBinaryPackedTest {
   void testBitwidth1VaryingValues() throws IOException {
     String filePath = "src/test/data/delta_binary_packed.parquet";
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
-      SerializedFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
+      ParquetFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
       SchemaDescriptor schema = reader.getSchema();
 
       int idx = findColumnIndex(schema, "bitwidth1");
@@ -137,8 +137,8 @@ public class DeltaBinaryPackedTest {
   void testBitwidth8Values() throws IOException {
     String filePath = "src/test/data/delta_binary_packed.parquet";
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
-      SerializedFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
+      ParquetFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
       SchemaDescriptor schema = reader.getSchema();
 
       int idx = findColumnIndex(schema, "bitwidth8");
@@ -158,8 +158,8 @@ public class DeltaBinaryPackedTest {
   void testBitwidth32Values() throws IOException {
     String filePath = "src/test/data/delta_binary_packed.parquet";
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
-      SerializedFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
+      ParquetFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
       SchemaDescriptor schema = reader.getSchema();
 
       int idx = findColumnIndex(schema, "bitwidth32");
@@ -178,8 +178,8 @@ public class DeltaBinaryPackedTest {
   void testBitwidth64Values() throws IOException {
     String filePath = "src/test/data/delta_binary_packed.parquet";
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
-      SerializedFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
+      ParquetFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
       SchemaDescriptor schema = reader.getSchema();
 
       int idx = findColumnIndex(schema, "bitwidth64");
@@ -198,8 +198,8 @@ public class DeltaBinaryPackedTest {
   void testIntValueColumn() throws IOException {
     String filePath = "src/test/data/delta_binary_packed.parquet";
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
-      SerializedFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
+      ParquetFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
       SchemaDescriptor schema = reader.getSchema();
 
       int idx = findColumnIndex(schema, "int_value");
@@ -218,8 +218,8 @@ public class DeltaBinaryPackedTest {
   void testAllColumnsDecode() throws IOException {
     String filePath = "src/test/data/delta_binary_packed.parquet";
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
-      SerializedFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
+      ParquetFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
       SchemaDescriptor schema = reader.getSchema();
 
       // Verify all 66 columns can be decoded

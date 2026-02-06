@@ -4,12 +4,12 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 
-import java.io.IOException;
-import java.util.List;
-import org.junit.jupiter.api.Test;
 import io.github.aloksingh.parquet.model.ColumnDescriptor;
 import io.github.aloksingh.parquet.model.ColumnValues;
 import io.github.aloksingh.parquet.model.SchemaDescriptor;
+import java.io.IOException;
+import java.util.List;
+import org.junit.jupiter.api.Test;
 
 /**
  * Tests for reading nullable.impala.parquet
@@ -31,7 +31,7 @@ public class NullableImpalaTest {
   void testReadSchema() throws IOException {
     String filePath = "src/test/data/nullable.impala.parquet";
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
       SchemaDescriptor schema = reader.getSchema();
 
       System.out.println("=== Testing nullable.impala.parquet ===");
@@ -54,8 +54,8 @@ public class NullableImpalaTest {
   void testReadIdColumn() throws IOException {
     String filePath = "src/test/data/nullable.impala.parquet";
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
-      SerializedFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
+      ParquetFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
       SchemaDescriptor schema = reader.getSchema();
 
       // Find the id column
@@ -93,8 +93,8 @@ public class NullableImpalaTest {
   void testReadIntArrayColumn() throws IOException {
     String filePath = "src/test/data/nullable.impala.parquet";
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
-      SerializedFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
+      ParquetFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
       SchemaDescriptor schema = reader.getSchema();
 
       // Find the int_array column
@@ -169,8 +169,8 @@ public class NullableImpalaTest {
   void testReadIntArrayArrayColumn() throws IOException {
     String filePath = "src/test/data/nullable.impala.parquet";
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
-      SerializedFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
+      ParquetFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
       SchemaDescriptor schema = reader.getSchema();
 
       // Find the int_array_Array column (nested list)
@@ -208,8 +208,8 @@ public class NullableImpalaTest {
   void testReadIntMapColumn() throws IOException {
     String filePath = "src/test/data/nullable.impala.parquet";
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
-      SerializedFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
+      ParquetFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
       SchemaDescriptor schema = reader.getSchema();
 
       System.out.println("\n=== Testing int_map columns ===");
@@ -312,8 +312,8 @@ public class NullableImpalaTest {
   void testReadNestedStructColumn() throws IOException {
     String filePath = "src/test/data/nullable.impala.parquet";
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
-      SerializedFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
+      ParquetFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
       SchemaDescriptor schema = reader.getSchema();
 
       System.out.println("\n=== Testing nested_struct columns ===");
@@ -429,8 +429,8 @@ public class NullableImpalaTest {
   void testReadNestedStructDeeplyNestedField() throws IOException {
     String filePath = "src/test/data/nullable.impala.parquet";
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
-      SerializedFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
+      ParquetFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
       SchemaDescriptor schema = reader.getSchema();
 
       System.out.println("\n=== Testing nested_struct.C.d deeply nested fields ===");

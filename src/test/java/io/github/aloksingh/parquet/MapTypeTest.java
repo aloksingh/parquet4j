@@ -4,13 +4,13 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.github.aloksingh.parquet.model.ColumnDescriptor;
+import io.github.aloksingh.parquet.model.RowColumnGroup;
+import io.github.aloksingh.parquet.model.SchemaDescriptor;
 import java.io.IOException;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
-import io.github.aloksingh.parquet.model.ColumnDescriptor;
-import io.github.aloksingh.parquet.model.RowColumnGroup;
-import io.github.aloksingh.parquet.model.SchemaDescriptor;
 
 /**
  * Tests for reading MAP logical type
@@ -24,8 +24,8 @@ public class MapTypeTest {
     // For now, we'll test reading the inner map (columns 1 and 2)
     String filePath = "src/test/data/nested_maps.snappy.parquet";
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
-      SerializedFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
+      ParquetFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
       SchemaDescriptor schema = reader.getSchema();
 
       System.out.println("=== Testing nested_maps.snappy.parquet ===");
@@ -84,8 +84,8 @@ public class MapTypeTest {
   void testReadMapWithNullValues() throws IOException {
     String filePath = "src/test/data/map_no_value.parquet";
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
-      SerializedFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
+      ParquetFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
       SchemaDescriptor schema = reader.getSchema();
 
       System.out.println("\n=== Testing map_no_value.parquet ===");
@@ -134,7 +134,7 @@ public class MapTypeTest {
   void testDataWithAllTypes() throws IOException {
     String filePath = "src/test/data/data_with_all_types.parquet";
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
       RowColumnGroupIterator iterator = reader.rowIterator();
 
       // Expected row count

@@ -5,14 +5,14 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import java.io.IOException;
-import java.util.List;
-import org.junit.jupiter.api.Test;
 import io.github.aloksingh.parquet.model.ColumnDescriptor;
 import io.github.aloksingh.parquet.model.ColumnValues;
 import io.github.aloksingh.parquet.model.ParquetException;
 import io.github.aloksingh.parquet.model.SchemaDescriptor;
 import io.github.aloksingh.parquet.model.Type;
+import java.io.IOException;
+import java.util.List;
+import org.junit.jupiter.api.Test;
 
 /**
  * Specific tests for boolean data type support
@@ -72,8 +72,8 @@ class BooleanReaderTest {
   void testReadBooleanFromParquetFile() throws IOException {
     String filePath = TEST_DATA_DIR + "alltypes_plain.parquet";
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
-      SerializedFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
+      ParquetFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
       SchemaDescriptor schema = reader.getSchema();
 
       // Find the boolean column
@@ -127,8 +127,8 @@ class BooleanReaderTest {
       String filePath = TEST_DATA_DIR + fileName;
       System.out.println("\nTesting file: " + fileName);
 
-      try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
-        SerializedFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
+      try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
+        ParquetFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
         SchemaDescriptor schema = reader.getSchema();
 
         for (int i = 0; i < schema.getNumColumns(); i++) {

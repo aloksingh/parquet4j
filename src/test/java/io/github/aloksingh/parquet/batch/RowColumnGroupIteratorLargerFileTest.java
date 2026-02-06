@@ -4,16 +4,16 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import java.io.IOException;
-import java.util.HashSet;
-import java.util.Set;
-import org.junit.jupiter.api.Test;
+import io.github.aloksingh.parquet.ParquetFileReader;
 import io.github.aloksingh.parquet.RowColumnGroupIterator;
-import io.github.aloksingh.parquet.SerializedFileReader;
 import io.github.aloksingh.parquet.model.ColumnDescriptor;
 import io.github.aloksingh.parquet.model.RowColumnGroup;
 import io.github.aloksingh.parquet.model.SchemaDescriptor;
 import io.github.aloksingh.parquet.model.Type;
+import java.io.IOException;
+import java.util.HashSet;
+import java.util.Set;
+import org.junit.jupiter.api.Test;
 
 /**
  * Tests for RowColumnGroupIterator with a larger LZ4-compressed file
@@ -32,7 +32,7 @@ public class RowColumnGroupIteratorLargerFileTest {
   void testLargerFileBasicIteration() throws IOException {
     String filePath = TEST_DATA_DIR + TEST_FILE;
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
       RowColumnGroupIterator iterator = reader.rowIterator();
       assertNotNull(iterator);
 
@@ -63,7 +63,7 @@ public class RowColumnGroupIteratorLargerFileTest {
   void testLargerFileSchema() throws IOException {
     String filePath = TEST_DATA_DIR + TEST_FILE;
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
       SchemaDescriptor schema = reader.getSchema();
 
       assertNotNull(schema);
@@ -106,7 +106,7 @@ public class RowColumnGroupIteratorLargerFileTest {
         "85440778-460a-41ac-aa2e-ac3ee41696bf"   // Row 9999
     };
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
       RowColumnGroupIterator iterator = reader.rowIterator();
 
       int rowCount = 0;
@@ -158,7 +158,7 @@ public class RowColumnGroupIteratorLargerFileTest {
   void testLargerFileAllValuesAreUUIDs() throws IOException {
     String filePath = TEST_DATA_DIR + TEST_FILE;
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
       RowColumnGroupIterator iterator = reader.rowIterator();
 
       int rowCount = 0;
@@ -188,7 +188,7 @@ public class RowColumnGroupIteratorLargerFileTest {
   void testLargerFileAllValuesAreUnique() throws IOException {
     String filePath = TEST_DATA_DIR + TEST_FILE;
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
       RowColumnGroupIterator iterator = reader.rowIterator();
 
       Set<String> uniqueValues = new HashSet<>();
@@ -215,7 +215,7 @@ public class RowColumnGroupIteratorLargerFileTest {
   void testLargerFileAccessByColumnName() throws IOException {
     String filePath = TEST_DATA_DIR + TEST_FILE;
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
       RowColumnGroupIterator iterator = reader.rowIterator();
 
       int rowCount = 0;
@@ -253,7 +253,7 @@ public class RowColumnGroupIteratorLargerFileTest {
     long startTime = System.currentTimeMillis();
     long startMemory = Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory();
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
       RowColumnGroupIterator iterator = reader.rowIterator();
 
       int rowCount = 0;
@@ -286,7 +286,7 @@ public class RowColumnGroupIteratorLargerFileTest {
   void testLargerFileTypedAccess() throws IOException {
     String filePath = TEST_DATA_DIR + TEST_FILE;
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
       RowColumnGroupIterator iterator = reader.rowIterator();
 
       assertTrue(iterator.hasNext());
@@ -308,7 +308,7 @@ public class RowColumnGroupIteratorLargerFileTest {
   void testLargerFileRowToString() throws IOException {
     String filePath = TEST_DATA_DIR + TEST_FILE;
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
       RowColumnGroupIterator iterator = reader.rowIterator();
 
       assertTrue(iterator.hasNext());

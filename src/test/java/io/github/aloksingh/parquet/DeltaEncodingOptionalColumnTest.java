@@ -4,13 +4,13 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 
-import java.io.IOException;
-import java.util.List;
-import org.junit.jupiter.api.Test;
 import io.github.aloksingh.parquet.model.ColumnDescriptor;
 import io.github.aloksingh.parquet.model.ParquetMetadata;
 import io.github.aloksingh.parquet.model.SchemaDescriptor;
 import io.github.aloksingh.parquet.model.Type;
+import java.io.IOException;
+import java.util.List;
+import org.junit.jupiter.api.Test;
 
 /**
  * Tests for reading files with DELTA_BINARY_PACKED and DELTA_BYTE_ARRAY encodings
@@ -52,7 +52,7 @@ public class DeltaEncodingOptionalColumnTest {
   void testFileStructure() throws IOException {
     String filePath = "src/test/data/delta_encoding_optional_column.parquet";
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
       ParquetMetadata metadata = reader.getMetadata();
       SchemaDescriptor schema = reader.getSchema();
 
@@ -74,8 +74,8 @@ public class DeltaEncodingOptionalColumnTest {
   void testDeltaBinaryPackedInt64WithNoNulls() throws IOException {
     String filePath = "src/test/data/delta_encoding_optional_column.parquet";
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
-      SerializedFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
+      ParquetFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
 
       // Read c_customer_sk column (index 0) - descending sequence with no nulls
       List<Long> values = rowGroup.readColumn(0).decodeAsInt64();
@@ -109,8 +109,8 @@ public class DeltaEncodingOptionalColumnTest {
   void testDeltaBinaryPackedInt64WithNulls() throws IOException {
     String filePath = "src/test/data/delta_encoding_optional_column.parquet";
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
-      SerializedFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
+      ParquetFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
 
       // Read c_current_cdemo_sk column (index 1) - has 3 nulls at rows 66, 77, 85
       List<Long> values = rowGroup.readColumn(1).decodeAsInt64();
@@ -154,8 +154,8 @@ public class DeltaEncodingOptionalColumnTest {
   void testDeltaBinaryPackedBirthColumnsWithNulls() throws IOException {
     String filePath = "src/test/data/delta_encoding_optional_column.parquet";
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
-      SerializedFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
+      ParquetFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
 
       // Test c_birth_day (column 6) - has 3 nulls at rows 66, 77, 85
       List<Long> birthDays = rowGroup.readColumn(6).decodeAsInt64();
@@ -210,8 +210,8 @@ public class DeltaEncodingOptionalColumnTest {
   void testDeltaByteArrayCustomerIdNoNulls() throws IOException {
     String filePath = "src/test/data/delta_encoding_optional_column.parquet";
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
-      SerializedFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
+      ParquetFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
 
       // Read c_customer_id column (index 9) - no nulls
       List<String> values = rowGroup.readColumn(9).decodeAsString();
@@ -235,8 +235,8 @@ public class DeltaEncodingOptionalColumnTest {
   void testDeltaByteArrayNamesWithNulls() throws IOException {
     String filePath = "src/test/data/delta_encoding_optional_column.parquet";
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
-      SerializedFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
+      ParquetFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
 
       // Test c_salutation (column 10) - has 3 nulls at rows 55, 60, 66
       List<String> salutations = rowGroup.readColumn(10).decodeAsString();
@@ -275,8 +275,8 @@ public class DeltaEncodingOptionalColumnTest {
   void testDeltaByteArrayEmailAndCountryWithNulls() throws IOException {
     String filePath = "src/test/data/delta_encoding_optional_column.parquet";
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
-      SerializedFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
+      ParquetFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
 
       // Test c_birth_country (column 14) - has 4 nulls at rows 60, 66, 77, 85
       List<String> countries = rowGroup.readColumn(14).decodeAsString();
@@ -318,8 +318,8 @@ public class DeltaEncodingOptionalColumnTest {
   void testPreferredCustFlagWithNulls() throws IOException {
     String filePath = "src/test/data/delta_encoding_optional_column.parquet";
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
-      SerializedFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
+      ParquetFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
 
       // Test c_preferred_cust_flag (column 13) - has 4 nulls at rows 55, 60, 66, 85
       List<String> flags = rowGroup.readColumn(13).decodeAsString();
@@ -339,8 +339,8 @@ public class DeltaEncodingOptionalColumnTest {
   void testMixedColumnReadingWithNulls() throws IOException {
     String filePath = "src/test/data/delta_encoding_optional_column.parquet";
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
-      SerializedFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
+      ParquetFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
 
       // Read multiple columns to test that decoders handle nulls correctly
       List<Long> customerSk = rowGroup.readColumn(0).decodeAsInt64();
@@ -373,8 +373,8 @@ public class DeltaEncodingOptionalColumnTest {
   void testRowWithMostNulls() throws IOException {
     String filePath = "src/test/data/delta_encoding_optional_column.parquet";
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
-      SerializedFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
+      ParquetFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
 
       // Row 66 has many null values - test all columns for this row
       int rowIndex = 66;
@@ -405,9 +405,9 @@ public class DeltaEncodingOptionalColumnTest {
   void testAllIntegerColumnsNullCounts() throws IOException {
     String filePath = "src/test/data/delta_encoding_optional_column.parquet";
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
       SchemaDescriptor schema = reader.getSchema();
-      SerializedFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
+      ParquetFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
 
       // Verify expected null counts for integer columns (verified with pyarrow)
       int[] expectedNullCounts = {0, 3, 2, 0, 1, 1, 3, 3, 3};
@@ -433,9 +433,9 @@ public class DeltaEncodingOptionalColumnTest {
   void testAllStringColumnsNullCounts() throws IOException {
     String filePath = "src/test/data/delta_encoding_optional_column.parquet";
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
       SchemaDescriptor schema = reader.getSchema();
-      SerializedFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
+      ParquetFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
 
       // Verify expected null counts for string columns (columns 9-16)
       int[] expectedNullCounts = {0, 3, 3, 1, 4, 4, 3, 3};

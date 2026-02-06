@@ -4,12 +4,12 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import java.io.IOException;
-import java.util.List;
-import org.junit.jupiter.api.Test;
 import io.github.aloksingh.parquet.model.ParquetMetadata;
 import io.github.aloksingh.parquet.model.SchemaDescriptor;
 import io.github.aloksingh.parquet.model.Type;
+import java.io.IOException;
+import java.util.List;
+import org.junit.jupiter.api.Test;
 
 /**
  * Tests for reading DELTA_LENGTH_BYTE_ARRAY encoding.
@@ -33,7 +33,7 @@ public class DeltaLengthByteArrayTest {
   void testDeltaLengthByteArrayFileStructure() throws IOException {
     String filePath = "src/test/data/delta_length_byte_array.parquet";
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
       ParquetMetadata metadata = reader.getMetadata();
       SchemaDescriptor schema = reader.getSchema();
 
@@ -51,8 +51,8 @@ public class DeltaLengthByteArrayTest {
   void testDeltaLengthByteArrayFirstValues() throws IOException {
     String filePath = "src/test/data/delta_length_byte_array.parquet";
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
-      SerializedFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
+      ParquetFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
 
       // Read FRUIT column
       List<String> values = rowGroup.readColumn(0).decodeAsString();
@@ -82,8 +82,8 @@ public class DeltaLengthByteArrayTest {
   void testDeltaLengthByteArrayMiddleValues() throws IOException {
     String filePath = "src/test/data/delta_length_byte_array.parquet";
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
-      SerializedFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
+      ParquetFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
 
       // Read FRUIT column
       List<String> values = rowGroup.readColumn(0).decodeAsString();
@@ -101,8 +101,8 @@ public class DeltaLengthByteArrayTest {
   void testDeltaLengthByteArrayLastValues() throws IOException {
     String filePath = "src/test/data/delta_length_byte_array.parquet";
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
-      SerializedFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
+      ParquetFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
 
       // Read FRUIT column
       List<String> values = rowGroup.readColumn(0).decodeAsString();
@@ -125,8 +125,8 @@ public class DeltaLengthByteArrayTest {
   void testDeltaLengthByteArrayAllValues() throws IOException {
     String filePath = "src/test/data/delta_length_byte_array.parquet";
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
-      SerializedFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
+      ParquetFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
 
       // Read FRUIT column
       List<String> values = rowGroup.readColumn(0).decodeAsString();
@@ -147,8 +147,8 @@ public class DeltaLengthByteArrayTest {
   void testDeltaLengthByteArrayStringLengths() throws IOException {
     String filePath = "src/test/data/delta_length_byte_array.parquet";
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
-      SerializedFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
+      ParquetFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
 
       // Read FRUIT column
       List<String> values = rowGroup.readColumn(0).decodeAsString();
@@ -179,7 +179,7 @@ public class DeltaLengthByteArrayTest {
   void testDeltaLengthByteArrayCompression() throws IOException {
     String filePath = "src/test/data/delta_length_byte_array.parquet";
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
       ParquetMetadata metadata = reader.getMetadata();
 
       // Verify the file uses ZSTD compression

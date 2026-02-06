@@ -4,6 +4,14 @@ import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
+import io.github.aloksingh.parquet.ParquetFileReader;
+import io.github.aloksingh.parquet.ParquetRowIterator;
+import io.github.aloksingh.parquet.model.ColumnDescriptor;
+import io.github.aloksingh.parquet.model.LogicalColumnDescriptor;
+import io.github.aloksingh.parquet.model.ParquetMetadata;
+import io.github.aloksingh.parquet.model.RowColumnGroup;
+import io.github.aloksingh.parquet.model.SchemaDescriptor;
+import io.github.aloksingh.parquet.model.Type;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.io.OutputStreamWriter;
@@ -12,14 +20,6 @@ import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
-import io.github.aloksingh.parquet.ParquetRowIterator;
-import io.github.aloksingh.parquet.SerializedFileReader;
-import io.github.aloksingh.parquet.model.ColumnDescriptor;
-import io.github.aloksingh.parquet.model.LogicalColumnDescriptor;
-import io.github.aloksingh.parquet.model.ParquetMetadata;
-import io.github.aloksingh.parquet.model.RowColumnGroup;
-import io.github.aloksingh.parquet.model.SchemaDescriptor;
-import io.github.aloksingh.parquet.model.Type;
 
 /**
  * Converts a Parquet file to JSON format with metadata and row data.
@@ -61,7 +61,7 @@ public class ParquetToJsonConverter {
   public JsonObject convertToJson(String parquetFilePath) throws IOException {
     JsonObject result = new JsonObject();
 
-    try (SerializedFileReader reader = new SerializedFileReader(parquetFilePath)) {
+    try (ParquetFileReader reader = new ParquetFileReader(parquetFilePath)) {
       // Extract metadata
       result.add("metadata", extractMetadata(reader));
 
@@ -78,10 +78,10 @@ public class ParquetToJsonConverter {
    * Extracts comprehensive metadata including file-level information (version, row counts),
    * key-value metadata, column descriptions with statistics, and row group information.
    *
-   * @param reader the SerializedFileReader for the Parquet file
+   * @param reader the ParquetFileReader for the Parquet file
    * @return JsonObject containing all metadata information
    */
-  private JsonObject extractMetadata(SerializedFileReader reader) {
+  private JsonObject extractMetadata(ParquetFileReader reader) {
     JsonObject metadata = new JsonObject();
     ParquetMetadata parquetMetadata = reader.getMetadata();
     SchemaDescriptor schema = reader.getSchema();
@@ -302,11 +302,11 @@ public class ParquetToJsonConverter {
    * Iterates through all rows in the Parquet file and converts each row to a JSON object,
    * handling various column types including primitives, maps, and lists.
    *
-   * @param reader the SerializedFileReader for the Parquet file
+   * @param reader the ParquetFileReader for the Parquet file
    * @return JsonArray containing all rows as JSON objects
    * @throws IOException if an error occurs while reading the file
    */
-  private JsonArray extractRows(SerializedFileReader reader) throws IOException {
+  private JsonArray extractRows(ParquetFileReader reader) throws IOException {
     JsonArray rows = new JsonArray();
     SchemaDescriptor schema = reader.getSchema();
 

@@ -5,13 +5,13 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import java.io.IOException;
-import java.util.Arrays;
-import org.junit.jupiter.api.Test;
 import io.github.aloksingh.parquet.model.ColumnDescriptor;
 import io.github.aloksingh.parquet.model.RowColumnGroup;
 import io.github.aloksingh.parquet.model.SchemaDescriptor;
 import io.github.aloksingh.parquet.model.Type;
+import java.io.IOException;
+import java.util.Arrays;
+import org.junit.jupiter.api.Test;
 
 /**
  * Test for reading boolean column with RLE (Run Length Encoding) encoding.
@@ -114,7 +114,7 @@ class RleBooleanEncodingTest {
   void testRleBooleanEncodingReadWithRowIterator() throws IOException {
     System.out.println("Testing RLE boolean encoding file: " + TEST_FILE);
 
-    try (SerializedFileReader reader = new SerializedFileReader(TEST_FILE)) {
+    try (ParquetFileReader reader = new ParquetFileReader(TEST_FILE)) {
       SchemaDescriptor schema = reader.getSchema();
 
       // Verify schema
@@ -193,7 +193,7 @@ class RleBooleanEncodingTest {
   void testRleBooleanEncodingMetadata() throws IOException {
     System.out.println("\nTesting metadata for: " + TEST_FILE);
 
-    try (SerializedFileReader reader = new SerializedFileReader(TEST_FILE)) {
+    try (ParquetFileReader reader = new ParquetFileReader(TEST_FILE)) {
       SchemaDescriptor schema = reader.getSchema();
 
       // Print schema details
@@ -218,7 +218,7 @@ class RleBooleanEncodingTest {
   void testRleBooleanEncodingValuePattern() throws IOException {
     System.out.println("\nTesting specific value patterns in: " + TEST_FILE);
 
-    try (SerializedFileReader reader = new SerializedFileReader(TEST_FILE)) {
+    try (ParquetFileReader reader = new ParquetFileReader(TEST_FILE)) {
       RowColumnGroupIterator iterator = reader.rowIterator();
       Boolean[] comparisonValues = EXPECTED_VALUES;
 
@@ -242,7 +242,7 @@ class RleBooleanEncodingTest {
   void testRleBooleanEncodingNullPositions() throws IOException {
     System.out.println("\nTesting null value positions in: " + TEST_FILE);
 
-    try (SerializedFileReader reader = new SerializedFileReader(TEST_FILE)) {
+    try (ParquetFileReader reader = new ParquetFileReader(TEST_FILE)) {
       RowColumnGroupIterator iterator = reader.rowIterator();
 
       // Expected null positions (0-indexed) from pyarrow: 2, 15, 23, 38, 48, 60

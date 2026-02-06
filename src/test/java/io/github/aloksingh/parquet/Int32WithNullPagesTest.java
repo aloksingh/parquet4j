@@ -5,14 +5,14 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import java.io.IOException;
-import java.util.List;
-import org.junit.jupiter.api.Test;
 import io.github.aloksingh.parquet.model.ColumnDescriptor;
 import io.github.aloksingh.parquet.model.ColumnValues;
 import io.github.aloksingh.parquet.model.ParquetMetadata;
 import io.github.aloksingh.parquet.model.SchemaDescriptor;
 import io.github.aloksingh.parquet.model.Type;
+import java.io.IOException;
+import java.util.List;
+import org.junit.jupiter.api.Test;
 
 /**
  * Tests for reading files with null pages (pages containing only null values).
@@ -37,7 +37,7 @@ class Int32WithNullPagesTest {
   void testInt32WithNullPagesFileStructure() throws IOException {
     String filePath = "src/test/data/int32_with_null_pages.parquet";
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
       ParquetMetadata metadata = reader.getMetadata();
       SchemaDescriptor schema = reader.getSchema();
 
@@ -57,8 +57,8 @@ class Int32WithNullPagesTest {
   void testInt32WithNullPagesNullCount() throws IOException {
     String filePath = "src/test/data/int32_with_null_pages.parquet";
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
-      SerializedFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
+      ParquetFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
       ColumnValues columnValues = rowGroup.readColumn(0);
 
       // Read all values
@@ -79,8 +79,8 @@ class Int32WithNullPagesTest {
   void testInt32WithNullPagesFirstValues() throws IOException {
     String filePath = "src/test/data/int32_with_null_pages.parquet";
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
-      SerializedFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
+      ParquetFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
       List<Integer> values = rowGroup.readColumn(0).decodeAsInt32();
 
       // Verify first 10 values (verified with pyarrow)
@@ -101,8 +101,8 @@ class Int32WithNullPagesTest {
   void testInt32WithNullPagesNullPositions() throws IOException {
     String filePath = "src/test/data/int32_with_null_pages.parquet";
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
-      SerializedFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
+      ParquetFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
       List<Integer> values = rowGroup.readColumn(0).decodeAsInt32();
 
       // Verify specific null positions (from pyarrow analysis)
@@ -123,8 +123,8 @@ class Int32WithNullPagesTest {
   void testInt32WithNullPagesNonNullValues() throws IOException {
     String filePath = "src/test/data/int32_with_null_pages.parquet";
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
-      SerializedFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
+      ParquetFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
       List<Integer> values = rowGroup.readColumn(0).decodeAsInt32();
 
       // Extract non-null values
@@ -147,8 +147,8 @@ class Int32WithNullPagesTest {
   void testInt32WithNullPagesLastValues() throws IOException {
     String filePath = "src/test/data/int32_with_null_pages.parquet";
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
-      SerializedFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
+      ParquetFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
       List<Integer> values = rowGroup.readColumn(0).decodeAsInt32();
 
       // Verify last 5 values (verified with pyarrow)
@@ -164,7 +164,7 @@ class Int32WithNullPagesTest {
   void testInt32WithNullPagesDefinitionLevels() throws IOException {
     String filePath = "src/test/data/int32_with_null_pages.parquet";
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
       SchemaDescriptor schema = reader.getSchema();
       ColumnDescriptor col = schema.getColumn(0);
 
@@ -181,8 +181,8 @@ class Int32WithNullPagesTest {
   void testInt32WithNullPagesValueRange() throws IOException {
     String filePath = "src/test/data/int32_with_null_pages.parquet";
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
-      SerializedFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
+      ParquetFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
       List<Integer> values = rowGroup.readColumn(0).decodeAsInt32();
 
       // Find min/max of non-null values

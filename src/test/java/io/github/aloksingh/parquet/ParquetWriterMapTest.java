@@ -122,7 +122,7 @@ class ParquetWriterMapTest {
     }
 
     // Read data back
-    try (SerializedFileReader reader = new SerializedFileReader(outputFile)) {
+    try (ParquetFileReader reader = new ParquetFileReader(outputFile)) {
       ParquetMetadata metadata = reader.getMetadata();
 
       // Verify metadata
@@ -234,7 +234,7 @@ class ParquetWriterMapTest {
     }
 
     // Read data back
-    try (SerializedFileReader reader = new SerializedFileReader(outputFile)) {
+    try (ParquetFileReader reader = new ParquetFileReader(outputFile)) {
       ParquetMetadata metadata = reader.getMetadata();
 
       // Verify metadata
@@ -337,7 +337,7 @@ class ParquetWriterMapTest {
       }
     }
     // Read data back
-    try (SerializedFileReader reader = new SerializedFileReader(outputFile)) {
+    try (ParquetFileReader reader = new ParquetFileReader(outputFile)) {
       ParquetMetadata metadata = reader.getMetadata();
 
       // Verify metadata
@@ -505,7 +505,7 @@ class ParquetWriterMapTest {
     }
 
     // Read back and verify
-    try (SerializedFileReader reader = new SerializedFileReader(outputFile)) {
+    try (ParquetFileReader reader = new ParquetFileReader(outputFile)) {
       assertEquals(numRows, reader.getTotalRowCount());
     }
 
@@ -560,7 +560,7 @@ class ParquetWriterMapTest {
     }
 
     // Read back and verify
-    try (SerializedFileReader reader = new SerializedFileReader(outputFile)) {
+    try (ParquetFileReader reader = new ParquetFileReader(outputFile)) {
       assertEquals(numRows*4, reader.getTotalRowCount());
     }
 

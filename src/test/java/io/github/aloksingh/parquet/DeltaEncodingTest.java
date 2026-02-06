@@ -3,15 +3,15 @@ package io.github.aloksingh.parquet;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.github.aloksingh.parquet.model.ColumnDescriptor;
+import io.github.aloksingh.parquet.model.ColumnValues;
+import io.github.aloksingh.parquet.model.SchemaDescriptor;
+import io.github.aloksingh.parquet.model.Type;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.List;
 import org.junit.jupiter.api.Test;
-import io.github.aloksingh.parquet.model.ColumnDescriptor;
-import io.github.aloksingh.parquet.model.ColumnValues;
-import io.github.aloksingh.parquet.model.SchemaDescriptor;
-import io.github.aloksingh.parquet.model.Type;
 
 /**
  * Tests for DELTA_BINARY_PACKED encoding support
@@ -148,11 +148,11 @@ class DeltaEncodingTest {
     boolean foundDeltaFile = false;
     for (String filename : testFiles) {
       String filePath = TEST_DATA_DIR + filename;
-      try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
+      try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
         System.out.println("\n=== Testing file: " + filename + " ===");
         reader.printMetadata();
 
-        SerializedFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
+        ParquetFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
         SchemaDescriptor schema = reader.getSchema();
 
         // Look for INT32/INT64 columns that might use DELTA_BINARY_PACKED

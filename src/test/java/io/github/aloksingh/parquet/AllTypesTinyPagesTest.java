@@ -5,14 +5,14 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import java.io.IOException;
-import java.util.List;
-import org.junit.jupiter.api.Test;
 import io.github.aloksingh.parquet.model.ColumnDescriptor;
 import io.github.aloksingh.parquet.model.ColumnValues;
 import io.github.aloksingh.parquet.model.ParquetMetadata;
 import io.github.aloksingh.parquet.model.SchemaDescriptor;
 import io.github.aloksingh.parquet.model.Type;
+import java.io.IOException;
+import java.util.List;
+import org.junit.jupiter.api.Test;
 
 /**
  * Test for reading and validating alltypes_tiny_pages.parquet file.
@@ -26,7 +26,7 @@ class AllTypesTinyPagesTest {
 
   @Test
   void testReadMetadata() throws IOException {
-    try (SerializedFileReader reader = new SerializedFileReader(TEST_FILE)) {
+    try (ParquetFileReader reader = new ParquetFileReader(TEST_FILE)) {
       ParquetMetadata metadata = reader.getMetadata();
 
       assertNotNull(metadata, "Metadata should not be null");
@@ -47,7 +47,7 @@ class AllTypesTinyPagesTest {
 
   @Test
   void testSchemaStructure() throws IOException {
-    try (SerializedFileReader reader = new SerializedFileReader(TEST_FILE)) {
+    try (ParquetFileReader reader = new ParquetFileReader(TEST_FILE)) {
       SchemaDescriptor schema = reader.getSchema();
 
       // Expected column names and types
@@ -84,12 +84,12 @@ class AllTypesTinyPagesTest {
 
   @Test
   void testReadAllRowGroups() throws IOException {
-    try (SerializedFileReader reader = new SerializedFileReader(TEST_FILE)) {
+    try (ParquetFileReader reader = new ParquetFileReader(TEST_FILE)) {
       long totalRowsRead = 0;
 
       System.out.println("\n=== Row Groups ===");
       for (int i = 0; i < reader.getNumRowGroups(); i++) {
-        SerializedFileReader.RowGroupReader rowGroup = reader.getRowGroup(i);
+        ParquetFileReader.RowGroupReader rowGroup = reader.getRowGroup(i);
         long rowsInGroup = rowGroup.getNumRows();
         totalRowsRead += rowsInGroup;
 
@@ -108,7 +108,7 @@ class AllTypesTinyPagesTest {
 
   @Test
   void testReadInt32Column() throws IOException {
-    try (SerializedFileReader reader = new SerializedFileReader(TEST_FILE)) {
+    try (ParquetFileReader reader = new ParquetFileReader(TEST_FILE)) {
       SchemaDescriptor schema = reader.getSchema();
 
       // Test reading the "id" column (INT32)
@@ -119,7 +119,7 @@ class AllTypesTinyPagesTest {
       long totalValues = 0;
 
       for (int rgIdx = 0; rgIdx < reader.getNumRowGroups(); rgIdx++) {
-        SerializedFileReader.RowGroupReader rowGroup = reader.getRowGroup(rgIdx);
+        ParquetFileReader.RowGroupReader rowGroup = reader.getRowGroup(rgIdx);
         ColumnValues values = rowGroup.readColumn(idColumnIdx);
         List<Integer> idValues = values.decodeAsInt32();
 
@@ -144,7 +144,7 @@ class AllTypesTinyPagesTest {
 
   @Test
   void testReadBooleanColumn() throws IOException {
-    try (SerializedFileReader reader = new SerializedFileReader(TEST_FILE)) {
+    try (ParquetFileReader reader = new ParquetFileReader(TEST_FILE)) {
       SchemaDescriptor schema = reader.getSchema();
 
       int boolColumnIdx = findColumnIndex(schema, "bool_col");
@@ -154,7 +154,7 @@ class AllTypesTinyPagesTest {
       long totalValues = 0;
 
       for (int rgIdx = 0; rgIdx < reader.getNumRowGroups(); rgIdx++) {
-        SerializedFileReader.RowGroupReader rowGroup = reader.getRowGroup(rgIdx);
+        ParquetFileReader.RowGroupReader rowGroup = reader.getRowGroup(rgIdx);
         ColumnValues values = rowGroup.readColumn(boolColumnIdx);
         List<Boolean> boolValues = values.decodeAsBoolean();
 
@@ -178,7 +178,7 @@ class AllTypesTinyPagesTest {
 
   @Test
   void testReadInt64Column() throws IOException {
-    try (SerializedFileReader reader = new SerializedFileReader(TEST_FILE)) {
+    try (ParquetFileReader reader = new ParquetFileReader(TEST_FILE)) {
       SchemaDescriptor schema = reader.getSchema();
 
       int bigintColumnIdx = findColumnIndex(schema, "bigint_col");
@@ -188,7 +188,7 @@ class AllTypesTinyPagesTest {
       long totalValues = 0;
 
       for (int rgIdx = 0; rgIdx < reader.getNumRowGroups(); rgIdx++) {
-        SerializedFileReader.RowGroupReader rowGroup = reader.getRowGroup(rgIdx);
+        ParquetFileReader.RowGroupReader rowGroup = reader.getRowGroup(rgIdx);
         ColumnValues values = rowGroup.readColumn(bigintColumnIdx);
         List<Long> longValues = values.decodeAsInt64();
 
@@ -212,7 +212,7 @@ class AllTypesTinyPagesTest {
 
   @Test
   void testReadFloatColumn() throws IOException {
-    try (SerializedFileReader reader = new SerializedFileReader(TEST_FILE)) {
+    try (ParquetFileReader reader = new ParquetFileReader(TEST_FILE)) {
       SchemaDescriptor schema = reader.getSchema();
 
       int floatColumnIdx = findColumnIndex(schema, "float_col");
@@ -222,7 +222,7 @@ class AllTypesTinyPagesTest {
       long totalValues = 0;
 
       for (int rgIdx = 0; rgIdx < reader.getNumRowGroups(); rgIdx++) {
-        SerializedFileReader.RowGroupReader rowGroup = reader.getRowGroup(rgIdx);
+        ParquetFileReader.RowGroupReader rowGroup = reader.getRowGroup(rgIdx);
         ColumnValues values = rowGroup.readColumn(floatColumnIdx);
         List<Float> floatValues = values.decodeAsFloat();
 
@@ -247,7 +247,7 @@ class AllTypesTinyPagesTest {
 
   @Test
   void testReadDoubleColumn() throws IOException {
-    try (SerializedFileReader reader = new SerializedFileReader(TEST_FILE)) {
+    try (ParquetFileReader reader = new ParquetFileReader(TEST_FILE)) {
       SchemaDescriptor schema = reader.getSchema();
 
       int doubleColumnIdx = findColumnIndex(schema, "double_col");
@@ -257,7 +257,7 @@ class AllTypesTinyPagesTest {
       long totalValues = 0;
 
       for (int rgIdx = 0; rgIdx < reader.getNumRowGroups(); rgIdx++) {
-        SerializedFileReader.RowGroupReader rowGroup = reader.getRowGroup(rgIdx);
+        ParquetFileReader.RowGroupReader rowGroup = reader.getRowGroup(rgIdx);
         ColumnValues values = rowGroup.readColumn(doubleColumnIdx);
         List<Double> doubleValues = values.decodeAsDouble();
 
@@ -282,7 +282,7 @@ class AllTypesTinyPagesTest {
 
   @Test
   void testReadStringColumn() throws IOException {
-    try (SerializedFileReader reader = new SerializedFileReader(TEST_FILE)) {
+    try (ParquetFileReader reader = new ParquetFileReader(TEST_FILE)) {
       SchemaDescriptor schema = reader.getSchema();
 
       int stringColumnIdx = findColumnIndex(schema, "string_col");
@@ -292,7 +292,7 @@ class AllTypesTinyPagesTest {
       long totalValues = 0;
 
       for (int rgIdx = 0; rgIdx < reader.getNumRowGroups(); rgIdx++) {
-        SerializedFileReader.RowGroupReader rowGroup = reader.getRowGroup(rgIdx);
+        ParquetFileReader.RowGroupReader rowGroup = reader.getRowGroup(rgIdx);
         ColumnValues values = rowGroup.readColumn(stringColumnIdx);
         List<String> stringValues = values.decodeAsString();
 
@@ -317,7 +317,7 @@ class AllTypesTinyPagesTest {
 
   @Test
   void testReadAllColumns() throws IOException {
-    try (SerializedFileReader reader = new SerializedFileReader(TEST_FILE)) {
+    try (ParquetFileReader reader = new ParquetFileReader(TEST_FILE)) {
       SchemaDescriptor schema = reader.getSchema();
 
       System.out.println("\n=== Reading All Columns ===");
@@ -330,7 +330,7 @@ class AllTypesTinyPagesTest {
         long totalValues = 0;
 
         for (int rgIdx = 0; rgIdx < reader.getNumRowGroups(); rgIdx++) {
-          SerializedFileReader.RowGroupReader rowGroup = reader.getRowGroup(rgIdx);
+          ParquetFileReader.RowGroupReader rowGroup = reader.getRowGroup(rgIdx);
 
           try {
             ColumnValues values = rowGroup.readColumn(colIdx);
@@ -365,9 +365,9 @@ class AllTypesTinyPagesTest {
 
   @Test
   void testValidateDataIntegrity() throws IOException {
-    try (SerializedFileReader reader = new SerializedFileReader(TEST_FILE)) {
+    try (ParquetFileReader reader = new ParquetFileReader(TEST_FILE)) {
       SchemaDescriptor schema = reader.getSchema();
-      SerializedFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
+      ParquetFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
 
       System.out.println("\n=== Validating Data Integrity ===");
 
@@ -419,7 +419,7 @@ class AllTypesTinyPagesTest {
   /**
    * Helper method to get the first value of a column
    */
-  private Object getFirstValue(SerializedFileReader.RowGroupReader rowGroup,
+  private Object getFirstValue(ParquetFileReader.RowGroupReader rowGroup,
                                SchemaDescriptor schema,
                                String columnName,
                                Type expectedType) throws IOException {

@@ -3,14 +3,14 @@ package io.github.aloksingh.parquet;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.github.aloksingh.parquet.model.ColumnValues;
+import io.github.aloksingh.parquet.model.ParquetMetadata;
+import io.github.aloksingh.parquet.model.SchemaDescriptor;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
-import io.github.aloksingh.parquet.model.ColumnValues;
-import io.github.aloksingh.parquet.model.ParquetMetadata;
-import io.github.aloksingh.parquet.model.SchemaDescriptor;
 
 /**
  * Test for reconstructing Map objects from Parquet columns using definition and repetition levels.
@@ -42,7 +42,7 @@ public class MapReconstructionTest {
     }
 
     // 1. Read the Parquet file metadata
-    try (SerializedFileReader reader = new SerializedFileReader(testFile.toString())) {
+    try (ParquetFileReader reader = new ParquetFileReader(testFile.toString())) {
       ParquetMetadata metadata = reader.getMetadata();
       SchemaDescriptor schema = metadata.fileMetadata().schema();
 
@@ -56,7 +56,7 @@ public class MapReconstructionTest {
 
       // 2. Get the first row group reader
       int rowGroupIndex = 0;
-      SerializedFileReader.RowGroupReader rowGroupReader = reader.getRowGroup(rowGroupIndex);
+      ParquetFileReader.RowGroupReader rowGroupReader = reader.getRowGroup(rowGroupIndex);
 
       // 3. Read the key column (column index 1)
       int keyColumnIndex = 1;

@@ -3,12 +3,6 @@ package io.github.aloksingh.parquet;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.util.Arrays;
-import java.util.List;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
 import io.github.aloksingh.parquet.model.ColumnDescriptor;
 import io.github.aloksingh.parquet.model.CompressionCodec;
 import io.github.aloksingh.parquet.model.LogicalColumnDescriptor;
@@ -18,6 +12,12 @@ import io.github.aloksingh.parquet.model.RowColumnGroup;
 import io.github.aloksingh.parquet.model.SchemaDescriptor;
 import io.github.aloksingh.parquet.model.SimpleRowColumnGroup;
 import io.github.aloksingh.parquet.model.Type;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.Arrays;
+import java.util.List;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 /**
  * Test compression functionality in ParquetFileWriter
@@ -90,7 +90,7 @@ class ParquetCompressionTest {
         "Compressed file should be smaller than uncompressed file");
 
     // Verify we can read back the compressed file correctly
-    try (SerializedFileReader reader = new SerializedFileReader(compressedFile)) {
+    try (ParquetFileReader reader = new ParquetFileReader(compressedFile)) {
       ParquetMetadata metadata = reader.getMetadata();
       assertEquals(1000, metadata.fileMetadata().numRows());
 
@@ -162,7 +162,7 @@ class ParquetCompressionTest {
     }
 
     // Read back and verify
-    try (SerializedFileReader reader = new SerializedFileReader(outputFile)) {
+    try (ParquetFileReader reader = new ParquetFileReader(outputFile)) {
       ParquetMetadata metadata = reader.getMetadata();
       assertEquals(5000, metadata.fileMetadata().numRows());
 

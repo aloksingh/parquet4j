@@ -4,13 +4,8 @@ import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
-import java.io.IOException;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.util.List;
-import java.util.Map;
+import io.github.aloksingh.parquet.ParquetFileReader;
 import io.github.aloksingh.parquet.RowColumnGroupIterator;
-import io.github.aloksingh.parquet.SerializedFileReader;
 import io.github.aloksingh.parquet.model.ColumnDescriptor;
 import io.github.aloksingh.parquet.model.LogicalColumnDescriptor;
 import io.github.aloksingh.parquet.model.MapMetadata;
@@ -18,6 +13,11 @@ import io.github.aloksingh.parquet.model.ParquetMetadata;
 import io.github.aloksingh.parquet.model.RowColumnGroup;
 import io.github.aloksingh.parquet.model.SchemaDescriptor;
 import io.github.aloksingh.parquet.model.Type;
+import java.io.IOException;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.util.List;
+import java.util.Map;
 
 /**
  * Helper class to inspect and describe Parquet files in detail.
@@ -31,7 +31,7 @@ import io.github.aloksingh.parquet.model.Type;
  */
 public class ParquetFileInspector implements AutoCloseable {
 
-  private final SerializedFileReader reader;
+  private final ParquetFileReader reader;
   private final ParquetMetadata metadata;
   private final SchemaDescriptor schema;
   private final Path filePath;
@@ -54,7 +54,7 @@ public class ParquetFileInspector implements AutoCloseable {
    */
   public ParquetFileInspector(Path filePath) throws IOException {
     this.filePath = filePath;
-    this.reader = new SerializedFileReader(filePath);
+    this.reader = new ParquetFileReader(filePath);
     this.metadata = reader.getMetadata();
     this.schema = reader.getSchema();
   }

@@ -1,11 +1,5 @@
 package io.github.aloksingh.parquet;
 
-import java.io.IOException;
-import java.util.ArrayList;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.NoSuchElementException;
 import io.github.aloksingh.parquet.model.ColumnDescriptor;
 import io.github.aloksingh.parquet.model.ColumnValues;
 import io.github.aloksingh.parquet.model.LogicalColumnDescriptor;
@@ -16,6 +10,12 @@ import io.github.aloksingh.parquet.model.RowColumnGroup;
 import io.github.aloksingh.parquet.model.SchemaDescriptor;
 import io.github.aloksingh.parquet.model.SimpleRowColumnGroup;
 import io.github.aloksingh.parquet.model.Type;
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.NoSuchElementException;
 
 /**
  * Iterator that reads Parquet files row by row across all row groups.
@@ -35,10 +35,10 @@ import io.github.aloksingh.parquet.model.Type;
  * }</pre>
  *
  * @see RowColumnGroupIterator
- * @see SerializedFileReader
+ * @see ParquetFileReader
  */
 public class ParquetRowIterator implements RowColumnGroupIterator, AutoCloseable {
-  private final SerializedFileReader fileReader;
+  private final ParquetFileReader fileReader;
   private final SchemaDescriptor schema;
   private final boolean closeFileReader;
 
@@ -53,7 +53,7 @@ public class ParquetRowIterator implements RowColumnGroupIterator, AutoCloseable
    * @param fileReader      The file reader to iterate over
    * @param closeFileReader Whether to close the file reader when done
    */
-  public ParquetRowIterator(SerializedFileReader fileReader, boolean closeFileReader) {
+  public ParquetRowIterator(ParquetFileReader fileReader, boolean closeFileReader) {
     this.fileReader = fileReader;
     this.schema = fileReader.getSchema();
     this.closeFileReader = closeFileReader;
@@ -74,7 +74,7 @@ public class ParquetRowIterator implements RowColumnGroupIterator, AutoCloseable
    *
    * @param fileReader The file reader to iterate over
    */
-  public ParquetRowIterator(SerializedFileReader fileReader) {
+  public ParquetRowIterator(ParquetFileReader fileReader) {
     this(fileReader, true);
   }
 
@@ -87,7 +87,7 @@ public class ParquetRowIterator implements RowColumnGroupIterator, AutoCloseable
    */
   private void loadRowGroup(int rowGroupIndex) {
     try {
-      SerializedFileReader.RowGroupReader rowGroupReader =
+      ParquetFileReader.RowGroupReader rowGroupReader =
           fileReader.getRowGroup(rowGroupIndex);
 
       currentRowGroupRowCount = rowGroupReader.getNumRows();
@@ -145,7 +145,7 @@ public class ParquetRowIterator implements RowColumnGroupIterator, AutoCloseable
    * @throws ParquetException If the map structure is invalid or contains unsupported types
    */
   private List<Map<String, Object>> decodeMapColumn(
-      SerializedFileReader.RowGroupReader rowGroupReader,
+      ParquetFileReader.RowGroupReader rowGroupReader,
       MapMetadata mapMetadata) throws IOException {
 
     // Read key and value columns

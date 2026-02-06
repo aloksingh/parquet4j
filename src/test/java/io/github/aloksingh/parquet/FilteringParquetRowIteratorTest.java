@@ -41,7 +41,7 @@ class FilteringParquetRowIteratorTest {
   void testBasicEqualityFilter() throws IOException {
     String filePath = TEST_DATA_DIR + "alltypes_plain.parquet";
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
       // Use a simple equality filter for value 4 (from the first row we know id=4)
       ColumnFilter filter = new ColumnEqualFilter(4);
       ParquetRowIterator baseIterator = new ParquetRowIterator(reader, false);
@@ -76,7 +76,7 @@ class FilteringParquetRowIteratorTest {
   void testGreaterThanFilter() throws IOException {
     String filePath = TEST_DATA_DIR + "alltypes_plain.parquet";
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
       // Filter for id > 5 (or any reasonable threshold)
       ColumnFilter filter = new ColumnGreaterThanFilter(5);
       ParquetRowIterator baseIterator = new ParquetRowIterator(reader, false);
@@ -118,7 +118,7 @@ class FilteringParquetRowIteratorTest {
   void testLessThanFilter() throws IOException {
     String filePath = TEST_DATA_DIR + "alltypes_plain.parquet";
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
       ColumnFilter filter = new ColumnLessThanFilter(3);
       ParquetRowIterator baseIterator = new ParquetRowIterator(reader, false);
 
@@ -158,7 +158,7 @@ class FilteringParquetRowIteratorTest {
   void testNotEqualFilter() throws IOException {
     String filePath = TEST_DATA_DIR + "alltypes_plain.parquet";
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
       // Filter for values != null (simpler test)
       ColumnFilter filter = new ColumnNotEqualFilter(Integer.MAX_VALUE);
       ParquetRowIterator baseIterator = new ParquetRowIterator(reader, false);
@@ -185,7 +185,7 @@ class FilteringParquetRowIteratorTest {
   void testMultipleFiltersAnd() throws IOException {
     String filePath = TEST_DATA_DIR + "alltypes_plain.parquet";
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
       // Filter for values > 2 AND < 8
       ColumnFilter[] filters = new ColumnFilter[]{
           new ColumnGreaterThanFilter(2),
@@ -229,7 +229,7 @@ class FilteringParquetRowIteratorTest {
   void testColumnFilterSetWithAll() throws IOException {
     String filePath = TEST_DATA_DIR + "alltypes_plain.parquet";
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
       // Create a filter set: value >= 3 AND value <= 6
       ColumnFilterSet filterSet = new ColumnFilterSet(
           FilterJoinType.All,
@@ -260,7 +260,7 @@ class FilteringParquetRowIteratorTest {
   void testColumnFilterSetWithAny() throws IOException {
     String filePath = TEST_DATA_DIR + "alltypes_plain.parquet";
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
       // Create a filter set: value == 0 OR value == 7
       ColumnFilterSet filterSet = new ColumnFilterSet(
           FilterJoinType.Any,
@@ -302,7 +302,7 @@ class FilteringParquetRowIteratorTest {
   void testStringPrefixFilter() throws IOException {
     String filePath = TEST_DATA_DIR + "binary.parquet";
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
       // Filter for strings starting with a common prefix
       ColumnFilter filter = new ColumnPrefixFilter("a");
       ParquetRowIterator baseIterator = new ParquetRowIterator(reader, false);
@@ -340,7 +340,7 @@ class FilteringParquetRowIteratorTest {
   void testNoMatchingRows() throws IOException {
     String filePath = TEST_DATA_DIR + "alltypes_plain.parquet";
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
       // Filter for impossibly large value
       ColumnFilter filter = new ColumnGreaterThanFilter(Integer.MAX_VALUE);
       ParquetRowIterator baseIterator = new ParquetRowIterator(reader, false);
@@ -363,7 +363,7 @@ class FilteringParquetRowIteratorTest {
   void testNullValueFilter() throws IOException {
     String filePath = TEST_DATA_DIR + "nulls.snappy.parquet";
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
       ColumnFilter filter = new ColumnIsNullFilter();
       ParquetRowIterator baseIterator = new ParquetRowIterator(reader, false);
 
@@ -399,7 +399,7 @@ class FilteringParquetRowIteratorTest {
   void testNotNullValueFilter() throws IOException {
     String filePath = TEST_DATA_DIR + "alltypes_plain.parquet";
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
       ColumnFilter filter = new ColumnIsNotNullFilter();
       ParquetRowIterator baseIterator = new ParquetRowIterator(reader, false);
       FilteringParquetRowIterator iterator =
@@ -434,7 +434,7 @@ class FilteringParquetRowIteratorTest {
   void testMultipleHasNextCalls() throws IOException {
     String filePath = TEST_DATA_DIR + "alltypes_plain.parquet";
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
       ColumnFilter filter = new ColumnGreaterThanFilter(0);
       ParquetRowIterator baseIterator = new ParquetRowIterator(reader, false);
 
@@ -464,7 +464,7 @@ class FilteringParquetRowIteratorTest {
 
     // First count total rows
     int totalRows = 0;
-    try (SerializedFileReader reader = new SerializedFileReader(filePath);
+    try (ParquetFileReader reader = new ParquetFileReader(filePath);
          ParquetRowIterator iterator = new ParquetRowIterator(reader, false)) {
       while (iterator.hasNext()) {
         iterator.next();
@@ -475,7 +475,7 @@ class FilteringParquetRowIteratorTest {
     // Now filter and count
     ColumnFilter filter = new ColumnIsNotNullFilter();
     int filteredRows = 0;
-    try (SerializedFileReader reader = new SerializedFileReader(filePath);
+    try (ParquetFileReader reader = new ParquetFileReader(filePath);
          ParquetRowIterator baseIterator = new ParquetRowIterator(reader, false);
          FilteringParquetRowIterator iterator =
              new FilteringParquetRowIterator(baseIterator, filter)) {
@@ -489,7 +489,7 @@ class FilteringParquetRowIteratorTest {
     System.out.println("Total rows: " + totalRows + ", Filtered rows: " + filteredRows);
 
     // After iteration, hasNext should return false
-    try (SerializedFileReader reader = new SerializedFileReader(filePath);
+    try (ParquetFileReader reader = new ParquetFileReader(filePath);
          ParquetRowIterator baseIterator = new ParquetRowIterator(reader, false);
          FilteringParquetRowIterator iterator =
              new FilteringParquetRowIterator(baseIterator, filter)) {
@@ -510,7 +510,7 @@ class FilteringParquetRowIteratorTest {
 
     // Test with empty filter array - should not crash
     ColumnFilter[] emptyFilters = new ColumnFilter[0];
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
       ParquetRowIterator baseIterator = new ParquetRowIterator(reader, false);
       FilteringParquetRowIterator iterator =
           new FilteringParquetRowIterator(baseIterator, emptyFilters);
@@ -534,7 +534,7 @@ class FilteringParquetRowIteratorTest {
   void testMapColumnFiltering() throws IOException {
     String filePath = TEST_DATA_DIR + "nonnullable.impala.parquet";
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
       // Create a generic filter
       ColumnFilter filter = new ColumnIsNotNullFilter();
       ParquetRowIterator baseIterator = new ParquetRowIterator(reader, false);
@@ -567,7 +567,7 @@ class FilteringParquetRowIteratorTest {
     // This file has multiple row groups
     String filePath = TEST_DATA_DIR + "alltypes_tiny_pages.parquet";
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
       System.out.println("File has " + reader.getNumRowGroups() + " row groups");
 
       ColumnFilter filter = new ColumnGreaterThanFilter(5);
@@ -599,7 +599,7 @@ class FilteringParquetRowIteratorTest {
   void testGetSchema() throws IOException {
     String filePath = TEST_DATA_DIR + "alltypes_plain.parquet";
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
       ColumnFilter filter = new ColumnIsNotNullFilter();
       ParquetRowIterator baseIterator = new ParquetRowIterator(reader, false);
 
@@ -619,7 +619,7 @@ class FilteringParquetRowIteratorTest {
   void testGetTotalRowCount() throws IOException {
     String filePath = TEST_DATA_DIR + "alltypes_plain.parquet";
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
       ColumnFilter filter = new ColumnIsNotNullFilter();
       ParquetRowIterator baseIterator = new ParquetRowIterator(reader, false);
 
@@ -639,7 +639,7 @@ class FilteringParquetRowIteratorTest {
   @Test
   void testClose() throws IOException {
     String filePath = TEST_DATA_DIR + "alltypes_plain.parquet";
-    SerializedFileReader reader = new SerializedFileReader(filePath);
+    ParquetFileReader reader = new ParquetFileReader(filePath);
 
     ColumnFilter filter = new ColumnIsNotNullFilter();
     ParquetRowIterator baseIterator = new ParquetRowIterator(reader, true);
@@ -662,7 +662,7 @@ class FilteringParquetRowIteratorTest {
   void testWithColumnFiltersFactory() throws IOException {
     String filePath = TEST_DATA_DIR + "alltypes_plain.parquet";
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
       ColumnFilters columnFilters = new ColumnFilters();
 
       // Create filter using factory

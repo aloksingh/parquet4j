@@ -4,9 +4,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import java.io.IOException;
-import java.util.List;
-import org.junit.jupiter.api.Test;
 import io.github.aloksingh.parquet.model.ColumnDescriptor;
 import io.github.aloksingh.parquet.model.ColumnValues;
 import io.github.aloksingh.parquet.model.Encoding;
@@ -14,6 +11,9 @@ import io.github.aloksingh.parquet.model.Page;
 import io.github.aloksingh.parquet.model.ParquetMetadata;
 import io.github.aloksingh.parquet.model.SchemaDescriptor;
 import io.github.aloksingh.parquet.model.Type;
+import java.io.IOException;
+import java.util.List;
+import org.junit.jupiter.api.Test;
 
 /**
  * Tests for reading parquet files with unknown logical types.
@@ -34,7 +34,7 @@ public class UnknownLogicalTypeTest {
 
   @Test
   void testMetadataReading() throws IOException {
-    try (SerializedFileReader reader = new SerializedFileReader(TEST_FILE)) {
+    try (ParquetFileReader reader = new ParquetFileReader(TEST_FILE)) {
       ParquetMetadata metadata = reader.getMetadata();
 
       // Validate metadata
@@ -66,8 +66,8 @@ public class UnknownLogicalTypeTest {
 
   @Test
   void testPageStructure() throws IOException {
-    try (SerializedFileReader reader = new SerializedFileReader(TEST_FILE)) {
-      SerializedFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
+    try (ParquetFileReader reader = new ParquetFileReader(TEST_FILE)) {
+      ParquetFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
       SchemaDescriptor schema = reader.getSchema();
 
       System.out.println("\n=== Testing page structure ===");
@@ -115,8 +115,8 @@ public class UnknownLogicalTypeTest {
 
   @Test
   void testDictionaryPages() throws IOException {
-    try (SerializedFileReader reader = new SerializedFileReader(TEST_FILE)) {
-      SerializedFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
+    try (ParquetFileReader reader = new ParquetFileReader(TEST_FILE)) {
+      ParquetFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
       SchemaDescriptor schema = reader.getSchema();
 
       System.out.println("\n=== Testing dictionary pages ===");
@@ -151,8 +151,8 @@ public class UnknownLogicalTypeTest {
   void testDataReadingKnownIssue() throws IOException {
     System.out.println("\n=== Testing data reading (known RLE decoder issue) ===");
 
-    try (SerializedFileReader reader = new SerializedFileReader(TEST_FILE)) {
-      SerializedFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
+    try (ParquetFileReader reader = new ParquetFileReader(TEST_FILE)) {
+      ParquetFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
       SchemaDescriptor schema = reader.getSchema();
 
       // Try to read the first column

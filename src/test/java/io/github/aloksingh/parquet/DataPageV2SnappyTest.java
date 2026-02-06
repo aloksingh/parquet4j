@@ -6,14 +6,14 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import java.io.IOException;
-import java.util.List;
-import org.junit.jupiter.api.Test;
 import io.github.aloksingh.parquet.model.ColumnDescriptor;
 import io.github.aloksingh.parquet.model.ColumnValues;
 import io.github.aloksingh.parquet.model.ParquetMetadata;
 import io.github.aloksingh.parquet.model.SchemaDescriptor;
 import io.github.aloksingh.parquet.model.Type;
+import java.io.IOException;
+import java.util.List;
+import org.junit.jupiter.api.Test;
 
 /**
  * Tests for reading Data Page V2 format with Snappy compression.
@@ -39,7 +39,7 @@ class DataPageV2SnappyTest {
   void testDataPageV2FileStructure() throws IOException {
     String filePath = "src/test/data/datapage_v2.snappy.parquet";
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
       ParquetMetadata metadata = reader.getMetadata();
       SchemaDescriptor schema = reader.getSchema();
 
@@ -66,8 +66,8 @@ class DataPageV2SnappyTest {
   void testDataPageV2StringColumn() throws IOException {
     String filePath = "src/test/data/datapage_v2.snappy.parquet";
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
-      SerializedFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
+      ParquetFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
 
       // Column 'a' is at index 0
       List<String> values = rowGroup.readColumn(0).decodeAsString();
@@ -87,8 +87,8 @@ class DataPageV2SnappyTest {
   void testDataPageV2Int32Column() throws IOException {
     String filePath = "src/test/data/datapage_v2.snappy.parquet";
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
-      SerializedFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
+      ParquetFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
 
       // Column 'b' is at index 1
       List<Integer> values = rowGroup.readColumn(1).decodeAsInt32();
@@ -113,8 +113,8 @@ class DataPageV2SnappyTest {
   void testDataPageV2DoubleColumn() throws IOException {
     String filePath = "src/test/data/datapage_v2.snappy.parquet";
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
-      SerializedFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
+      ParquetFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
 
       // Column 'c' is at index 2
       List<Double> values = rowGroup.readColumn(2).decodeAsDouble();
@@ -139,8 +139,8 @@ class DataPageV2SnappyTest {
   void testDataPageV2BooleanColumn() throws IOException {
     String filePath = "src/test/data/datapage_v2.snappy.parquet";
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
-      SerializedFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
+      ParquetFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
 
       // Column 'd' is at index 3
       List<Boolean> values = rowGroup.readColumn(3).decodeAsBoolean();
@@ -165,8 +165,8 @@ class DataPageV2SnappyTest {
   void testDataPageV2NullHandling() throws IOException {
     String filePath = "src/test/data/datapage_v2.snappy.parquet";
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
-      SerializedFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
+      ParquetFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
 
       // Column 'a' has one null value at row 3
       List<String> values = rowGroup.readColumn(0).decodeAsString();
@@ -193,9 +193,9 @@ class DataPageV2SnappyTest {
   void testDataPageV2AllColumns() throws IOException {
     String filePath = "src/test/data/datapage_v2.snappy.parquet";
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
       SchemaDescriptor schema = reader.getSchema();
-      SerializedFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
+      ParquetFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
 
       // Verify we can read all simple columns (not testing list column 'e' yet)
       for (int i = 0; i < 4; i++) {
@@ -221,9 +221,9 @@ class DataPageV2SnappyTest {
   void testDataPageV2SnappyDecompression() throws IOException {
     String filePath = "src/test/data/datapage_v2.snappy.parquet";
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
       // If we can read all columns successfully, Snappy decompression is working
-      SerializedFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
+      ParquetFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
 
       // Read all simple columns
       List<String> colA = rowGroup.readColumn(0).decodeAsString();
@@ -249,8 +249,8 @@ class DataPageV2SnappyTest {
   void testDataPageV2DeltaBinaryPackedEncoding() throws IOException {
     String filePath = "src/test/data/datapage_v2.snappy.parquet";
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
-      SerializedFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
+      ParquetFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
 
       // Column 'b' uses DELTA_BINARY_PACKED encoding
       List<Integer> values = rowGroup.readColumn(1).decodeAsInt32();
@@ -269,8 +269,8 @@ class DataPageV2SnappyTest {
   void testDataPageV2ValueRanges() throws IOException {
     String filePath = "src/test/data/datapage_v2.snappy.parquet";
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
-      SerializedFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
+      ParquetFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
 
       // Test integer column range
       List<Integer> intValues = rowGroup.readColumn(1).decodeAsInt32();

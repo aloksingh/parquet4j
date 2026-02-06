@@ -34,7 +34,7 @@ The library provides a simple way to
 ### Reading Metadata
 
 ```java
-try (SerializedFileReader reader = new SerializedFileReader("data.parquet")) {
+try(ParquetFileReader reader = new ParquetFileReader("data.parquet")){
     // Print file metadata
     reader.printMetadata();
 
@@ -44,15 +44,15 @@ try (SerializedFileReader reader = new SerializedFileReader("data.parquet")) {
 
     // Access row groups
     int numRowGroups = reader.getNumRowGroups();
-    SerializedFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
+ParquetFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
 }
 ```
 
 ### Reading Column Data
 
 ```java
-try (SerializedFileReader reader = new SerializedFileReader("data.parquet")) {
-    SerializedFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
+try(ParquetFileReader reader = new ParquetFileReader("data.parquet")){
+ParquetFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
 
     // Read BOOLEAN column
     ColumnValues boolColumn = rowGroup.readColumn(0);

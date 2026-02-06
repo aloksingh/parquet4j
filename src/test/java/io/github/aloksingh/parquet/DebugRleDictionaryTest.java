@@ -1,13 +1,13 @@
 package io.github.aloksingh.parquet;
 
+import io.github.aloksingh.parquet.model.Encoding;
+import io.github.aloksingh.parquet.model.Page;
+import io.github.aloksingh.parquet.model.SchemaDescriptor;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.List;
 import org.junit.jupiter.api.Test;
-import io.github.aloksingh.parquet.model.Encoding;
-import io.github.aloksingh.parquet.model.Page;
-import io.github.aloksingh.parquet.model.SchemaDescriptor;
 
 /**
  * Debug test to understand RLE_DICTIONARY format
@@ -18,8 +18,8 @@ public class DebugRleDictionaryTest {
   void debugRleDictionaryFormat() throws IOException {
     String testFile = "src/test/data/unknown-logical-type.parquet";
 
-    try (SerializedFileReader reader = new SerializedFileReader(testFile)) {
-      SerializedFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
+    try (ParquetFileReader reader = new ParquetFileReader(testFile)) {
+      ParquetFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
       SchemaDescriptor schema = reader.getSchema();
 
       // Read column 0

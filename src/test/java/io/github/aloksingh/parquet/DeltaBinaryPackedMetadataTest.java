@@ -6,13 +6,13 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 
-import java.io.IOException;
-import org.junit.jupiter.api.Test;
 import io.github.aloksingh.parquet.model.ColumnDescriptor;
 import io.github.aloksingh.parquet.model.Encoding;
 import io.github.aloksingh.parquet.model.Page;
 import io.github.aloksingh.parquet.model.ParquetMetadata;
 import io.github.aloksingh.parquet.model.SchemaDescriptor;
+import java.io.IOException;
+import org.junit.jupiter.api.Test;
 
 /**
  * Tests for DELTA_BINARY_PACKED file metadata reading.
@@ -27,7 +27,7 @@ class DeltaBinaryPackedMetadataTest {
   void testCanOpenDeltaBinaryPackedFile() throws IOException {
     String filePath = "src/test/data/delta_binary_packed.parquet";
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
       ParquetMetadata metadata = reader.getMetadata();
 
       assertNotNull(metadata);
@@ -48,8 +48,8 @@ class DeltaBinaryPackedMetadataTest {
   void testCanReadPageMetadata() throws IOException {
     String filePath = "src/test/data/delta_binary_packed.parquet";
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
-      SerializedFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
+      ParquetFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
       SchemaDescriptor schema = reader.getSchema();
 
       int columnIndex = findColumnIndex(schema, "bitwidth0");

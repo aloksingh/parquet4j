@@ -4,10 +4,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import java.io.IOException;
-import java.util.Arrays;
-import java.util.List;
-import org.junit.jupiter.api.Test;
 import io.github.aloksingh.parquet.model.ColumnDescriptor;
 import io.github.aloksingh.parquet.model.ColumnValues;
 import io.github.aloksingh.parquet.model.Encoding;
@@ -16,6 +12,10 @@ import io.github.aloksingh.parquet.model.ParquetException;
 import io.github.aloksingh.parquet.model.ParquetMetadata;
 import io.github.aloksingh.parquet.model.SchemaDescriptor;
 import io.github.aloksingh.parquet.model.Type;
+import java.io.IOException;
+import java.util.Arrays;
+import java.util.List;
+import org.junit.jupiter.api.Test;
 
 /**
  * Tests for Data Page V2 support
@@ -43,7 +43,7 @@ public class DataPageV2Test {
   void testDataPageV2Reading() throws IOException {
     String filePath = TEST_DATA_DIR + "datapage_v2.snappy.parquet";
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
       ParquetMetadata metadata = reader.getMetadata();
 
       assertNotNull(metadata);
@@ -53,7 +53,7 @@ public class DataPageV2Test {
       reader.printMetadata();
 
       // Try to read some columns
-      SerializedFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
+      ParquetFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
       SchemaDescriptor schema = reader.getSchema();
 
       // Find and read the integer column 'b'
@@ -108,14 +108,14 @@ public class DataPageV2Test {
   void testDataPageV2EmptyPage() throws IOException {
     String filePath = TEST_DATA_DIR + "datapage_v2_empty_datapage.snappy.parquet";
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
       ParquetMetadata metadata = reader.getMetadata();
 
       assertNotNull(metadata);
       System.out.println("\n=== Testing Data Page V2 with empty data page ===");
       System.out.println("Rows: " + metadata.fileMetadata().numRows());
 
-      SerializedFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
+      ParquetFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
       SchemaDescriptor schema = reader.getSchema();
 
       // Read all pages - this may fail for empty compressed pages
@@ -146,7 +146,7 @@ public class DataPageV2Test {
   void testDataPageV2Metadata() throws IOException {
     String filePath = TEST_DATA_DIR + "datapage_v2.snappy.parquet";
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
       // Verify file metadata
       ParquetMetadata metadata = reader.getMetadata();
       assertNotNull(metadata);
@@ -182,8 +182,8 @@ public class DataPageV2Test {
     // Expected values: [1, 2, 3, 4, 5]
     String filePath = TEST_DATA_DIR + "datapage_v2.snappy.parquet";
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
-      SerializedFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
+      ParquetFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
       SchemaDescriptor schema = reader.getSchema();
 
       // Find column 'b'
@@ -218,8 +218,8 @@ public class DataPageV2Test {
     // Note: Data Page V2 with dictionary encoding may have implementation differences
     String filePath = TEST_DATA_DIR + "datapage_v2.snappy.parquet";
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
-      SerializedFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
+      ParquetFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
       SchemaDescriptor schema = reader.getSchema();
 
       // Find column 'c'
@@ -260,8 +260,8 @@ public class DataPageV2Test {
     // Note: Data Page V2 may use different bit-width encoding for booleans
     String filePath = TEST_DATA_DIR + "datapage_v2.snappy.parquet";
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
-      SerializedFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
+      ParquetFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
       SchemaDescriptor schema = reader.getSchema();
 
       // Find column 'd'
@@ -302,8 +302,8 @@ public class DataPageV2Test {
     // Expected values: ["abc", "abc", "abc", null, "abc"]
     String filePath = TEST_DATA_DIR + "datapage_v2.snappy.parquet";
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
-      SerializedFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
+      ParquetFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
       SchemaDescriptor schema = reader.getSchema();
 
       // Find column 'a'
@@ -339,8 +339,8 @@ public class DataPageV2Test {
   void testAllColumnsPresent() throws IOException {
     String filePath = TEST_DATA_DIR + "datapage_v2.snappy.parquet";
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
-      SerializedFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
+      ParquetFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
       SchemaDescriptor schema = reader.getSchema();
 
       System.out.println("\n=== Testing all columns in Data Page V2 file ===");
@@ -380,8 +380,8 @@ public class DataPageV2Test {
   void testDataPageV2Properties() throws IOException {
     String filePath = TEST_DATA_DIR + "datapage_v2.snappy.parquet";
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
-      SerializedFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
+      ParquetFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
       SchemaDescriptor schema = reader.getSchema();
 
       System.out.println("\n=== Data Page V2 Properties ===");
@@ -433,7 +433,7 @@ public class DataPageV2Test {
   void testPageV2EmptyCompressedZstd() throws IOException {
     String filePath = TEST_DATA_DIR + "page_v2_empty_compressed.parquet";
 
-    try (SerializedFileReader reader = new SerializedFileReader(filePath)) {
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
       ParquetMetadata metadata = reader.getMetadata();
 
       System.out.println("\n=== Testing Data Page V2 with ZSTD compression (all NULLs) ===");
@@ -459,7 +459,7 @@ public class DataPageV2Test {
       System.out.println("  Column type: " + col.physicalType());
 
       // Read the row group and pages
-      SerializedFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
+      ParquetFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
       PageReader pageReader = rowGroup.getColumnPageReader(0);
       List<Page> pages = pageReader.readAllPages();
 
