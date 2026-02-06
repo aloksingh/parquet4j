@@ -4,7 +4,8 @@ A Java implementation of a Parquet file reader, with very minimal set of depende
 This implementation used [rust parquet](https://docs.rs/parquet/latest/parquet/)
 and [parquet-java](https://github.com/apache/parquet-java) projects
 for references.
-Claude code was used extensively to generate majority of the implementation code and test cases. 
+Claude code was used extensively to generate encoder/decoder classes. It is also used extensively in generating
+test cases.
 
 ## Overview
 
