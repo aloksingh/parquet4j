@@ -1,15 +1,15 @@
 package io.github.aloksingh.parquet.model;
 
-import java.nio.ByteBuffer;
-import java.nio.ByteOrder;
-import java.util.ArrayList;
-import java.util.List;
 import io.github.aloksingh.parquet.BitPackedReader;
 import io.github.aloksingh.parquet.ByteStreamSplitDecoder;
 import io.github.aloksingh.parquet.DeltaBinaryPackedDecoder;
 import io.github.aloksingh.parquet.DeltaByteArrayDecoder;
 import io.github.aloksingh.parquet.DeltaLengthByteArrayDecoder;
 import io.github.aloksingh.parquet.RleDecoder;
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * Represents a Parquet column with methods to decode values from various encodings.
@@ -77,6 +77,58 @@ public class ColumnValues {
    */
   public LogicalColumnDescriptor getLogicalColumnDescriptor() {
     return logicalColumnDescriptor;
+  }
+
+  public <T> List<T> decodePrimitiveColumn(Class<T> typeClass) {
+    if (Integer.class.equals(typeClass) || int.class.equals(typeClass)) {
+      if (type != Type.INT32) {
+        throw new ParquetException("Column type is not " + type);
+      }
+      return (List<T>) decodeAsInt32();
+    }
+
+    if (Long.class.equals(typeClass) || long.class.equals(typeClass)) {
+      if (type != Type.INT64) {
+        throw new ParquetException("Column type is not " + type);
+      }
+      return (List<T>) decodeAsInt64();
+    }
+
+    if (Float.class.equals(typeClass) || float.class.equals(typeClass)) {
+      if (type != Type.FLOAT) {
+        throw new ParquetException("Column type is not " + type);
+      }
+      return (List<T>) decodeAsFloat();
+    }
+
+    if (Double.class.equals(typeClass) || double.class.equals(typeClass)) {
+      if (type != Type.DOUBLE) {
+        throw new ParquetException("Column type is not " + type);
+      }
+      return (List<T>) decodeAsDouble();
+    }
+
+    if (Boolean.class.equals(typeClass) || boolean.class.equals(typeClass)) {
+      if (type != Type.BOOLEAN) {
+        throw new ParquetException("Column type is not " + type);
+      }
+      return (List<T>) decodeAsBoolean();
+    }
+
+    if (byte[].class.equals(typeClass)) {
+      if (type != Type.BYTE_ARRAY) {
+        throw new ParquetException("Column type is not " + type);
+      }
+      return (List<T>) decodeAsByteArray();
+    }
+
+    if (String.class.equals(typeClass)) {
+      if (type != Type.BYTE_ARRAY) {
+        throw new ParquetException("Column type is not " + type);
+      }
+      return (List<T>) decodeAsString();
+    }
+    throw new ParquetException("Unsupported primitive:" + typeClass.getName());
   }
 
   /**

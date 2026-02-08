@@ -81,6 +81,10 @@ ParquetFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
 }
 ```
 
+### Iterating over rows
+
+- See [RowColumnGroupIteratorTest](src/test/java/io/github/aloksingh/parquet/batch/RowColumnGroupIteratorTest.java)
+
 ### Reading Simple Map columns
 - See [MapColumnExample](src/main/java/io/github/aloksingh/parquet/util/MapColumnExample.java)
 
