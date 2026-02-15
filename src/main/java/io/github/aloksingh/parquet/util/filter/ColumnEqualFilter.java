@@ -6,21 +6,23 @@ import java.util.List;
 import java.util.Map;
 
 public class ColumnEqualFilter implements ColumnFilter{
+  private final LogicalColumnDescriptor targetColumnDescriptor;
   private final Object matchValue;
 
-  public ColumnEqualFilter(Object matchValue) {
+  public ColumnEqualFilter(LogicalColumnDescriptor targetColumnDescriptor, Object matchValue) {
+    this.targetColumnDescriptor = targetColumnDescriptor;
     this.matchValue = matchValue;
   }
 
   @Override
-  public boolean apply(LogicalColumnDescriptor columnDescriptor, Object colValue) {
+  public boolean apply(Object colValue) {
     if (colValue == null) {
       return false;
     }
-    if (columnDescriptor.isPrimitive()){
+    if (targetColumnDescriptor.isPrimitive()) {
       return java.util.Objects.equals(matchValue, colValue);
     } else {
-      if (columnDescriptor.isList()){
+      if (targetColumnDescriptor.isList()) {
         List listValues = (List) colValue;
         List matches = (List) matchValue;
         if (listValues.size() != matches.size()){
@@ -35,7 +37,7 @@ public class ColumnEqualFilter implements ColumnFilter{
         }
         return true;
       }
-      if (columnDescriptor.isMap()){
+      if (targetColumnDescriptor.isMap()) {
         Map valueMap = (Map) colValue;
         Map matchMap = (Map) matchValue;
         if (valueMap.size() != matchMap.size()){
@@ -55,5 +57,10 @@ public class ColumnEqualFilter implements ColumnFilter{
       }
     }
     return false;
+  }
+
+  @Override
+  public boolean isApplicable(LogicalColumnDescriptor columnDescriptor) {
+    return targetColumnDescriptor.equals(columnDescriptor);
   }
 }

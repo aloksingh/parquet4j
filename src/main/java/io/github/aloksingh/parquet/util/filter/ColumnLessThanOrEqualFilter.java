@@ -3,19 +3,22 @@ package io.github.aloksingh.parquet.util.filter;
 import io.github.aloksingh.parquet.model.LogicalColumnDescriptor;
 
 public class ColumnLessThanOrEqualFilter implements ColumnFilter {
+  private final LogicalColumnDescriptor targetColumnDescriptor;
   private final Comparable matchValue;
 
-  public ColumnLessThanOrEqualFilter(Comparable matchValue) {
+  public ColumnLessThanOrEqualFilter(LogicalColumnDescriptor targetColumnDescriptor,
+                                     Comparable matchValue) {
+    this.targetColumnDescriptor = targetColumnDescriptor;
     this.matchValue = matchValue;
   }
 
   @Override
   @SuppressWarnings("unchecked")
-  public boolean apply(LogicalColumnDescriptor columnDescriptor, Object colValue) {
+  public boolean apply(Object colValue) {
     if (colValue == null || matchValue == null) {
       return false;
     }
-    if (!columnDescriptor.isPrimitive()) {
+    if (!targetColumnDescriptor.isPrimitive()) {
       return false;
     }
     if (!(colValue instanceof Comparable)) {
@@ -26,5 +29,10 @@ public class ColumnLessThanOrEqualFilter implements ColumnFilter {
     } catch (ClassCastException e) {
       return false;
     }
+  }
+
+  @Override
+  public boolean isApplicable(LogicalColumnDescriptor columnDescriptor) {
+    return targetColumnDescriptor.equals(columnDescriptor);
   }
 }

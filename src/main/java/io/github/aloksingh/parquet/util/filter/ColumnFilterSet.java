@@ -15,9 +15,9 @@ public class ColumnFilterSet implements ColumnFilter{
     this.filters = filters;
   }
   @Override
-  public boolean apply(LogicalColumnDescriptor columnDescriptor, Object colValue) {
+  public boolean apply(Object colValue) {
     for (ColumnFilter filter : filters) {
-      boolean matched = filter.apply(columnDescriptor, colValue);
+      boolean matched = filter.apply(colValue);
       switch (type){
         case All -> {
           if (!matched){
@@ -37,6 +37,17 @@ public class ColumnFilterSet implements ColumnFilter{
       }
       case Any -> {
         return false; //At least one must match. if there are 0 filters, then this will be false.
+      }
+    }
+    return false;
+  }
+
+  @Override
+  public boolean isApplicable(LogicalColumnDescriptor columnDescriptor) {
+    for (ColumnFilter filter : filters) {
+      boolean applicable = filter.isApplicable(columnDescriptor);
+      if (applicable) {
+        return true;
       }
     }
     return false;

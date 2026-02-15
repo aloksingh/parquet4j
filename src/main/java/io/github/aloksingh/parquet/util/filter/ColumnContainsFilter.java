@@ -4,26 +4,33 @@ import io.github.aloksingh.parquet.model.LogicalColumnDescriptor;
 import java.util.List;
 
 public class ColumnContainsFilter implements ColumnFilter {
+  private final LogicalColumnDescriptor targetColumnDescriptor;
   private final Object matchValue;
 
-  public ColumnContainsFilter(Object matchValue) {
+  public ColumnContainsFilter(LogicalColumnDescriptor targetColumnDescriptor, Object matchValue) {
+    this.targetColumnDescriptor = targetColumnDescriptor;
     this.matchValue = matchValue;
   }
 
   @Override
-  public boolean apply(LogicalColumnDescriptor columnDescriptor, Object colValue) {
+  public boolean apply(Object colValue) {
     if (colValue == null) {
       return false;
     }
-    if (columnDescriptor.isPrimitive()) {
+    if (targetColumnDescriptor.isPrimitive()) {
       if (colValue instanceof String && matchValue instanceof String) {
         return ((String) colValue).contains((String) matchValue);
       }
       return false;
-    } else if (columnDescriptor.isList()) {
+    } else if (targetColumnDescriptor.isList()) {
       List listValues = (List) colValue;
       return listValues.contains(matchValue);
     }
     return false;
+  }
+
+  @Override
+  public boolean isApplicable(LogicalColumnDescriptor columnDescriptor) {
+    return targetColumnDescriptor.equals(columnDescriptor);
   }
 }

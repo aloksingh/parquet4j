@@ -40,7 +40,7 @@ import java.util.NoSuchElementException;
  */
 public class FilteringParquetRowIterator implements RowColumnGroupIterator, AutoCloseable {
   private final ParquetRowIterator delegate;
-  private final ColumnFilter[] filters;
+  private final ColumnFilter filter;
   private RowColumnGroup nextMatchingRow;
   private boolean hasSearchedForNext;
 
@@ -52,21 +52,7 @@ public class FilteringParquetRowIterator implements RowColumnGroupIterator, Auto
    */
   public FilteringParquetRowIterator(ParquetRowIterator delegate, ColumnFilter filter) {
     this.delegate = delegate;
-    this.filters = new ColumnFilter[]{filter};
-    this.nextMatchingRow = null;
-    this.hasSearchedForNext = false;
-  }
-
-  /**
-   * Create a filtering iterator with multiple column filters.
-   * A row must match ALL filters to be included in the results.
-   *
-   * @param delegate The base iterator to filter
-   * @param filters  The column filters to apply (AND semantics)
-   */
-  public FilteringParquetRowIterator(ParquetRowIterator delegate, ColumnFilter[] filters) {
-    this.delegate = delegate;
-    this.filters = filters != null ? filters : new ColumnFilter[0];
+    this.filter = filter;
     this.nextMatchingRow = null;
     this.hasSearchedForNext = false;
   }
@@ -79,35 +65,36 @@ public class FilteringParquetRowIterator implements RowColumnGroupIterator, Auto
    */
   private boolean matchesFilters(RowColumnGroup row) {
     // If no filters, all rows match
-    if (filters.length == 0) {
+    if (filter == null) {
       return true;
     }
 
     // Check each filter
-    for (ColumnFilter filter : filters) {
-      boolean anyColumnMatched = false;
+    boolean anyColumnMatched = false;
+    // Check all columns against this filter
+    for (int i = 0; i < row.getColumnCount(); i++) {
+      LogicalColumnDescriptor columnDescriptor = row.getSchema().getLogicalColumn(i);
+      Object columnValue = row.getColumnValue(i);
 
-      // Check all columns against this filter
-      for (int i = 0; i < row.getColumnCount(); i++) {
-        LogicalColumnDescriptor columnDescriptor = row.getSchema().getLogicalColumn(i);
-        Object columnValue = row.getColumnValue(i);
-
-        boolean matched = filter.apply(columnDescriptor, columnValue);
-        // Debug output
-        // System.out.println("Filter check: col=" + columnDescriptor.getName() + ", value=" + columnValue + ", matched=" + matched);
-
-        if (matched) {
-          anyColumnMatched = true;
-          break;
-        }
+      // Only apply filter if it's applicable to this column
+      if (!filter.isApplicable(columnDescriptor)) {
+        continue;
       }
 
-      // If this filter didn't match any column, the row doesn't match
-      if (!anyColumnMatched) {
-        return false;
+      boolean matched = filter.apply(columnValue);
+      // Debug output
+      // System.out.println("Filter check: col=" + columnDescriptor.getName() + ", value=" + columnValue + ", matched=" + matched);
+
+      if (matched) {
+        anyColumnMatched = true;
+        break;
       }
     }
 
+    // If this filter didn't match any column, the row doesn't match
+    if (!anyColumnMatched) {
+      return false;
+    }
     // All filters matched
     return true;
   }

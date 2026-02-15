@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.github.aloksingh.parquet.model.LogicalColumnDescriptor;
 import io.github.aloksingh.parquet.model.RowColumnGroup;
 import io.github.aloksingh.parquet.util.filter.ColumnEqualFilter;
 import io.github.aloksingh.parquet.util.filter.ColumnFilter;
@@ -43,7 +44,8 @@ class FilteringParquetRowIteratorTest {
 
     try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
       // Use a simple equality filter for value 4 (from the first row we know id=4)
-      ColumnFilter filter = new ColumnEqualFilter(4);
+      LogicalColumnDescriptor logicalColumn = reader.getSchema().getLogicalColumn(1);
+      ColumnFilter filter = new ColumnEqualFilter(logicalColumn, 4);
       ParquetRowIterator baseIterator = new ParquetRowIterator(reader, false);
       FilteringParquetRowIterator iterator =
           new FilteringParquetRowIterator(baseIterator, filter);
@@ -78,7 +80,8 @@ class FilteringParquetRowIteratorTest {
 
     try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
       // Filter for id > 5 (or any reasonable threshold)
-      ColumnFilter filter = new ColumnGreaterThanFilter(5);
+      LogicalColumnDescriptor logicalColumn = reader.getSchema().getLogicalColumn(1);
+      ColumnFilter filter = new ColumnGreaterThanFilter(logicalColumn, 5);
       ParquetRowIterator baseIterator = new ParquetRowIterator(reader, false);
 
       try (FilteringParquetRowIterator iterator =
@@ -119,7 +122,9 @@ class FilteringParquetRowIteratorTest {
     String filePath = TEST_DATA_DIR + "alltypes_plain.parquet";
 
     try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
-      ColumnFilter filter = new ColumnLessThanFilter(3);
+      // Use column 0 (id) which has values 0-7, so < 3 should match 3 rows (0, 1, 2)
+      LogicalColumnDescriptor logicalColumn = reader.getSchema().getLogicalColumn(0);
+      ColumnFilter filter = new ColumnLessThanFilter(logicalColumn, 3);
       ParquetRowIterator baseIterator = new ParquetRowIterator(reader, false);
 
       try (FilteringParquetRowIterator iterator =
@@ -130,23 +135,14 @@ class FilteringParquetRowIteratorTest {
           RowColumnGroup row = iterator.next();
           assertNotNull(row);
 
-          // Verify at least one column has value < 3
-          boolean hasValueLessThan3 = false;
-          for (int i = 0; i < row.getColumnCount(); i++) {
-            Object value = row.getColumnValue(i);
-            if (value instanceof Integer && (Integer) value < 3) {
-              hasValueLessThan3 = true;
-              break;
-            } else if (value instanceof Long && (Long) value < 3) {
-              hasValueLessThan3 = true;
-              break;
-            }
-          }
-          assertTrue(hasValueLessThan3, "Row should have at least one value < 3");
+          // Verify the target column (column 0) has value < 3
+          Object value = row.getColumnValue(0);
+          assertTrue(value instanceof Integer && (Integer) value < 3,
+              "Column 0 should have value < 3, but got: " + value);
           count++;
         }
-        assertEquals(8, count, "Should find 8 rows");
-        System.out.println("Found " + count + " rows with values < 3");
+        assertEquals(3, count, "Should find 3 rows (values 0, 1, 2)");
+        System.out.println("Found " + count + " rows with values < 3 in column 0");
       }
     }
   }
@@ -160,7 +156,8 @@ class FilteringParquetRowIteratorTest {
 
     try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
       // Filter for values != null (simpler test)
-      ColumnFilter filter = new ColumnNotEqualFilter(Integer.MAX_VALUE);
+      LogicalColumnDescriptor logicalColumn = reader.getSchema().getLogicalColumn(1);
+      ColumnFilter filter = new ColumnNotEqualFilter(logicalColumn, Integer.MAX_VALUE);
       ParquetRowIterator baseIterator = new ParquetRowIterator(reader, false);
       FilteringParquetRowIterator iterator =
           new FilteringParquetRowIterator(baseIterator, filter);
@@ -186,15 +183,17 @@ class FilteringParquetRowIteratorTest {
     String filePath = TEST_DATA_DIR + "alltypes_plain.parquet";
 
     try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
+      LogicalColumnDescriptor logicalColumn = reader.getSchema().getLogicalColumn(1);
       // Filter for values > 2 AND < 8
       ColumnFilter[] filters = new ColumnFilter[]{
-          new ColumnGreaterThanFilter(2),
-          new ColumnLessThanFilter(8)
+          new ColumnGreaterThanFilter(logicalColumn, 2),
+          new ColumnLessThanFilter(logicalColumn, 8)
       };
       ParquetRowIterator baseIterator = new ParquetRowIterator(reader, false);
 
       try (FilteringParquetRowIterator iterator =
-               new FilteringParquetRowIterator(baseIterator, filters)) {
+               new FilteringParquetRowIterator(baseIterator,
+                   new ColumnFilterSet(FilterJoinType.All, filters))) {
 
         int count = 0;
         while (iterator.hasNext()) {
@@ -231,10 +230,11 @@ class FilteringParquetRowIteratorTest {
 
     try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
       // Create a filter set: value >= 3 AND value <= 6
+      LogicalColumnDescriptor logicalColumn = reader.getSchema().getLogicalColumn(1);
       ColumnFilterSet filterSet = new ColumnFilterSet(
           FilterJoinType.All,
-          new ColumnGreaterThanOrEqualFilter(3),
-          new ColumnLessThanOrEqualFilter(6)
+          new ColumnGreaterThanOrEqualFilter(logicalColumn, 3),
+          new ColumnLessThanOrEqualFilter(logicalColumn, 6)
       );
       ParquetRowIterator baseIterator = new ParquetRowIterator(reader, false);
 
@@ -262,10 +262,11 @@ class FilteringParquetRowIteratorTest {
 
     try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
       // Create a filter set: value == 0 OR value == 7
+      LogicalColumnDescriptor logicalColumn = reader.getSchema().getLogicalColumn(1);
       ColumnFilterSet filterSet = new ColumnFilterSet(
           FilterJoinType.Any,
-          new ColumnEqualFilter(0),
-          new ColumnEqualFilter(7)
+          new ColumnEqualFilter(logicalColumn, 0),
+          new ColumnEqualFilter(logicalColumn, 7)
       );
       ParquetRowIterator baseIterator = new ParquetRowIterator(reader, false);
 
@@ -304,7 +305,8 @@ class FilteringParquetRowIteratorTest {
 
     try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
       // Filter for strings starting with a common prefix
-      ColumnFilter filter = new ColumnPrefixFilter("a");
+      LogicalColumnDescriptor logicalColumn = reader.getSchema().getLogicalColumn(0);
+      ColumnFilter filter = new ColumnPrefixFilter(logicalColumn, "a");
       ParquetRowIterator baseIterator = new ParquetRowIterator(reader, false);
 
       try (FilteringParquetRowIterator iterator =
@@ -342,7 +344,8 @@ class FilteringParquetRowIteratorTest {
 
     try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
       // Filter for impossibly large value
-      ColumnFilter filter = new ColumnGreaterThanFilter(Integer.MAX_VALUE);
+      LogicalColumnDescriptor logicalColumn = reader.getSchema().getLogicalColumn(1);
+      ColumnFilter filter = new ColumnGreaterThanFilter(logicalColumn, Integer.MAX_VALUE);
       ParquetRowIterator baseIterator = new ParquetRowIterator(reader, false);
 
       try (FilteringParquetRowIterator iterator =
@@ -364,7 +367,8 @@ class FilteringParquetRowIteratorTest {
     String filePath = TEST_DATA_DIR + "nulls.snappy.parquet";
 
     try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
-      ColumnFilter filter = new ColumnIsNullFilter();
+      LogicalColumnDescriptor logicalColumn = reader.getSchema().getLogicalColumn(0);
+      ColumnFilter filter = new ColumnIsNullFilter(logicalColumn);
       ParquetRowIterator baseIterator = new ParquetRowIterator(reader, false);
 
       try (FilteringParquetRowIterator iterator =
@@ -400,7 +404,8 @@ class FilteringParquetRowIteratorTest {
     String filePath = TEST_DATA_DIR + "alltypes_plain.parquet";
 
     try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
-      ColumnFilter filter = new ColumnIsNotNullFilter();
+      LogicalColumnDescriptor logicalColumn = reader.getSchema().getLogicalColumn(1);
+      ColumnFilter filter = new ColumnIsNotNullFilter(logicalColumn);
       ParquetRowIterator baseIterator = new ParquetRowIterator(reader, false);
       FilteringParquetRowIterator iterator =
           new FilteringParquetRowIterator(baseIterator, filter);
@@ -435,7 +440,8 @@ class FilteringParquetRowIteratorTest {
     String filePath = TEST_DATA_DIR + "alltypes_plain.parquet";
 
     try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
-      ColumnFilter filter = new ColumnGreaterThanFilter(0);
+      LogicalColumnDescriptor logicalColumn = reader.getSchema().getLogicalColumn(1);
+      ColumnFilter filter = new ColumnGreaterThanFilter(logicalColumn, 0);
       ParquetRowIterator baseIterator = new ParquetRowIterator(reader, false);
 
       try (FilteringParquetRowIterator iterator =
@@ -473,12 +479,15 @@ class FilteringParquetRowIteratorTest {
     }
 
     // Now filter and count
-    ColumnFilter filter = new ColumnIsNotNullFilter();
+
+
     int filteredRows = 0;
     try (ParquetFileReader reader = new ParquetFileReader(filePath);
-         ParquetRowIterator baseIterator = new ParquetRowIterator(reader, false);
-         FilteringParquetRowIterator iterator =
-             new FilteringParquetRowIterator(baseIterator, filter)) {
+         ParquetRowIterator baseIterator = new ParquetRowIterator(reader, false)) {
+      LogicalColumnDescriptor logicalColumn = reader.getSchema().getLogicalColumn(1);
+      ColumnFilter filter = new ColumnIsNotNullFilter(logicalColumn);
+      FilteringParquetRowIterator iterator =
+          new FilteringParquetRowIterator(baseIterator, filter);
       while (iterator.hasNext()) {
         RowColumnGroup row = iterator.next();
         assertNotNull(row);
@@ -490,9 +499,11 @@ class FilteringParquetRowIteratorTest {
 
     // After iteration, hasNext should return false
     try (ParquetFileReader reader = new ParquetFileReader(filePath);
-         ParquetRowIterator baseIterator = new ParquetRowIterator(reader, false);
-         FilteringParquetRowIterator iterator =
-             new FilteringParquetRowIterator(baseIterator, filter)) {
+         ParquetRowIterator baseIterator = new ParquetRowIterator(reader, false)) {
+      LogicalColumnDescriptor logicalColumn = reader.getSchema().getLogicalColumn(1);
+      ColumnFilter filter = new ColumnIsNotNullFilter(logicalColumn);
+      FilteringParquetRowIterator iterator =
+          new FilteringParquetRowIterator(baseIterator, filter);
       while (iterator.hasNext()) {
         iterator.next();
       }
@@ -513,7 +524,8 @@ class FilteringParquetRowIteratorTest {
     try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
       ParquetRowIterator baseIterator = new ParquetRowIterator(reader, false);
       FilteringParquetRowIterator iterator =
-          new FilteringParquetRowIterator(baseIterator, emptyFilters);
+          new FilteringParquetRowIterator(baseIterator,
+              new ColumnFilterSet(FilterJoinType.All, emptyFilters));
 
       int count = 0;
       while (iterator.hasNext() && count < 10) {
@@ -536,7 +548,8 @@ class FilteringParquetRowIteratorTest {
 
     try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
       // Create a generic filter
-      ColumnFilter filter = new ColumnIsNotNullFilter();
+      LogicalColumnDescriptor logicalColumn = reader.getSchema().getLogicalColumn(1);
+      ColumnFilter filter = new ColumnIsNotNullFilter(logicalColumn);
       ParquetRowIterator baseIterator = new ParquetRowIterator(reader, false);
 
       try (FilteringParquetRowIterator iterator =
@@ -569,8 +582,8 @@ class FilteringParquetRowIteratorTest {
 
     try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
       System.out.println("File has " + reader.getNumRowGroups() + " row groups");
-
-      ColumnFilter filter = new ColumnGreaterThanFilter(5);
+      LogicalColumnDescriptor logicalColumn = reader.getSchema().getLogicalColumn(1);
+      ColumnFilter filter = new ColumnGreaterThanFilter(logicalColumn, 5);
       ParquetRowIterator baseIterator = new ParquetRowIterator(reader, false);
 
       try (FilteringParquetRowIterator iterator =
@@ -600,7 +613,8 @@ class FilteringParquetRowIteratorTest {
     String filePath = TEST_DATA_DIR + "alltypes_plain.parquet";
 
     try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
-      ColumnFilter filter = new ColumnIsNotNullFilter();
+      LogicalColumnDescriptor logicalColumn = reader.getSchema().getLogicalColumn(1);
+      ColumnFilter filter = new ColumnIsNotNullFilter(logicalColumn);
       ParquetRowIterator baseIterator = new ParquetRowIterator(reader, false);
 
       try (FilteringParquetRowIterator iterator =
@@ -620,7 +634,8 @@ class FilteringParquetRowIteratorTest {
     String filePath = TEST_DATA_DIR + "alltypes_plain.parquet";
 
     try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
-      ColumnFilter filter = new ColumnIsNotNullFilter();
+      LogicalColumnDescriptor logicalColumn = reader.getSchema().getLogicalColumn(1);
+      ColumnFilter filter = new ColumnIsNotNullFilter(logicalColumn);
       ParquetRowIterator baseIterator = new ParquetRowIterator(reader, false);
 
       try (FilteringParquetRowIterator iterator =
@@ -640,8 +655,8 @@ class FilteringParquetRowIteratorTest {
   void testClose() throws IOException {
     String filePath = TEST_DATA_DIR + "alltypes_plain.parquet";
     ParquetFileReader reader = new ParquetFileReader(filePath);
-
-    ColumnFilter filter = new ColumnIsNotNullFilter();
+    LogicalColumnDescriptor logicalColumn = reader.getSchema().getLogicalColumn(1);
+    ColumnFilter filter = new ColumnIsNotNullFilter(logicalColumn);
     ParquetRowIterator baseIterator = new ParquetRowIterator(reader, true);
     FilteringParquetRowIterator iterator =
         new FilteringParquetRowIterator(baseIterator, filter);
@@ -666,7 +681,8 @@ class FilteringParquetRowIteratorTest {
       ColumnFilters columnFilters = new ColumnFilters();
 
       // Create filter using factory
-      ColumnFilter filter = columnFilters.createFilter(FilterOperator.gt, 3);
+      ColumnFilter filter =
+          columnFilters.createFilter(reader.getSchema().getLogicalColumn(0), FilterOperator.gt, 3);
       ParquetRowIterator baseIterator = new ParquetRowIterator(reader, false);
 
       try (FilteringParquetRowIterator iterator =
