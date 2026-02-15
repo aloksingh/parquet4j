@@ -193,7 +193,7 @@ class FilteringParquetRowIteratorTest {
 
       try (FilteringParquetRowIterator iterator =
                new FilteringParquetRowIterator(baseIterator,
-                   new ColumnFilterSet(FilterJoinType.All, filters))) {
+                   new ColumnFilterSet(logicalColumn, FilterJoinType.All, filters))) {
 
         int count = 0;
         while (iterator.hasNext()) {
@@ -231,7 +231,7 @@ class FilteringParquetRowIteratorTest {
     try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
       // Create a filter set: value >= 3 AND value <= 6
       LogicalColumnDescriptor logicalColumn = reader.getSchema().getLogicalColumn(1);
-      ColumnFilterSet filterSet = new ColumnFilterSet(
+      ColumnFilterSet filterSet = new ColumnFilterSet(logicalColumn,
           FilterJoinType.All,
           new ColumnGreaterThanOrEqualFilter(logicalColumn, 3),
           new ColumnLessThanOrEqualFilter(logicalColumn, 6)
@@ -263,7 +263,7 @@ class FilteringParquetRowIteratorTest {
     try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
       // Create a filter set: value == 0 OR value == 7
       LogicalColumnDescriptor logicalColumn = reader.getSchema().getLogicalColumn(1);
-      ColumnFilterSet filterSet = new ColumnFilterSet(
+      ColumnFilterSet filterSet = new ColumnFilterSet(logicalColumn,
           FilterJoinType.Any,
           new ColumnEqualFilter(logicalColumn, 0),
           new ColumnEqualFilter(logicalColumn, 7)
@@ -525,7 +525,7 @@ class FilteringParquetRowIteratorTest {
       ParquetRowIterator baseIterator = new ParquetRowIterator(reader, false);
       FilteringParquetRowIterator iterator =
           new FilteringParquetRowIterator(baseIterator,
-              new ColumnFilterSet(FilterJoinType.All, emptyFilters));
+              new ColumnFilterSet(null, FilterJoinType.All, emptyFilters));
 
       int count = 0;
       while (iterator.hasNext() && count < 10) {

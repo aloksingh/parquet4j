@@ -4,13 +4,18 @@ import io.github.aloksingh.parquet.model.LogicalColumnDescriptor;
 import java.util.List;
 
 public class ColumnFilterSet implements ColumnFilter{
+  private final LogicalColumnDescriptor columnDescriptor;
   private final FilterJoinType type;
   private final List<ColumnFilter> filters;
 
-  public ColumnFilterSet(FilterJoinType type, ColumnFilter...filters){
-    this(type, List.of(filters));
+  public ColumnFilterSet(LogicalColumnDescriptor columnDescriptor, FilterJoinType type,
+                         ColumnFilter... filters) {
+    this(columnDescriptor, type, List.of(filters));
   }
-  public ColumnFilterSet(FilterJoinType type, List<ColumnFilter> filters){
+
+  public ColumnFilterSet(LogicalColumnDescriptor columnDescriptor, FilterJoinType type,
+                         List<ColumnFilter> filters) {
+    this.columnDescriptor = columnDescriptor;
     this.type = type;
     this.filters = filters;
   }
@@ -44,12 +49,6 @@ public class ColumnFilterSet implements ColumnFilter{
 
   @Override
   public boolean isApplicable(LogicalColumnDescriptor columnDescriptor) {
-    for (ColumnFilter filter : filters) {
-      boolean applicable = filter.isApplicable(columnDescriptor);
-      if (applicable) {
-        return true;
-      }
-    }
-    return false;
+    return this.columnDescriptor.equals(columnDescriptor);
   }
 }

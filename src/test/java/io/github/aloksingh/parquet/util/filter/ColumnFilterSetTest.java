@@ -18,7 +18,7 @@ public class ColumnFilterSetTest {
 
   @Test
   public void testAllWithEmptyFilters() {
-    ColumnFilterSet filterSet = new ColumnFilterSet(FilterJoinType.All);
+    ColumnFilterSet filterSet = new ColumnFilterSet(PRIMITIVE_DESCRIPTOR, FilterJoinType.All);
     // With All logic and no filters, should return true
     assertTrue(filterSet.apply("any value"));
   }
@@ -26,7 +26,8 @@ public class ColumnFilterSetTest {
   @Test
   public void testAllWithSingleFilterMatching() {
     ColumnFilter filter = new ColumnEqualFilter(PRIMITIVE_DESCRIPTOR, "test");
-    ColumnFilterSet filterSet = new ColumnFilterSet(FilterJoinType.All, filter);
+    ColumnFilterSet filterSet =
+        new ColumnFilterSet(PRIMITIVE_DESCRIPTOR, FilterJoinType.All, filter);
 
     assertTrue(filterSet.apply("test"));
   }
@@ -34,7 +35,8 @@ public class ColumnFilterSetTest {
   @Test
   public void testAllWithSingleFilterNotMatching() {
     ColumnFilter filter = new ColumnEqualFilter(PRIMITIVE_DESCRIPTOR, "test");
-    ColumnFilterSet filterSet = new ColumnFilterSet(FilterJoinType.All, filter);
+    ColumnFilterSet filterSet =
+        new ColumnFilterSet(PRIMITIVE_DESCRIPTOR, FilterJoinType.All, filter);
 
     assertFalse(filterSet.apply("other"));
   }
@@ -43,7 +45,8 @@ public class ColumnFilterSetTest {
   public void testAllWithMultipleFiltersAllMatch() {
     ColumnFilter filter1 = new ColumnGreaterThanFilter(PRIMITIVE_DESCRIPTOR, 10);
     ColumnFilter filter2 = new ColumnLessThanFilter(PRIMITIVE_DESCRIPTOR, 20);
-    ColumnFilterSet filterSet = new ColumnFilterSet(FilterJoinType.All, filter1, filter2);
+    ColumnFilterSet filterSet =
+        new ColumnFilterSet(PRIMITIVE_DESCRIPTOR, FilterJoinType.All, filter1, filter2);
 
     // Value 15 is > 10 AND < 20
     assertTrue(filterSet.apply(15));
@@ -53,7 +56,8 @@ public class ColumnFilterSetTest {
   public void testAllWithMultipleFiltersOneDoesNotMatch() {
     ColumnFilter filter1 = new ColumnGreaterThanFilter(PRIMITIVE_DESCRIPTOR, 10);
     ColumnFilter filter2 = new ColumnLessThanFilter(PRIMITIVE_DESCRIPTOR, 20);
-    ColumnFilterSet filterSet = new ColumnFilterSet(FilterJoinType.All, filter1, filter2);
+    ColumnFilterSet filterSet =
+        new ColumnFilterSet(PRIMITIVE_DESCRIPTOR, FilterJoinType.All, filter1, filter2);
 
     // Value 25 is > 10 but NOT < 20
     assertFalse(filterSet.apply(25));
@@ -63,7 +67,8 @@ public class ColumnFilterSetTest {
   public void testAllWithMultipleFiltersNoneMatch() {
     ColumnFilter filter1 = new ColumnEqualFilter(PRIMITIVE_DESCRIPTOR, "foo");
     ColumnFilter filter2 = new ColumnEqualFilter(PRIMITIVE_DESCRIPTOR, "bar");
-    ColumnFilterSet filterSet = new ColumnFilterSet(FilterJoinType.All, filter1, filter2);
+    ColumnFilterSet filterSet =
+        new ColumnFilterSet(PRIMITIVE_DESCRIPTOR, FilterJoinType.All, filter1, filter2);
 
     // Value "baz" doesn't equal "foo" or "bar"
     assertFalse(filterSet.apply("baz"));
@@ -74,7 +79,8 @@ public class ColumnFilterSetTest {
     ColumnFilter filter1 = new ColumnGreaterThanFilter(PRIMITIVE_DESCRIPTOR, 10);
     ColumnFilter filter2 = new ColumnLessThanFilter(PRIMITIVE_DESCRIPTOR, 30);
     ColumnFilter filter3 = new ColumnNotEqualFilter(PRIMITIVE_DESCRIPTOR, 15);
-    ColumnFilterSet filterSet = new ColumnFilterSet(FilterJoinType.All, filter1, filter2, filter3);
+    ColumnFilterSet filterSet =
+        new ColumnFilterSet(PRIMITIVE_DESCRIPTOR, FilterJoinType.All, filter1, filter2, filter3);
 
     // Value 20 is > 10 AND < 30 AND != 15
     assertTrue(filterSet.apply(20));
@@ -85,7 +91,8 @@ public class ColumnFilterSetTest {
     ColumnFilter filter1 = new ColumnGreaterThanFilter(PRIMITIVE_DESCRIPTOR, 10);
     ColumnFilter filter2 = new ColumnLessThanFilter(PRIMITIVE_DESCRIPTOR, 30);
     ColumnFilter filter3 = new ColumnNotEqualFilter(PRIMITIVE_DESCRIPTOR, 15);
-    ColumnFilterSet filterSet = new ColumnFilterSet(FilterJoinType.All, filter1, filter2, filter3);
+    ColumnFilterSet filterSet =
+        new ColumnFilterSet(PRIMITIVE_DESCRIPTOR, FilterJoinType.All, filter1, filter2, filter3);
 
     // Value 15 is > 10 AND < 30 but equals 15
     assertFalse(filterSet.apply(15));
@@ -95,7 +102,7 @@ public class ColumnFilterSetTest {
 
   @Test
   public void testAnyWithEmptyFilters() {
-    ColumnFilterSet filterSet = new ColumnFilterSet(FilterJoinType.Any);
+    ColumnFilterSet filterSet = new ColumnFilterSet(PRIMITIVE_DESCRIPTOR, FilterJoinType.Any);
     // With Any logic and no filters, should return false
     assertFalse(filterSet.apply("any value"));
   }
@@ -103,7 +110,8 @@ public class ColumnFilterSetTest {
   @Test
   public void testAnyWithSingleFilterMatching() {
     ColumnFilter filter = new ColumnEqualFilter(PRIMITIVE_DESCRIPTOR, "test");
-    ColumnFilterSet filterSet = new ColumnFilterSet(FilterJoinType.Any, filter);
+    ColumnFilterSet filterSet =
+        new ColumnFilterSet(PRIMITIVE_DESCRIPTOR, FilterJoinType.Any, filter);
 
     assertTrue(filterSet.apply("test"));
   }
@@ -111,7 +119,8 @@ public class ColumnFilterSetTest {
   @Test
   public void testAnyWithSingleFilterNotMatching() {
     ColumnFilter filter = new ColumnEqualFilter(PRIMITIVE_DESCRIPTOR, "test");
-    ColumnFilterSet filterSet = new ColumnFilterSet(FilterJoinType.Any, filter);
+    ColumnFilterSet filterSet =
+        new ColumnFilterSet(PRIMITIVE_DESCRIPTOR, FilterJoinType.Any, filter);
 
     assertFalse(filterSet.apply("other"));
   }
@@ -120,7 +129,8 @@ public class ColumnFilterSetTest {
   public void testAnyWithMultipleFiltersFirstMatches() {
     ColumnFilter filter1 = new ColumnEqualFilter(PRIMITIVE_DESCRIPTOR, "test");
     ColumnFilter filter2 = new ColumnEqualFilter(PRIMITIVE_DESCRIPTOR, "foo");
-    ColumnFilterSet filterSet = new ColumnFilterSet(FilterJoinType.Any, filter1, filter2);
+    ColumnFilterSet filterSet =
+        new ColumnFilterSet(PRIMITIVE_DESCRIPTOR, FilterJoinType.Any, filter1, filter2);
 
     // Value "test" matches first filter
     assertTrue(filterSet.apply("test"));
@@ -130,7 +140,8 @@ public class ColumnFilterSetTest {
   public void testAnyWithMultipleFiltersSecondMatches() {
     ColumnFilter filter1 = new ColumnEqualFilter(PRIMITIVE_DESCRIPTOR, "test");
     ColumnFilter filter2 = new ColumnEqualFilter(PRIMITIVE_DESCRIPTOR, "foo");
-    ColumnFilterSet filterSet = new ColumnFilterSet(FilterJoinType.Any, filter1, filter2);
+    ColumnFilterSet filterSet =
+        new ColumnFilterSet(PRIMITIVE_DESCRIPTOR, FilterJoinType.Any, filter1, filter2);
 
     // Value "foo" matches second filter
     assertTrue(filterSet.apply("foo"));
@@ -140,7 +151,8 @@ public class ColumnFilterSetTest {
   public void testAnyWithMultipleFiltersNoneMatch() {
     ColumnFilter filter1 = new ColumnEqualFilter(PRIMITIVE_DESCRIPTOR, "test");
     ColumnFilter filter2 = new ColumnEqualFilter(PRIMITIVE_DESCRIPTOR, "foo");
-    ColumnFilterSet filterSet = new ColumnFilterSet(FilterJoinType.Any, filter1, filter2);
+    ColumnFilterSet filterSet =
+        new ColumnFilterSet(PRIMITIVE_DESCRIPTOR, FilterJoinType.Any, filter1, filter2);
 
     // Value "bar" matches neither filter
     assertFalse(filterSet.apply("bar"));
@@ -150,7 +162,8 @@ public class ColumnFilterSetTest {
   public void testAnyWithMultipleFiltersAllMatch() {
     ColumnFilter filter1 = new ColumnGreaterThanFilter(PRIMITIVE_DESCRIPTOR, 10);
     ColumnFilter filter2 = new ColumnLessThanFilter(PRIMITIVE_DESCRIPTOR, 20);
-    ColumnFilterSet filterSet = new ColumnFilterSet(FilterJoinType.Any, filter1, filter2);
+    ColumnFilterSet filterSet =
+        new ColumnFilterSet(PRIMITIVE_DESCRIPTOR, FilterJoinType.Any, filter1, filter2);
 
     // Value 15 matches both filters (> 10 OR < 20)
     assertTrue(filterSet.apply(15));
@@ -161,7 +174,8 @@ public class ColumnFilterSetTest {
     ColumnFilter filter1 = new ColumnEqualFilter(PRIMITIVE_DESCRIPTOR, "foo");
     ColumnFilter filter2 = new ColumnEqualFilter(PRIMITIVE_DESCRIPTOR, "bar");
     ColumnFilter filter3 = new ColumnEqualFilter(PRIMITIVE_DESCRIPTOR, "baz");
-    ColumnFilterSet filterSet = new ColumnFilterSet(FilterJoinType.Any, filter1, filter2, filter3);
+    ColumnFilterSet filterSet =
+        new ColumnFilterSet(PRIMITIVE_DESCRIPTOR, FilterJoinType.Any, filter1, filter2, filter3);
 
     // Value "bar" matches second filter
     assertTrue(filterSet.apply("bar"));
@@ -175,7 +189,8 @@ public class ColumnFilterSetTest {
         new ColumnGreaterThanFilter(PRIMITIVE_DESCRIPTOR, 10),
         new ColumnLessThanFilter(PRIMITIVE_DESCRIPTOR, 20)
     );
-    ColumnFilterSet filterSet = new ColumnFilterSet(FilterJoinType.All, filters);
+    ColumnFilterSet filterSet =
+        new ColumnFilterSet(PRIMITIVE_DESCRIPTOR, FilterJoinType.All, filters);
 
     assertTrue(filterSet.apply(15));
     assertFalse(filterSet.apply(25));
@@ -183,7 +198,7 @@ public class ColumnFilterSetTest {
 
   @Test
   public void testVarargsConstructor() {
-    ColumnFilterSet filterSet = new ColumnFilterSet(
+    ColumnFilterSet filterSet = new ColumnFilterSet(PRIMITIVE_DESCRIPTOR,
         FilterJoinType.Any,
         new ColumnEqualFilter(PRIMITIVE_DESCRIPTOR, "foo"),
         new ColumnEqualFilter(PRIMITIVE_DESCRIPTOR, "bar")
@@ -199,17 +214,18 @@ public class ColumnFilterSetTest {
   @Test
   public void testNestedFilterSetAllContainingAll() {
     // (A > 10 AND A < 20) AND (A != 12 AND A != 13)
-    ColumnFilterSet inner1 = new ColumnFilterSet(
+    ColumnFilterSet inner1 = new ColumnFilterSet(PRIMITIVE_DESCRIPTOR,
         FilterJoinType.All,
         new ColumnGreaterThanFilter(PRIMITIVE_DESCRIPTOR, 10),
         new ColumnLessThanFilter(PRIMITIVE_DESCRIPTOR, 20)
     );
-    ColumnFilterSet inner2 = new ColumnFilterSet(
+    ColumnFilterSet inner2 = new ColumnFilterSet(PRIMITIVE_DESCRIPTOR,
         FilterJoinType.All,
         new ColumnNotEqualFilter(PRIMITIVE_DESCRIPTOR, 12),
         new ColumnNotEqualFilter(PRIMITIVE_DESCRIPTOR, 13)
     );
-    ColumnFilterSet outer = new ColumnFilterSet(FilterJoinType.All, inner1, inner2);
+    ColumnFilterSet outer =
+        new ColumnFilterSet(PRIMITIVE_DESCRIPTOR, FilterJoinType.All, inner1, inner2);
 
     assertTrue(outer.apply(15));  // 15 is in range [11-19] and != 12,13
     assertFalse(outer.apply(12)); // 12 equals excluded value
@@ -219,17 +235,18 @@ public class ColumnFilterSetTest {
   @Test
   public void testNestedFilterSetAnyContainingAny() {
     // (A == "foo" OR A == "bar") OR (A == "baz" OR A == "qux")
-    ColumnFilterSet inner1 = new ColumnFilterSet(
+    ColumnFilterSet inner1 = new ColumnFilterSet(PRIMITIVE_DESCRIPTOR,
         FilterJoinType.Any,
         new ColumnEqualFilter(PRIMITIVE_DESCRIPTOR, "foo"),
         new ColumnEqualFilter(PRIMITIVE_DESCRIPTOR, "bar")
     );
-    ColumnFilterSet inner2 = new ColumnFilterSet(
+    ColumnFilterSet inner2 = new ColumnFilterSet(PRIMITIVE_DESCRIPTOR,
         FilterJoinType.Any,
         new ColumnEqualFilter(PRIMITIVE_DESCRIPTOR, "baz"),
         new ColumnEqualFilter(PRIMITIVE_DESCRIPTOR, "qux")
     );
-    ColumnFilterSet outer = new ColumnFilterSet(FilterJoinType.Any, inner1, inner2);
+    ColumnFilterSet outer =
+        new ColumnFilterSet(PRIMITIVE_DESCRIPTOR, FilterJoinType.Any, inner1, inner2);
 
     assertTrue(outer.apply("foo"));
     assertTrue(outer.apply("bar"));
@@ -241,17 +258,18 @@ public class ColumnFilterSetTest {
   @Test
   public void testNestedFilterSetComplexCombination() {
     // (A > 10 AND A < 20) OR (A > 50 AND A < 60)
-    ColumnFilterSet range1 = new ColumnFilterSet(
+    ColumnFilterSet range1 = new ColumnFilterSet(PRIMITIVE_DESCRIPTOR,
         FilterJoinType.All,
         new ColumnGreaterThanFilter(PRIMITIVE_DESCRIPTOR, 10),
         new ColumnLessThanFilter(PRIMITIVE_DESCRIPTOR, 20)
     );
-    ColumnFilterSet range2 = new ColumnFilterSet(
+    ColumnFilterSet range2 = new ColumnFilterSet(PRIMITIVE_DESCRIPTOR,
         FilterJoinType.All,
         new ColumnGreaterThanFilter(PRIMITIVE_DESCRIPTOR, 50),
         new ColumnLessThanFilter(PRIMITIVE_DESCRIPTOR, 60)
     );
-    ColumnFilterSet outer = new ColumnFilterSet(FilterJoinType.Any, range1, range2);
+    ColumnFilterSet outer =
+        new ColumnFilterSet(PRIMITIVE_DESCRIPTOR, FilterJoinType.Any, range1, range2);
 
     assertTrue(outer.apply(15));  // In first range
     assertTrue(outer.apply(55));  // In second range
@@ -262,18 +280,19 @@ public class ColumnFilterSetTest {
   @Test
   public void testNestedFilterSetThreeLevelsDeep() {
     // ((A > 10 AND A < 15) OR (A > 20 AND A < 25)) AND A != 22
-    ColumnFilterSet range1 = new ColumnFilterSet(
+    ColumnFilterSet range1 = new ColumnFilterSet(PRIMITIVE_DESCRIPTOR,
         FilterJoinType.All,
         new ColumnGreaterThanFilter(PRIMITIVE_DESCRIPTOR, 10),
         new ColumnLessThanFilter(PRIMITIVE_DESCRIPTOR, 15)
     );
-    ColumnFilterSet range2 = new ColumnFilterSet(
+    ColumnFilterSet range2 = new ColumnFilterSet(PRIMITIVE_DESCRIPTOR,
         FilterJoinType.All,
         new ColumnGreaterThanFilter(PRIMITIVE_DESCRIPTOR, 20),
         new ColumnLessThanFilter(PRIMITIVE_DESCRIPTOR, 25)
     );
-    ColumnFilterSet anyRange = new ColumnFilterSet(FilterJoinType.Any, range1, range2);
-    ColumnFilterSet outer = new ColumnFilterSet(
+    ColumnFilterSet anyRange =
+        new ColumnFilterSet(PRIMITIVE_DESCRIPTOR, FilterJoinType.Any, range1, range2);
+    ColumnFilterSet outer = new ColumnFilterSet(PRIMITIVE_DESCRIPTOR,
         FilterJoinType.All,
         anyRange,
         new ColumnNotEqualFilter(PRIMITIVE_DESCRIPTOR, 22)
@@ -289,7 +308,7 @@ public class ColumnFilterSetTest {
 
   @Test
   public void testWithStrings() {
-    ColumnFilterSet filterSet = new ColumnFilterSet(
+    ColumnFilterSet filterSet = new ColumnFilterSet(PRIMITIVE_DESCRIPTOR,
         FilterJoinType.All,
         new ColumnNotEqualFilter(PRIMITIVE_DESCRIPTOR, ""),
         new ColumnNotEqualFilter(PRIMITIVE_DESCRIPTOR, null)
@@ -301,7 +320,7 @@ public class ColumnFilterSetTest {
 
   @Test
   public void testWithIntegers() {
-    ColumnFilterSet filterSet = new ColumnFilterSet(
+    ColumnFilterSet filterSet = new ColumnFilterSet(PRIMITIVE_DESCRIPTOR,
         FilterJoinType.Any,
         new ColumnLessThanFilter(PRIMITIVE_DESCRIPTOR, 0),
         new ColumnGreaterThanFilter(PRIMITIVE_DESCRIPTOR, 100)
@@ -314,7 +333,7 @@ public class ColumnFilterSetTest {
 
   @Test
   public void testWithDoubles() {
-    ColumnFilterSet filterSet = new ColumnFilterSet(
+    ColumnFilterSet filterSet = new ColumnFilterSet(PRIMITIVE_DESCRIPTOR,
         FilterJoinType.All,
         new ColumnGreaterThanFilter(PRIMITIVE_DESCRIPTOR, 0.0),
         new ColumnLessThanFilter(PRIMITIVE_DESCRIPTOR, 1.0)
@@ -327,7 +346,7 @@ public class ColumnFilterSetTest {
 
   @Test
   public void testWithNullValues() {
-    ColumnFilterSet filterSet = new ColumnFilterSet(
+    ColumnFilterSet filterSet = new ColumnFilterSet(PRIMITIVE_DESCRIPTOR,
         FilterJoinType.Any,
         new ColumnEqualFilter(PRIMITIVE_DESCRIPTOR, "test"),
         new ColumnEqualFilter(PRIMITIVE_DESCRIPTOR, "foo")
@@ -345,7 +364,8 @@ public class ColumnFilterSetTest {
     ColumnFilter filter1 = new ColumnGreaterThanFilter(PRIMITIVE_DESCRIPTOR, 10);
     ColumnFilter filter2 = new ColumnEqualFilter(PRIMITIVE_DESCRIPTOR, 5); // Will fail
     ColumnFilter filter3 = new ColumnLessThanFilter(PRIMITIVE_DESCRIPTOR, 20);
-    ColumnFilterSet filterSet = new ColumnFilterSet(FilterJoinType.All, filter1, filter2, filter3);
+    ColumnFilterSet filterSet =
+        new ColumnFilterSet(PRIMITIVE_DESCRIPTOR, FilterJoinType.All, filter1, filter2, filter3);
 
     // Value 15 is > 10 and < 20, but != 5, so All should fail
     assertFalse(filterSet.apply(15));
@@ -357,7 +377,8 @@ public class ColumnFilterSetTest {
     ColumnFilter filter1 = new ColumnEqualFilter(PRIMITIVE_DESCRIPTOR, "test");
     ColumnFilter filter2 = new ColumnEqualFilter(PRIMITIVE_DESCRIPTOR, "foo");
     ColumnFilter filter3 = new ColumnEqualFilter(PRIMITIVE_DESCRIPTOR, "bar");
-    ColumnFilterSet filterSet = new ColumnFilterSet(FilterJoinType.Any, filter1, filter2, filter3);
+    ColumnFilterSet filterSet =
+        new ColumnFilterSet(PRIMITIVE_DESCRIPTOR, FilterJoinType.Any, filter1, filter2, filter3);
 
     // Value "test" should match first filter immediately
     assertTrue(filterSet.apply("test"));
@@ -368,12 +389,12 @@ public class ColumnFilterSetTest {
     // Simulate a filter like: (status == "active" OR status == "pending") AND (priority > 5)
     // For this test, we'll use a simplified version with integers
     // (value == 1 OR value == 2) AND (value < 3)
-    ColumnFilterSet statusFilter = new ColumnFilterSet(
+    ColumnFilterSet statusFilter = new ColumnFilterSet(PRIMITIVE_DESCRIPTOR,
         FilterJoinType.Any,
         new ColumnEqualFilter(PRIMITIVE_DESCRIPTOR, 1),
         new ColumnEqualFilter(PRIMITIVE_DESCRIPTOR, 2)
     );
-    ColumnFilterSet combinedFilter = new ColumnFilterSet(
+    ColumnFilterSet combinedFilter = new ColumnFilterSet(PRIMITIVE_DESCRIPTOR,
         FilterJoinType.All,
         statusFilter,
         new ColumnLessThanFilter(PRIMITIVE_DESCRIPTOR, 3)
