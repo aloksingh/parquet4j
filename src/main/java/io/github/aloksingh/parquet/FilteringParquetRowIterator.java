@@ -1,8 +1,10 @@
 package io.github.aloksingh.parquet;
 
-import io.github.aloksingh.parquet.model.LogicalColumnDescriptor;
 import io.github.aloksingh.parquet.model.RowColumnGroup;
 import io.github.aloksingh.parquet.util.filter.ColumnFilter;
+import io.github.aloksingh.parquet.util.filter.FilterJoinType;
+import io.github.aloksingh.parquet.util.filter.RowColumnGroupFilter;
+import io.github.aloksingh.parquet.util.filter.RowColumnGroupFilterSet;
 import java.io.IOException;
 import java.util.NoSuchElementException;
 
@@ -40,7 +42,7 @@ import java.util.NoSuchElementException;
  */
 public class FilteringParquetRowIterator implements RowColumnGroupIterator, AutoCloseable {
   private final ParquetRowIterator delegate;
-  private final ColumnFilter filter;
+  private final RowColumnGroupFilter filter;
   private RowColumnGroup nextMatchingRow;
   private boolean hasSearchedForNext;
 
@@ -51,6 +53,10 @@ public class FilteringParquetRowIterator implements RowColumnGroupIterator, Auto
    * @param filter   The column filter to apply
    */
   public FilteringParquetRowIterator(ParquetRowIterator delegate, ColumnFilter filter) {
+    this(delegate, new RowColumnGroupFilterSet(FilterJoinType.All, filter));
+  }
+
+  public FilteringParquetRowIterator(ParquetRowIterator delegate, RowColumnGroupFilter filter) {
     this.delegate = delegate;
     this.filter = filter;
     this.nextMatchingRow = null;
@@ -65,38 +71,7 @@ public class FilteringParquetRowIterator implements RowColumnGroupIterator, Auto
    */
   private boolean matchesFilters(RowColumnGroup row) {
     // If no filters, all rows match
-    if (filter == null) {
-      return true;
-    }
-
-    // Check each filter
-    boolean anyColumnMatched = false;
-    // Check all columns against this filter
-    for (int i = 0; i < row.getColumnCount(); i++) {
-      LogicalColumnDescriptor columnDescriptor = row.getSchema().getLogicalColumn(i);
-      Object columnValue = row.getColumnValue(i);
-
-      // Only apply filter if it's applicable to this column
-      if (!filter.isApplicable(columnDescriptor)) {
-        continue;
-      }
-
-      boolean matched = filter.apply(columnValue);
-      // Debug output
-      // System.out.println("Filter check: col=" + columnDescriptor.getName() + ", value=" + columnValue + ", matched=" + matched);
-
-      if (matched) {
-        anyColumnMatched = true;
-        break;
-      }
-    }
-
-    // If this filter didn't match any column, the row doesn't match
-    if (!anyColumnMatched) {
-      return false;
-    }
-    // All filters matched
-    return true;
+    return filter == null || filter.apply(row);
   }
 
   /**
