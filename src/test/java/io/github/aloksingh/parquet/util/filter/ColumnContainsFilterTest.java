@@ -12,6 +12,7 @@ import io.github.aloksingh.parquet.util.ByteUtils;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import org.junit.jupiter.api.Test;
 
 public class ColumnContainsFilterTest {
@@ -55,6 +56,18 @@ public class ColumnContainsFilterTest {
     assertTrue(filter.apply(Map.of("bar", "test")));
     assertFalse(filter.apply(Map.of("bar", "test1")));
     assertTrue(filter.apply(Map.of("bar", "test1", "foo", "test")));
+  }
+
+  @Test
+  public void testMapColumnKeyContainsValueMatch() {
+    LogicalColumnDescriptor descriptor =
+        new LogicalColumnDescriptor("col", LogicalType.MAP, null, null);
+    ColumnContainsFilter filter = new ColumnContainsFilter(descriptor, "test", Optional.of("key1"));
+
+    assertTrue(filter.apply(Map.of("key1", "test")));
+    assertFalse(filter.apply(Map.of("bar", "test")));
+    assertFalse(filter.apply(Map.of("bar", "test1")));
+    assertTrue(filter.apply(Map.of("bar", "test1", "key1", "test")));
   }
 
   @Test

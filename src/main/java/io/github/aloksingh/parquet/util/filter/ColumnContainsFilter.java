@@ -5,14 +5,22 @@ import io.github.aloksingh.parquet.model.LogicalColumnDescriptor;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 
 public class ColumnContainsFilter implements ColumnFilter {
   private final LogicalColumnDescriptor targetColumnDescriptor;
   private final Object matchValue;
+  private Optional<String> mapKey;
 
   public ColumnContainsFilter(LogicalColumnDescriptor targetColumnDescriptor, Object matchValue) {
+    this(targetColumnDescriptor, matchValue, Optional.empty());
+  }
+
+  public ColumnContainsFilter(LogicalColumnDescriptor targetColumnDescriptor, Object matchValue,
+                              Optional<String> mapKey) {
     this.targetColumnDescriptor = targetColumnDescriptor;
     this.matchValue = matchValue;
+    this.mapKey = mapKey;
   }
 
   @Override
@@ -30,6 +38,13 @@ public class ColumnContainsFilter implements ColumnFilter {
       return listValues.contains(matchValue);
     } else if (targetColumnDescriptor.isMap()) {
       Map<?, ?> mapValues = (Map<?, ?>) colValue;
+      if (mapKey.isPresent()) {
+        Object keyValue = ((Map<?, ?>) colValue).get(mapKey.get());
+        if (keyValue instanceof String && matchValue instanceof String) {
+          return ((String) keyValue).contains((String) matchValue);
+        }
+        return false;
+      }
       return mapValues.containsValue(matchValue);
     }
     return false;
