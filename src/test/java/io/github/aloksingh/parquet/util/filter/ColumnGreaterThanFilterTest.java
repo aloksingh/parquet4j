@@ -32,8 +32,8 @@ public class ColumnGreaterThanFilterTest {
   @Test
   public void testLongGreaterThan() {
     LogicalColumnDescriptor descriptor =
-        new LogicalColumnDescriptor("col", LogicalType.PRIMITIVE, null, null);
-    ColumnGreaterThanFilter filter = new ColumnGreaterThanFilter(descriptor, 100L);
+        new LogicalColumnDescriptor("col", LogicalType.PRIMITIVE, Type.INT64, null);
+    ColumnGreaterThanFilter filter = new ColumnGreaterThanFilter(descriptor, "100");
 
     assertTrue(filter.apply(200L));
     assertFalse(filter.apply(100L));

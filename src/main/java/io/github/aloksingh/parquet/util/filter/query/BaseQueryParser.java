@@ -1,10 +1,21 @@
 package io.github.aloksingh.parquet.util.filter.query;
 
 import io.github.aloksingh.parquet.model.LogicalType;
+import io.github.aloksingh.parquet.util.filter.ColumnFilterDescriptor;
 import io.github.aloksingh.parquet.util.filter.FilterOperator;
 import java.util.Optional;
 
 public class BaseQueryParser implements QueryParser {
+
+  private String stripQuotes(String value) {
+    if (value.startsWith("\"") && value.endsWith("\"")) {
+      return value.substring(1, value.length() - 1);
+    } else if (value.startsWith("'") && value.endsWith("'")) {
+      return value.substring(1, value.length() - 1);
+    }
+    return value;
+  }
+
   @Override
   public ColumnFilterDescriptor parse(String expression) {
     // Split on first '=' to get column and value
@@ -37,7 +48,7 @@ public class BaseQueryParser implements QueryParser {
         key = keyPart.substring(1, keyPart.length() - 1);
       }
 
-      columnName = key;
+      columnName = columnPart.substring(0, bracketStart);
       mapKey = Optional.of(key);
     } else {
       // Handle quoted column names
@@ -59,16 +70,16 @@ public class BaseQueryParser implements QueryParser {
       matchValue = null;
     } else if (valuePart.startsWith("lt(") && valuePart.endsWith(")")) {
       operator = FilterOperator.lt;
-      matchValue = valuePart.substring(3, valuePart.length() - 1);
+      matchValue = stripQuotes(valuePart.substring(3, valuePart.length() - 1));
     } else if (valuePart.startsWith("lte(") && valuePart.endsWith(")")) {
       operator = FilterOperator.lte;
-      matchValue = valuePart.substring(4, valuePart.length() - 1);
+      matchValue = stripQuotes(valuePart.substring(4, valuePart.length() - 1));
     } else if (valuePart.startsWith("gt(") && valuePart.endsWith(")")) {
       operator = FilterOperator.gt;
-      matchValue = valuePart.substring(3, valuePart.length() - 1);
+      matchValue = stripQuotes(valuePart.substring(3, valuePart.length() - 1));
     } else if (valuePart.startsWith("gte(") && valuePart.endsWith(")")) {
       operator = FilterOperator.gte;
-      matchValue = valuePart.substring(4, valuePart.length() - 1);
+      matchValue = stripQuotes(valuePart.substring(4, valuePart.length() - 1));
     } else if (valuePart.startsWith("*") && valuePart.endsWith("*") && valuePart.length() > 1) {
       operator = FilterOperator.contains;
       matchValue = valuePart.substring(1, valuePart.length() - 1);
@@ -80,8 +91,10 @@ public class BaseQueryParser implements QueryParser {
       matchValue = valuePart.substring(0, valuePart.length() - 1);
     } else {
       operator = FilterOperator.eq;
-      // Strip quotes if present
+      // Strip quotes if present (both double and single quotes)
       if (valuePart.startsWith("\"") && valuePart.endsWith("\"")) {
+        matchValue = valuePart.substring(1, valuePart.length() - 1);
+      } else if (valuePart.startsWith("'") && valuePart.endsWith("'")) {
         matchValue = valuePart.substring(1, valuePart.length() - 1);
       } else {
         matchValue = valuePart;

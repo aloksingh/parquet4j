@@ -1,5 +1,7 @@
 package io.github.aloksingh.parquet.util.filter;
 
+import static io.github.aloksingh.parquet.util.filter.ColumnFilterHelper.CFH;
+
 import io.github.aloksingh.parquet.model.ColumnStatistics;
 import io.github.aloksingh.parquet.model.LogicalColumnDescriptor;
 import java.util.Map;
@@ -19,7 +21,8 @@ public class ColumnGreaterThanFilter implements ColumnFilter {
                                  Comparable matchValue,
                                  Optional<String> mapKey) {
     this.targetColumnDescriptor = targetColumnDescriptor;
-    this.matchValue = matchValue;
+    this.matchValue = mapKey.isPresent() ? matchValue :
+        (Comparable) CFH.convertToColumnType(targetColumnDescriptor, matchValue);
     this.mapKey = mapKey;
   }
 
@@ -50,7 +53,8 @@ public class ColumnGreaterThanFilter implements ColumnFilter {
           return false;
         }
         try {
-          return ((Comparable) actualValue).compareTo(matchValue) > 0;
+          return ((Comparable) actualValue).compareTo(
+              CFH.convertToClassType(actualValue.getClass(), matchValue)) > 0;
         } catch (ClassCastException e) {
           return false;
         }

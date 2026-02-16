@@ -30,8 +30,19 @@ public class ColumnEqualFilterTest {
 
   @Test
   public void testPrimitiveIntegerEqual() {
-    LogicalColumnDescriptor descriptor = new LogicalColumnDescriptor("col", LogicalType.PRIMITIVE, null, null);
+    LogicalColumnDescriptor descriptor =
+        new LogicalColumnDescriptor("col", LogicalType.PRIMITIVE, Type.INT32, null);
     ColumnEqualFilter filter = new ColumnEqualFilter(descriptor, 42);
+
+    assertTrue(filter.apply(42));
+    assertFalse(filter.apply(43));
+  }
+
+  @Test
+  public void testPrimitiveIntegerColumnWithStringMatchedValueEqual() {
+    LogicalColumnDescriptor descriptor =
+        new LogicalColumnDescriptor("col", LogicalType.PRIMITIVE, Type.INT32, null);
+    ColumnEqualFilter filter = new ColumnEqualFilter(descriptor, "42");
 
     assertTrue(filter.apply(42));
     assertFalse(filter.apply(43));

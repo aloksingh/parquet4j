@@ -1,10 +1,12 @@
 package io.github.aloksingh.parquet.util.filter;
 
-import com.google.common.base.Objects;
+import static io.github.aloksingh.parquet.util.filter.ColumnFilterHelper.CFH;
+
 import io.github.aloksingh.parquet.model.ColumnStatistics;
 import io.github.aloksingh.parquet.model.LogicalColumnDescriptor;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 
 public class ColumnNotEqualFilter implements ColumnFilter {
@@ -19,7 +21,8 @@ public class ColumnNotEqualFilter implements ColumnFilter {
   public ColumnNotEqualFilter(LogicalColumnDescriptor targetColumnDescriptor, Object matchValue,
                               Optional<String> mapKey) {
     this.targetColumnDescriptor = targetColumnDescriptor;
-    this.matchValue = matchValue;
+    this.matchValue = mapKey.isPresent() ? matchValue :
+        CFH.convertToColumnType(targetColumnDescriptor, matchValue);
     this.mapKey = mapKey;
   }
 
@@ -29,7 +32,7 @@ public class ColumnNotEqualFilter implements ColumnFilter {
       return matchValue != null;
     }
     if (targetColumnDescriptor.isPrimitive()) {
-      return !java.util.Objects.equals(matchValue, colValue);
+      return !Objects.equals(matchValue, colValue);
     } else {
       if (targetColumnDescriptor.isList()) {
         List listValues = (List) colValue;
@@ -40,7 +43,7 @@ public class ColumnNotEqualFilter implements ColumnFilter {
         for (int i = 0; i < matches.size(); i++) {
           Object m = matches.get(i);
           Object v = listValues.get(i);
-          if (!Objects.equal(m, v)) {
+          if (!Objects.equals(m, v)) {
             return true;
           }
         }
@@ -51,7 +54,12 @@ public class ColumnNotEqualFilter implements ColumnFilter {
         if (mapKey.isPresent()) {
           Map valueMap = (Map) colValue;
           Object actualValue = valueMap.get(mapKey.get());
-          return !java.util.Objects.equals(matchValue, actualValue);
+          if (actualValue != null) {
+            return !Objects.equals(CFH.convertToClassType(actualValue.getClass(), matchValue),
+                actualValue);
+          } else {
+            return matchValue != null;
+          }
         }
 
         // Otherwise, compare entire maps

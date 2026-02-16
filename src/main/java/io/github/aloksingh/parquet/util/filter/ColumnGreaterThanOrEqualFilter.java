@@ -19,7 +19,8 @@ public class ColumnGreaterThanOrEqualFilter implements ColumnFilter {
                                         Comparable matchValue,
                                         Optional<String> mapKey) {
     this.targetColumnDescriptor = targetColumnDescriptor;
-    this.matchValue = matchValue;
+    this.matchValue = mapKey.isPresent() ? matchValue :
+        (Comparable) ColumnFilterHelper.CFH.convertToColumnType(targetColumnDescriptor, matchValue);
     this.mapKey = mapKey;
   }
 
@@ -50,7 +51,8 @@ public class ColumnGreaterThanOrEqualFilter implements ColumnFilter {
           return false;
         }
         try {
-          return ((Comparable) actualValue).compareTo(matchValue) >= 0;
+          return ((Comparable) actualValue).compareTo(
+              ColumnFilterHelper.CFH.convertToClassType(actualValue.getClass(), matchValue)) >= 0;
         } catch (ClassCastException e) {
           return false;
         }

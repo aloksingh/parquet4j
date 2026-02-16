@@ -19,7 +19,8 @@ public class ColumnEqualFilter implements ColumnFilter{
   public ColumnEqualFilter(LogicalColumnDescriptor targetColumnDescriptor, Object matchValue,
                            Optional<String> mapKey) {
     this.targetColumnDescriptor = targetColumnDescriptor;
-    this.matchValue = matchValue;
+    this.matchValue = mapKey.isPresent() ? matchValue :
+        ColumnFilterHelper.CFH.convertToColumnType(targetColumnDescriptor, matchValue);
     this.mapKey = mapKey;
   }
 
@@ -51,7 +52,13 @@ public class ColumnEqualFilter implements ColumnFilter{
         if (mapKey.isPresent()) {
           Map valueMap = (Map) colValue;
           Object actualValue = valueMap.get(mapKey.get());
-          return Objects.equals(matchValue, actualValue);
+          if (actualValue != null) {
+            return Objects.equals(
+                ColumnFilterHelper.CFH.convertToClassType(actualValue.getClass(), matchValue),
+                actualValue);
+          } else {
+            return matchValue == null;
+          }
         }
 
         // Otherwise, compare entire maps
