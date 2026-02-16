@@ -14,6 +14,7 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import org.junit.jupiter.api.Test;
 
 public class ColumnEqualFilterTest {
@@ -97,6 +98,18 @@ public class ColumnEqualFilterTest {
     valueMap.put("key2", 2);
 
     assertTrue(filter.apply(valueMap));
+  }
+
+  @Test
+  public void testMapKeyValueEqual() {
+
+    LogicalColumnDescriptor descriptor =
+        new LogicalColumnDescriptor("col", LogicalType.MAP, (MapMetadata) null);
+    ColumnEqualFilter filter = new ColumnEqualFilter(descriptor, 1, Optional.of("key1"));
+    Map<String, Integer> colValue = new HashMap<>();
+    colValue.put("key1", 1);
+    colValue.put("key2", 2);
+    assertTrue(filter.apply(colValue));
   }
 
   @Test
