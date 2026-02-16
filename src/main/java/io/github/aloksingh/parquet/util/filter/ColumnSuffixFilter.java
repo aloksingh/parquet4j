@@ -2,14 +2,23 @@ package io.github.aloksingh.parquet.util.filter;
 
 import io.github.aloksingh.parquet.model.ColumnStatistics;
 import io.github.aloksingh.parquet.model.LogicalColumnDescriptor;
+import java.util.Map;
+import java.util.Optional;
 
 public class ColumnSuffixFilter implements ColumnFilter {
   private final LogicalColumnDescriptor targetColumnDescriptor;
   private final String matchValue;
+  private final Optional<String> mapKey;
 
   public ColumnSuffixFilter(LogicalColumnDescriptor targetColumnDescriptor, String matchValue) {
+    this(targetColumnDescriptor, matchValue, Optional.empty());
+  }
+
+  public ColumnSuffixFilter(LogicalColumnDescriptor targetColumnDescriptor, String matchValue,
+                            Optional<String> mapKey) {
     this.targetColumnDescriptor = targetColumnDescriptor;
     this.matchValue = matchValue;
+    this.mapKey = mapKey;
   }
 
   @Override
@@ -17,13 +26,26 @@ public class ColumnSuffixFilter implements ColumnFilter {
     if (colValue == null || matchValue == null) {
       return false;
     }
-    if (!targetColumnDescriptor.isPrimitive()) {
-      return false;
+    if (targetColumnDescriptor.isPrimitive()) {
+      if (!(colValue instanceof String)) {
+        return false;
+      }
+      return ((String) colValue).endsWith(matchValue);
+    } else if (targetColumnDescriptor.isMap()) {
+      // If mapKey is present, extract value from colValue map at that key and check suffix
+      if (mapKey.isPresent()) {
+        Map valueMap = (Map) colValue;
+        Object actualValue = valueMap.get(mapKey.get());
+        if (actualValue == null) {
+          return false;
+        }
+        if (!(actualValue instanceof String)) {
+          return false;
+        }
+        return ((String) actualValue).endsWith(matchValue);
+      }
     }
-    if (!(colValue instanceof String)) {
-      return false;
-    }
-    return ((String) colValue).endsWith(matchValue);
+    return false;
   }
 
   @Override

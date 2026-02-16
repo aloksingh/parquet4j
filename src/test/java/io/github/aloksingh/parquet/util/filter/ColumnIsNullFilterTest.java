@@ -6,8 +6,12 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import io.github.aloksingh.parquet.model.ColumnStatistics;
 import io.github.aloksingh.parquet.model.LogicalColumnDescriptor;
 import io.github.aloksingh.parquet.model.LogicalType;
+import io.github.aloksingh.parquet.model.MapMetadata;
 import io.github.aloksingh.parquet.model.Type;
 import io.github.aloksingh.parquet.util.ByteUtils;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Optional;
 import org.junit.jupiter.api.Test;
 
 public class ColumnIsNullFilterTest {
@@ -67,6 +71,156 @@ public class ColumnIsNullFilterTest {
     ColumnIsNullFilter filter = new ColumnIsNullFilter(descriptor);
 
     assertFalse(filter.apply(new Object()));
+  }
+
+  // Map column tests
+
+  @Test
+  public void testMapKeyValueIsNull() {
+    LogicalColumnDescriptor descriptor =
+        new LogicalColumnDescriptor("col", LogicalType.MAP, (MapMetadata) null);
+    ColumnIsNullFilter filter = new ColumnIsNullFilter(descriptor, Optional.of("key1"));
+
+    Map<String, Integer> colValue = new HashMap<>();
+    colValue.put("key1", null);
+    colValue.put("key2", 20);
+
+    assertTrue(filter.apply(colValue));
+  }
+
+  @Test
+  public void testMapKeyValueIsNotNull() {
+    LogicalColumnDescriptor descriptor =
+        new LogicalColumnDescriptor("col", LogicalType.MAP, (MapMetadata) null);
+    ColumnIsNullFilter filter = new ColumnIsNullFilter(descriptor, Optional.of("key1"));
+
+    Map<String, Integer> colValue = new HashMap<>();
+    colValue.put("key1", 10);
+    colValue.put("key2", 20);
+
+    assertFalse(filter.apply(colValue));
+  }
+
+  @Test
+  public void testMapKeyMissingTreatedAsNull() {
+    LogicalColumnDescriptor descriptor =
+        new LogicalColumnDescriptor("col", LogicalType.MAP, (MapMetadata) null);
+    ColumnIsNullFilter filter = new ColumnIsNullFilter(descriptor, Optional.of("key3"));
+
+    Map<String, Integer> colValue = new HashMap<>();
+    colValue.put("key1", 10);
+    colValue.put("key2", 20);
+
+    assertTrue(filter.apply(colValue));
+  }
+
+  @Test
+  public void testMapItselfNullWithKeyReturnsFlase() {
+    LogicalColumnDescriptor descriptor =
+        new LogicalColumnDescriptor("col", LogicalType.MAP, (MapMetadata) null);
+    ColumnIsNullFilter filter = new ColumnIsNullFilter(descriptor, Optional.of("key1"));
+
+    assertFalse(filter.apply(null));
+  }
+
+  @Test
+  public void testMapWithoutKeyCheckMapItself() {
+    LogicalColumnDescriptor descriptor =
+        new LogicalColumnDescriptor("col", LogicalType.MAP, (MapMetadata) null);
+    ColumnIsNullFilter filter = new ColumnIsNullFilter(descriptor);
+
+    Map<String, Integer> colValue = new HashMap<>();
+    colValue.put("key1", 10);
+    colValue.put("key2", null);
+
+    assertFalse(filter.apply(colValue));
+  }
+
+  @Test
+  public void testMapWithoutKeyNullMap() {
+    LogicalColumnDescriptor descriptor =
+        new LogicalColumnDescriptor("col", LogicalType.MAP, (MapMetadata) null);
+    ColumnIsNullFilter filter = new ColumnIsNullFilter(descriptor);
+
+    assertTrue(filter.apply(null));
+  }
+
+  @Test
+  public void testMapKeyValueWithStringNull() {
+    LogicalColumnDescriptor descriptor =
+        new LogicalColumnDescriptor("col", LogicalType.MAP, (MapMetadata) null);
+    ColumnIsNullFilter filter = new ColumnIsNullFilter(descriptor, Optional.of("name"));
+
+    Map<String, String> colValue = new HashMap<>();
+    colValue.put("name", null);
+    colValue.put("id", "123");
+
+    assertTrue(filter.apply(colValue));
+  }
+
+  @Test
+  public void testMapKeyValueWithStringNotNull() {
+    LogicalColumnDescriptor descriptor =
+        new LogicalColumnDescriptor("col", LogicalType.MAP, (MapMetadata) null);
+    ColumnIsNullFilter filter = new ColumnIsNullFilter(descriptor, Optional.of("name"));
+
+    Map<String, String> colValue = new HashMap<>();
+    colValue.put("name", "John");
+    colValue.put("id", "123");
+
+    assertFalse(filter.apply(colValue));
+  }
+
+  @Test
+  public void testMapKeyValueWithDoubleNull() {
+    LogicalColumnDescriptor descriptor =
+        new LogicalColumnDescriptor("col", LogicalType.MAP, (MapMetadata) null);
+    ColumnIsNullFilter filter = new ColumnIsNullFilter(descriptor, Optional.of("score"));
+
+    Map<String, Double> colValue = new HashMap<>();
+    colValue.put("score", null);
+    colValue.put("rank", 5.0);
+
+    assertTrue(filter.apply(colValue));
+  }
+
+  @Test
+  public void testMapKeyValueWithDoubleNotNull() {
+    LogicalColumnDescriptor descriptor =
+        new LogicalColumnDescriptor("col", LogicalType.MAP, (MapMetadata) null);
+    ColumnIsNullFilter filter = new ColumnIsNullFilter(descriptor, Optional.of("score"));
+
+    Map<String, Double> colValue = new HashMap<>();
+    colValue.put("score", 10.5);
+    colValue.put("rank", 5.0);
+
+    assertFalse(filter.apply(colValue));
+  }
+
+  @Test
+  public void testMapKeyValueWithLongNull() {
+    LogicalColumnDescriptor descriptor =
+        new LogicalColumnDescriptor("col", LogicalType.MAP, (MapMetadata) null);
+    ColumnIsNullFilter filter = new ColumnIsNullFilter(descriptor, Optional.of("timestamp"));
+
+    Map<String, Long> colValue = new HashMap<>();
+    colValue.put("timestamp", null);
+    colValue.put("counter", 500L);
+
+    assertTrue(filter.apply(colValue));
+  }
+
+  @Test
+  public void testMapKeyValueWithLongNotNull() {
+    LogicalColumnDescriptor descriptor =
+        new LogicalColumnDescriptor("col", LogicalType.MAP, (MapMetadata) null);
+    ColumnIsNullFilter filter = new ColumnIsNullFilter(descriptor, Optional.of("timestamp"));
+
+    Map<String, Long> colValue = new HashMap<>();
+    colValue.put("timestamp", 1000L);
+    colValue.put("counter", 500L);
+
+    assertFalse(filter.apply(colValue));
   }
 
   // isApplicable method tests

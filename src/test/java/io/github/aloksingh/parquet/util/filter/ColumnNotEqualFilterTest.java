@@ -11,6 +11,7 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import org.junit.jupiter.api.Test;
 
 public class ColumnNotEqualFilterTest {
@@ -107,5 +108,189 @@ public class ColumnNotEqualFilterTest {
     valueMap.put("key2", 2);
 
     assertTrue(filter.apply(valueMap));
+  }
+
+  // Map column with specific key tests
+
+  @Test
+  public void testMapKeyValueNotEqual() {
+    LogicalColumnDescriptor descriptor =
+        new LogicalColumnDescriptor("col", LogicalType.MAP, (MapMetadata) null);
+    ColumnNotEqualFilter filter =
+        new ColumnNotEqualFilter(descriptor, 10, Optional.of("key1"));
+
+    Map<String, Integer> colValue = new HashMap<>();
+    colValue.put("key1", 15);
+    colValue.put("key2", 20);
+
+    assertTrue(filter.apply(colValue));
+  }
+
+  @Test
+  public void testMapKeyValueEqual() {
+    LogicalColumnDescriptor descriptor =
+        new LogicalColumnDescriptor("col", LogicalType.MAP, (MapMetadata) null);
+    ColumnNotEqualFilter filter =
+        new ColumnNotEqualFilter(descriptor, 10, Optional.of("key1"));
+
+    Map<String, Integer> colValue = new HashMap<>();
+    colValue.put("key1", 10);
+    colValue.put("key2", 20);
+
+    assertFalse(filter.apply(colValue));
+  }
+
+  @Test
+  public void testMapKeyValueNullNotEqualToValue() {
+    LogicalColumnDescriptor descriptor =
+        new LogicalColumnDescriptor("col", LogicalType.MAP, (MapMetadata) null);
+    ColumnNotEqualFilter filter =
+        new ColumnNotEqualFilter(descriptor, 10, Optional.of("key1"));
+
+    Map<String, Integer> colValue = new HashMap<>();
+    colValue.put("key1", null);
+    colValue.put("key2", 20);
+
+    assertTrue(filter.apply(colValue));
+  }
+
+  @Test
+  public void testMapKeyValueNullEqualToNull() {
+    LogicalColumnDescriptor descriptor =
+        new LogicalColumnDescriptor("col", LogicalType.MAP, (MapMetadata) null);
+    ColumnNotEqualFilter filter =
+        new ColumnNotEqualFilter(descriptor, null, Optional.of("key1"));
+
+    Map<String, Integer> colValue = new HashMap<>();
+    colValue.put("key1", null);
+    colValue.put("key2", 20);
+
+    assertFalse(filter.apply(colValue));
+  }
+
+  @Test
+  public void testMapKeyMissingNotEqual() {
+    LogicalColumnDescriptor descriptor =
+        new LogicalColumnDescriptor("col", LogicalType.MAP, (MapMetadata) null);
+    ColumnNotEqualFilter filter =
+        new ColumnNotEqualFilter(descriptor, 10, Optional.of("key3"));
+
+    Map<String, Integer> colValue = new HashMap<>();
+    colValue.put("key1", 15);
+    colValue.put("key2", 20);
+
+    assertTrue(filter.apply(colValue));
+  }
+
+  @Test
+  public void testMapKeyValueWithStringNotEqual() {
+    LogicalColumnDescriptor descriptor =
+        new LogicalColumnDescriptor("col", LogicalType.MAP, (MapMetadata) null);
+    ColumnNotEqualFilter filter =
+        new ColumnNotEqualFilter(descriptor, "John", Optional.of("name"));
+
+    Map<String, String> colValue = new HashMap<>();
+    colValue.put("name", "Jane");
+    colValue.put("id", "123");
+
+    assertTrue(filter.apply(colValue));
+  }
+
+  @Test
+  public void testMapKeyValueWithStringEqual() {
+    LogicalColumnDescriptor descriptor =
+        new LogicalColumnDescriptor("col", LogicalType.MAP, (MapMetadata) null);
+    ColumnNotEqualFilter filter =
+        new ColumnNotEqualFilter(descriptor, "John", Optional.of("name"));
+
+    Map<String, String> colValue = new HashMap<>();
+    colValue.put("name", "John");
+    colValue.put("id", "123");
+
+    assertFalse(filter.apply(colValue));
+  }
+
+  @Test
+  public void testMapKeyValueWithDoubleNotEqual() {
+    LogicalColumnDescriptor descriptor =
+        new LogicalColumnDescriptor("col", LogicalType.MAP, (MapMetadata) null);
+    ColumnNotEqualFilter filter =
+        new ColumnNotEqualFilter(descriptor, 10.5, Optional.of("score"));
+
+    Map<String, Double> colValue = new HashMap<>();
+    colValue.put("score", 15.7);
+    colValue.put("rank", 5.0);
+
+    assertTrue(filter.apply(colValue));
+  }
+
+  @Test
+  public void testMapKeyValueWithDoubleEqual() {
+    LogicalColumnDescriptor descriptor =
+        new LogicalColumnDescriptor("col", LogicalType.MAP, (MapMetadata) null);
+    ColumnNotEqualFilter filter =
+        new ColumnNotEqualFilter(descriptor, 10.5, Optional.of("score"));
+
+    Map<String, Double> colValue = new HashMap<>();
+    colValue.put("score", 10.5);
+    colValue.put("rank", 5.0);
+
+    assertFalse(filter.apply(colValue));
+  }
+
+  @Test
+  public void testMapKeyValueWithLongNotEqual() {
+    LogicalColumnDescriptor descriptor =
+        new LogicalColumnDescriptor("col", LogicalType.MAP, (MapMetadata) null);
+    ColumnNotEqualFilter filter =
+        new ColumnNotEqualFilter(descriptor, 1000L, Optional.of("timestamp"));
+
+    Map<String, Long> colValue = new HashMap<>();
+    colValue.put("timestamp", 2000L);
+    colValue.put("counter", 500L);
+
+    assertTrue(filter.apply(colValue));
+  }
+
+  @Test
+  public void testMapKeyValueWithLongEqual() {
+    LogicalColumnDescriptor descriptor =
+        new LogicalColumnDescriptor("col", LogicalType.MAP, (MapMetadata) null);
+    ColumnNotEqualFilter filter =
+        new ColumnNotEqualFilter(descriptor, 1000L, Optional.of("timestamp"));
+
+    Map<String, Long> colValue = new HashMap<>();
+    colValue.put("timestamp", 1000L);
+    colValue.put("counter", 500L);
+
+    assertFalse(filter.apply(colValue));
+  }
+
+  @Test
+  public void testMapKeyValueWithZeroNotEqualToNull() {
+    LogicalColumnDescriptor descriptor =
+        new LogicalColumnDescriptor("col", LogicalType.MAP, (MapMetadata) null);
+    ColumnNotEqualFilter filter =
+        new ColumnNotEqualFilter(descriptor, null, Optional.of("count"));
+
+    Map<String, Integer> colValue = new HashMap<>();
+    colValue.put("count", 0);
+    colValue.put("total", 100);
+
+    assertTrue(filter.apply(colValue));
+  }
+
+  @Test
+  public void testMapKeyValueWithEmptyStringNotEqualToNull() {
+    LogicalColumnDescriptor descriptor =
+        new LogicalColumnDescriptor("col", LogicalType.MAP, (MapMetadata) null);
+    ColumnNotEqualFilter filter =
+        new ColumnNotEqualFilter(descriptor, null, Optional.of("name"));
+
+    Map<String, String> colValue = new HashMap<>();
+    colValue.put("name", "");
+    colValue.put("id", "123");
+
+    assertTrue(filter.apply(colValue));
   }
 }

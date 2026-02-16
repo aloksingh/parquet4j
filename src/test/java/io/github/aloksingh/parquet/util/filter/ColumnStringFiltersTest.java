@@ -8,7 +8,10 @@ import io.github.aloksingh.parquet.model.LogicalColumnDescriptor;
 import io.github.aloksingh.parquet.model.LogicalType;
 import io.github.aloksingh.parquet.model.MapMetadata;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 import org.junit.jupiter.api.Test;
 
 public class ColumnStringFiltersTest {
@@ -189,6 +192,194 @@ public class ColumnStringFiltersTest {
 
     assertTrue(filter.apply("any string"));
     assertTrue(filter.apply(""));
+  }
+
+  // Prefix Tests with Map columns
+  @Test
+  public void testPrefixMapKeyValue() {
+    ColumnPrefixFilter filter =
+        new ColumnPrefixFilter(mapDescriptor, "hello", Optional.of("message"));
+
+    Map<String, String> colValue = new HashMap<>();
+    colValue.put("message", "hello world");
+    colValue.put("sender", "alice");
+
+    assertTrue(filter.apply(colValue));
+  }
+
+  @Test
+  public void testPrefixMapKeyValueNoMatch() {
+    ColumnPrefixFilter filter =
+        new ColumnPrefixFilter(mapDescriptor, "hello", Optional.of("message"));
+
+    Map<String, String> colValue = new HashMap<>();
+    colValue.put("message", "world hello");
+    colValue.put("sender", "alice");
+
+    assertFalse(filter.apply(colValue));
+  }
+
+  @Test
+  public void testPrefixMapKeyValueExactMatch() {
+    ColumnPrefixFilter filter =
+        new ColumnPrefixFilter(mapDescriptor, "hello", Optional.of("message"));
+
+    Map<String, String> colValue = new HashMap<>();
+    colValue.put("message", "hello");
+    colValue.put("sender", "alice");
+
+    assertTrue(filter.apply(colValue));
+  }
+
+  @Test
+  public void testPrefixMapKeyValueNull() {
+    ColumnPrefixFilter filter =
+        new ColumnPrefixFilter(mapDescriptor, "hello", Optional.of("message"));
+
+    Map<String, String> colValue = new HashMap<>();
+    colValue.put("message", null);
+    colValue.put("sender", "alice");
+
+    assertFalse(filter.apply(colValue));
+  }
+
+  @Test
+  public void testPrefixMapKeyMissing() {
+    ColumnPrefixFilter filter =
+        new ColumnPrefixFilter(mapDescriptor, "hello", Optional.of("message"));
+
+    Map<String, String> colValue = new HashMap<>();
+    colValue.put("sender", "alice");
+
+    assertFalse(filter.apply(colValue));
+  }
+
+  @Test
+  public void testPrefixMapKeyValueNonString() {
+    ColumnPrefixFilter filter =
+        new ColumnPrefixFilter(mapDescriptor, "123", Optional.of("code"));
+
+    Map<String, Object> colValue = new HashMap<>();
+    colValue.put("code", 12345);
+    colValue.put("name", "test");
+
+    assertFalse(filter.apply(colValue));
+  }
+
+  @Test
+  public void testPrefixMapWithoutKey() {
+    ColumnPrefixFilter filter = new ColumnPrefixFilter(mapDescriptor, "hello");
+
+    Map<String, String> colValue = new HashMap<>();
+    colValue.put("message", "hello world");
+
+    assertFalse(filter.apply(colValue));
+  }
+
+  @Test
+  public void testPrefixMapEmptyPrefix() {
+    ColumnPrefixFilter filter =
+        new ColumnPrefixFilter(mapDescriptor, "", Optional.of("message"));
+
+    Map<String, String> colValue = new HashMap<>();
+    colValue.put("message", "any string");
+    colValue.put("sender", "alice");
+
+    assertTrue(filter.apply(colValue));
+  }
+
+  // Suffix Tests with Map columns
+  @Test
+  public void testSuffixMapKeyValue() {
+    ColumnSuffixFilter filter =
+        new ColumnSuffixFilter(mapDescriptor, "world", Optional.of("message"));
+
+    Map<String, String> colValue = new HashMap<>();
+    colValue.put("message", "hello world");
+    colValue.put("sender", "alice");
+
+    assertTrue(filter.apply(colValue));
+  }
+
+  @Test
+  public void testSuffixMapKeyValueNoMatch() {
+    ColumnSuffixFilter filter =
+        new ColumnSuffixFilter(mapDescriptor, "world", Optional.of("message"));
+
+    Map<String, String> colValue = new HashMap<>();
+    colValue.put("message", "world hello");
+    colValue.put("sender", "alice");
+
+    assertFalse(filter.apply(colValue));
+  }
+
+  @Test
+  public void testSuffixMapKeyValueExactMatch() {
+    ColumnSuffixFilter filter =
+        new ColumnSuffixFilter(mapDescriptor, "world", Optional.of("message"));
+
+    Map<String, String> colValue = new HashMap<>();
+    colValue.put("message", "world");
+    colValue.put("sender", "alice");
+
+    assertTrue(filter.apply(colValue));
+  }
+
+  @Test
+  public void testSuffixMapKeyValueNull() {
+    ColumnSuffixFilter filter =
+        new ColumnSuffixFilter(mapDescriptor, "world", Optional.of("message"));
+
+    Map<String, String> colValue = new HashMap<>();
+    colValue.put("message", null);
+    colValue.put("sender", "alice");
+
+    assertFalse(filter.apply(colValue));
+  }
+
+  @Test
+  public void testSuffixMapKeyMissing() {
+    ColumnSuffixFilter filter =
+        new ColumnSuffixFilter(mapDescriptor, "world", Optional.of("message"));
+
+    Map<String, String> colValue = new HashMap<>();
+    colValue.put("sender", "alice");
+
+    assertFalse(filter.apply(colValue));
+  }
+
+  @Test
+  public void testSuffixMapKeyValueNonString() {
+    ColumnSuffixFilter filter =
+        new ColumnSuffixFilter(mapDescriptor, "45", Optional.of("code"));
+
+    Map<String, Object> colValue = new HashMap<>();
+    colValue.put("code", 12345);
+    colValue.put("name", "test");
+
+    assertFalse(filter.apply(colValue));
+  }
+
+  @Test
+  public void testSuffixMapWithoutKey() {
+    ColumnSuffixFilter filter = new ColumnSuffixFilter(mapDescriptor, "world");
+
+    Map<String, String> colValue = new HashMap<>();
+    colValue.put("message", "hello world");
+
+    assertFalse(filter.apply(colValue));
+  }
+
+  @Test
+  public void testSuffixMapEmptySuffix() {
+    ColumnSuffixFilter filter =
+        new ColumnSuffixFilter(mapDescriptor, "", Optional.of("message"));
+
+    Map<String, String> colValue = new HashMap<>();
+    colValue.put("message", "any string");
+    colValue.put("sender", "alice");
+
+    assertTrue(filter.apply(colValue));
   }
 
   // Edge cases for all string filters

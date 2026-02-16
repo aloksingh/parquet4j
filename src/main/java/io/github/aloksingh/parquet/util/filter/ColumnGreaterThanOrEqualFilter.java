@@ -2,15 +2,25 @@ package io.github.aloksingh.parquet.util.filter;
 
 import io.github.aloksingh.parquet.model.ColumnStatistics;
 import io.github.aloksingh.parquet.model.LogicalColumnDescriptor;
+import java.util.Map;
+import java.util.Optional;
 
 public class ColumnGreaterThanOrEqualFilter implements ColumnFilter {
   private final LogicalColumnDescriptor targetColumnDescriptor;
   private final Comparable matchValue;
+  private final Optional<String> mapKey;
 
   public ColumnGreaterThanOrEqualFilter(LogicalColumnDescriptor targetColumnDescriptor,
                                         Comparable matchValue) {
+    this(targetColumnDescriptor, matchValue, Optional.empty());
+  }
+
+  public ColumnGreaterThanOrEqualFilter(LogicalColumnDescriptor targetColumnDescriptor,
+                                        Comparable matchValue,
+                                        Optional<String> mapKey) {
     this.targetColumnDescriptor = targetColumnDescriptor;
     this.matchValue = matchValue;
+    this.mapKey = mapKey;
   }
 
   @Override
@@ -19,17 +29,34 @@ public class ColumnGreaterThanOrEqualFilter implements ColumnFilter {
     if (colValue == null || matchValue == null) {
       return false;
     }
-    if (!targetColumnDescriptor.isPrimitive()) {
-      return false;
+    if (targetColumnDescriptor.isPrimitive()) {
+      if (!(colValue instanceof Comparable)) {
+        return false;
+      }
+      try {
+        return ((Comparable) colValue).compareTo(matchValue) >= 0;
+      } catch (ClassCastException e) {
+        return false;
+      }
+    } else if (targetColumnDescriptor.isMap()) {
+      // If mapKey is present, extract value from colValue map at that key and compare with matchValue
+      if (mapKey.isPresent()) {
+        Map valueMap = (Map) colValue;
+        Object actualValue = valueMap.get(mapKey.get());
+        if (actualValue == null) {
+          return false;
+        }
+        if (!(actualValue instanceof Comparable)) {
+          return false;
+        }
+        try {
+          return ((Comparable) actualValue).compareTo(matchValue) >= 0;
+        } catch (ClassCastException e) {
+          return false;
+        }
+      }
     }
-    if (!(colValue instanceof Comparable)) {
-      return false;
-    }
-    try {
-      return ((Comparable) colValue).compareTo(matchValue) >= 0;
-    } catch (ClassCastException e) {
-      return false;
-    }
+    return false;
   }
 
   @Override

@@ -5,14 +5,22 @@ import io.github.aloksingh.parquet.model.ColumnStatistics;
 import io.github.aloksingh.parquet.model.LogicalColumnDescriptor;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 public class ColumnNotEqualFilter implements ColumnFilter {
   private final LogicalColumnDescriptor targetColumnDescriptor;
   private final Object matchValue;
+  private final Optional<String> mapKey;
 
   public ColumnNotEqualFilter(LogicalColumnDescriptor targetColumnDescriptor, Object matchValue) {
+    this(targetColumnDescriptor, matchValue, Optional.empty());
+  }
+
+  public ColumnNotEqualFilter(LogicalColumnDescriptor targetColumnDescriptor, Object matchValue,
+                              Optional<String> mapKey) {
     this.targetColumnDescriptor = targetColumnDescriptor;
     this.matchValue = matchValue;
+    this.mapKey = mapKey;
   }
 
   @Override
@@ -39,6 +47,14 @@ public class ColumnNotEqualFilter implements ColumnFilter {
         return false;
       }
       if (targetColumnDescriptor.isMap()) {
+        // If mapKey is present, extract value from colValue map at that key and compare with matchValue
+        if (mapKey.isPresent()) {
+          Map valueMap = (Map) colValue;
+          Object actualValue = valueMap.get(mapKey.get());
+          return !java.util.Objects.equals(matchValue, actualValue);
+        }
+
+        // Otherwise, compare entire maps
         Map valueMap = (Map) colValue;
         Map matchMap = (Map) matchValue;
         if (valueMap.size() != matchMap.size()) {
