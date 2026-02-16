@@ -2,6 +2,7 @@ package io.github.aloksingh.parquet.util.filter.query;
 
 import io.github.aloksingh.parquet.model.LogicalType;
 import io.github.aloksingh.parquet.util.filter.FilterOperator;
+import java.util.Optional;
 
 public class BaseQueryParser implements QueryParser {
   @Override
@@ -15,10 +16,35 @@ public class BaseQueryParser implements QueryParser {
     String columnPart = expression.substring(0, eqIndex);
     String valuePart = expression.substring(eqIndex + 1);
 
-    // Handle quoted column names
-    String columnName = columnPart;
-    if (columnPart.startsWith("\"") && columnPart.endsWith("\"")) {
-      columnName = columnPart.substring(1, columnPart.length() - 1);
+    // Handle map key syntax: column["key"] or quoted column names
+    String columnName;
+    Optional<String> mapKey = Optional.empty();
+
+    int bracketStart = columnPart.indexOf('[');
+    if (bracketStart != -1) {
+      // Map key syntax detected
+      int bracketEnd = columnPart.indexOf(']');
+      if (bracketEnd == -1 || bracketEnd < bracketStart) {
+        throw new IllegalArgumentException("Invalid map key syntax: " + expression);
+      }
+
+      // Extract the key part (between brackets)
+      String keyPart = columnPart.substring(bracketStart + 1, bracketEnd);
+
+      // Handle quoted keys
+      String key = keyPart;
+      if (keyPart.startsWith("\"") && keyPart.endsWith("\"")) {
+        key = keyPart.substring(1, keyPart.length() - 1);
+      }
+
+      columnName = key;
+      mapKey = Optional.of(key);
+    } else {
+      // Handle quoted column names
+      columnName = columnPart;
+      if (columnPart.startsWith("\"") && columnPart.endsWith("\"")) {
+        columnName = columnPart.substring(1, columnPart.length() - 1);
+      }
     }
 
     // Parse the value part to determine operator and value
@@ -62,6 +88,11 @@ public class BaseQueryParser implements QueryParser {
       }
     }
 
-    return new ColumnFilterDescriptor(columnName, LogicalType.PRIMITIVE, operator, matchValue);
+    if (mapKey.isPresent()) {
+      return new ColumnFilterDescriptor(columnName, LogicalType.PRIMITIVE, operator, matchValue,
+          mapKey);
+    } else {
+      return new ColumnFilterDescriptor(columnName, LogicalType.PRIMITIVE, operator, matchValue);
+    }
   }
 }
