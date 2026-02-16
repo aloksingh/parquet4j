@@ -6,8 +6,12 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import io.github.aloksingh.parquet.model.ColumnStatistics;
 import io.github.aloksingh.parquet.model.LogicalColumnDescriptor;
 import io.github.aloksingh.parquet.model.LogicalType;
+import io.github.aloksingh.parquet.model.MapMetadata;
 import io.github.aloksingh.parquet.model.Type;
 import io.github.aloksingh.parquet.util.ByteUtils;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Optional;
 import org.junit.jupiter.api.Test;
 
 public class ColumnGreaterThanFilterTest {
@@ -114,6 +118,166 @@ public class ColumnGreaterThanFilterTest {
 
     // Comparing Integer matchValue with String colValue should return false
     assertFalse(filter.apply("test"));
+  }
+
+  // Map column tests
+
+  @Test
+  public void testMapKeyValueGreaterThan() {
+    LogicalColumnDescriptor descriptor =
+        new LogicalColumnDescriptor("col", LogicalType.MAP, (MapMetadata) null);
+    ColumnGreaterThanFilter filter =
+        new ColumnGreaterThanFilter(descriptor, 10, Optional.of("key1"));
+
+    Map<String, Integer> colValue = new HashMap<>();
+    colValue.put("key1", 15);
+    colValue.put("key2", 5);
+
+    assertTrue(filter.apply(colValue));
+    colValue = new HashMap<>();
+    colValue.put("key1", 10);
+    colValue.put("key2", 5);
+
+    assertFalse(filter.apply(colValue));
+  }
+
+  @Test
+  public void testMapKeyValueEqualToMatch() {
+    LogicalColumnDescriptor descriptor =
+        new LogicalColumnDescriptor("col", LogicalType.MAP, (MapMetadata) null);
+    ColumnGreaterThanFilter filter =
+        new ColumnGreaterThanFilter(descriptor, 10, Optional.of("key1"));
+
+    Map<String, Integer> colValue = new HashMap<>();
+    colValue.put("key1", 10);
+    colValue.put("key2", 5);
+
+    assertFalse(filter.apply(colValue));
+  }
+
+  @Test
+  public void testMapKeyValueLessThan() {
+    LogicalColumnDescriptor descriptor =
+        new LogicalColumnDescriptor("col", LogicalType.MAP, (MapMetadata) null);
+    ColumnGreaterThanFilter filter =
+        new ColumnGreaterThanFilter(descriptor, 10, Optional.of("key1"));
+
+    Map<String, Integer> colValue = new HashMap<>();
+    colValue.put("key1", 5);
+    colValue.put("key2", 20);
+
+    assertFalse(filter.apply(colValue));
+  }
+
+  @Test
+  public void testMapKeyValueNullValue() {
+    LogicalColumnDescriptor descriptor =
+        new LogicalColumnDescriptor("col", LogicalType.MAP, (MapMetadata) null);
+    ColumnGreaterThanFilter filter =
+        new ColumnGreaterThanFilter(descriptor, 10, Optional.of("key1"));
+
+    Map<String, Integer> colValue = new HashMap<>();
+    colValue.put("key1", null);
+    colValue.put("key2", 20);
+
+    assertFalse(filter.apply(colValue));
+  }
+
+  @Test
+  public void testMapKeyMissing() {
+    LogicalColumnDescriptor descriptor =
+        new LogicalColumnDescriptor("col", LogicalType.MAP, (MapMetadata) null);
+    ColumnGreaterThanFilter filter =
+        new ColumnGreaterThanFilter(descriptor, 10, Optional.of("key3"));
+
+    Map<String, Integer> colValue = new HashMap<>();
+    colValue.put("key1", 15);
+    colValue.put("key2", 20);
+
+    assertFalse(filter.apply(colValue));
+  }
+
+  @Test
+  public void testMapKeyValueNonComparable() {
+    LogicalColumnDescriptor descriptor =
+        new LogicalColumnDescriptor("col", LogicalType.MAP, (MapMetadata) null);
+    ColumnGreaterThanFilter filter =
+        new ColumnGreaterThanFilter(descriptor, 10, Optional.of("key1"));
+
+    Map<String, Object> colValue = new HashMap<>();
+    colValue.put("key1", new Object());
+    colValue.put("key2", 20);
+
+    assertFalse(filter.apply(colValue));
+  }
+
+  @Test
+  public void testMapKeyValueIncompatibleTypes() {
+    LogicalColumnDescriptor descriptor =
+        new LogicalColumnDescriptor("col", LogicalType.MAP, (MapMetadata) null);
+    ColumnGreaterThanFilter filter =
+        new ColumnGreaterThanFilter(descriptor, 10, Optional.of("key1"));
+
+    Map<String, Object> colValue = new HashMap<>();
+    colValue.put("key1", "not a number");
+    colValue.put("key2", 20);
+
+    assertFalse(filter.apply(colValue));
+  }
+
+  @Test
+  public void testMapWithoutKeyNotSupported() {
+    LogicalColumnDescriptor descriptor =
+        new LogicalColumnDescriptor("col", LogicalType.MAP, (MapMetadata) null);
+    ColumnGreaterThanFilter filter = new ColumnGreaterThanFilter(descriptor, 10);
+
+    Map<String, Integer> colValue = new HashMap<>();
+    colValue.put("key1", 15);
+    colValue.put("key2", 20);
+
+    assertFalse(filter.apply(colValue));
+  }
+
+  @Test
+  public void testMapKeyValueWithStringGreaterThan() {
+    LogicalColumnDescriptor descriptor =
+        new LogicalColumnDescriptor("col", LogicalType.MAP, (MapMetadata) null);
+    ColumnGreaterThanFilter filter =
+        new ColumnGreaterThanFilter(descriptor, "b", Optional.of("name"));
+
+    Map<String, String> colValue = new HashMap<>();
+    colValue.put("name", "zebra");
+    colValue.put("id", "123");
+
+    assertTrue(filter.apply(colValue));
+  }
+
+  @Test
+  public void testMapKeyValueWithDoubleGreaterThan() {
+    LogicalColumnDescriptor descriptor =
+        new LogicalColumnDescriptor("col", LogicalType.MAP, (MapMetadata) null);
+    ColumnGreaterThanFilter filter =
+        new ColumnGreaterThanFilter(descriptor, 10.5, Optional.of("score"));
+
+    Map<String, Double> colValue = new HashMap<>();
+    colValue.put("score", 15.7);
+    colValue.put("rank", 5.0);
+
+    assertTrue(filter.apply(colValue));
+  }
+
+  @Test
+  public void testMapKeyValueWithLongGreaterThan() {
+    LogicalColumnDescriptor descriptor =
+        new LogicalColumnDescriptor("col", LogicalType.MAP, (MapMetadata) null);
+    ColumnGreaterThanFilter filter =
+        new ColumnGreaterThanFilter(descriptor, 1000L, Optional.of("timestamp"));
+
+    Map<String, Long> colValue = new HashMap<>();
+    colValue.put("timestamp", 2000L);
+    colValue.put("counter", 500L);
+
+    assertTrue(filter.apply(colValue));
   }
 
   // isApplicable method tests
