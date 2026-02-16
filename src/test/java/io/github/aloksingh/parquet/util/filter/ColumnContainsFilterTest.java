@@ -11,6 +11,7 @@ import io.github.aloksingh.parquet.model.Type;
 import io.github.aloksingh.parquet.util.ByteUtils;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 
 public class ColumnContainsFilterTest {
@@ -42,6 +43,18 @@ public class ColumnContainsFilterTest {
     ColumnContainsFilter filter = new ColumnContainsFilter(descriptor, "test");
 
     assertTrue(filter.apply("test"));
+  }
+
+  @Test
+  public void testMapColumnContainsValueMatch() {
+    LogicalColumnDescriptor descriptor =
+        new LogicalColumnDescriptor("col", LogicalType.MAP, null, null);
+    ColumnContainsFilter filter = new ColumnContainsFilter(descriptor, "test");
+
+    assertTrue(filter.apply(Map.of("foo", "test")));
+    assertTrue(filter.apply(Map.of("bar", "test")));
+    assertFalse(filter.apply(Map.of("bar", "test1")));
+    assertTrue(filter.apply(Map.of("bar", "test1", "foo", "test")));
   }
 
   @Test

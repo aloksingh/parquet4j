@@ -3,6 +3,7 @@ package io.github.aloksingh.parquet.util.filter;
 import io.github.aloksingh.parquet.model.ColumnStatistics;
 import io.github.aloksingh.parquet.model.LogicalColumnDescriptor;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 
 public class ColumnContainsFilter implements ColumnFilter {
@@ -27,6 +28,9 @@ public class ColumnContainsFilter implements ColumnFilter {
     } else if (targetColumnDescriptor.isList()) {
       List listValues = (List) colValue;
       return listValues.contains(matchValue);
+    } else if (targetColumnDescriptor.isMap()) {
+      Map<?, ?> mapValues = (Map<?, ?>) colValue;
+      return mapValues.containsValue(matchValue);
     }
     return false;
   }
