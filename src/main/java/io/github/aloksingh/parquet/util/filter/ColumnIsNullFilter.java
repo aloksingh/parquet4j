@@ -22,8 +22,12 @@ public class ColumnIsNullFilter implements ColumnFilter {
 
   @Override
   public boolean skip(ColumnStatistics statistics, Object colValue) {
-    // Conservative approach: don't skip by default
-    // TODO: Implement proper statistics-based skipping once value decoding is available
+    // For IsNull filter, we're looking for null values
+    // If statistics show no nulls (nullCount == 0), we can skip this row group
+    if (statistics.hasNullCount()) {
+      return statistics.nullCount() < 1;
+    }
+    // If we don't have null count information, conservatively don't skip
     return false;
   }
 }

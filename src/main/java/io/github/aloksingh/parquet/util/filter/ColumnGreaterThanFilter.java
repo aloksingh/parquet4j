@@ -38,9 +38,67 @@ public class ColumnGreaterThanFilter implements ColumnFilter {
   }
 
   @Override
+  @SuppressWarnings("unchecked")
   public boolean skip(ColumnStatistics statistics, Object colValue) {
-    // Conservative approach: don't skip by default
-    // TODO: Implement proper statistics-based skipping once value decoding is available
+    if (targetColumnDescriptor.isPrimitive()) {
+      if (colValue == null) {
+        if (statistics.hasNullCount()) {
+          return statistics.nullCount() < 1;
+        }
+      }
+      Object min = ColumnStatistics.decodeStatValue(statistics.min(),
+          targetColumnDescriptor.getPhysicalType());
+      Object max = ColumnStatistics.decodeStatValue(statistics.max(),
+          targetColumnDescriptor.getPhysicalType());
+      switch (targetColumnDescriptor.getPhysicalType()) {
+        case BOOLEAN -> {
+          if (colValue != null && colValue instanceof Boolean) {
+            Boolean boolMax = (Boolean) max;
+            Boolean v = (Boolean) colValue;
+            // For boolean, only true > false
+            // If max is false, no values can be > false
+            // If max is true and v is false, then true > false, so keep
+            try {
+              return ((Comparable) max).compareTo(v) > 0;
+            } catch (Exception e) {
+              return false;
+            }
+          }
+        }
+        case INT32 -> {
+          if (colValue != null) {
+            Integer v = (Integer) colValue;
+            Integer maxVal = (Integer) max;
+            return maxVal > v;
+          }
+        }
+        case INT64 -> {
+          if (colValue != null) {
+            Long v = (Long) colValue;
+            Long maxVal = (Long) max;
+            return maxVal > v;
+          }
+        }
+        case FLOAT -> {
+          if (colValue != null) {
+            Float v = (Float) colValue;
+            Float maxVal = (Float) max;
+            return maxVal > v;
+          }
+        }
+        case DOUBLE -> {
+          if (colValue != null) {
+            Double v = (Double) colValue;
+            Double maxVal = (Double) max;
+            return maxVal > v;
+          }
+        }
+        case BYTE_ARRAY -> {
+        }
+        case FIXED_LEN_BYTE_ARRAY -> {
+        }
+      }
+    }
     return false;
   }
 }
