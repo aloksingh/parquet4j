@@ -1,6 +1,7 @@
 package io.github.aloksingh.parquet.util.filter;
 
 import com.google.common.base.Objects;
+import io.github.aloksingh.parquet.model.ColumnStatistics;
 import io.github.aloksingh.parquet.model.LogicalColumnDescriptor;
 import java.util.List;
 import java.util.Map;
@@ -62,5 +63,12 @@ public class ColumnNotEqualFilter implements ColumnFilter {
   @Override
   public boolean isApplicable(LogicalColumnDescriptor columnDescriptor) {
     return targetColumnDescriptor.equals(columnDescriptor);
+  }
+
+  @Override
+  public boolean skip(ColumnStatistics statistics, Object colValue) {
+    // Conservative approach: don't skip by default
+    // TODO: Implement proper statistics-based skipping once value decoding is available
+    return false;
   }
 }

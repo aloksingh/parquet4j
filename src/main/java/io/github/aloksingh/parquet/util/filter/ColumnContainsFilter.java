@@ -1,5 +1,6 @@
 package io.github.aloksingh.parquet.util.filter;
 
+import io.github.aloksingh.parquet.model.ColumnStatistics;
 import io.github.aloksingh.parquet.model.LogicalColumnDescriptor;
 import java.util.List;
 
@@ -32,5 +33,10 @@ public class ColumnContainsFilter implements ColumnFilter {
   @Override
   public boolean isApplicable(LogicalColumnDescriptor columnDescriptor) {
     return targetColumnDescriptor.equals(columnDescriptor);
+  }
+
+  @Override
+  public boolean skip(ColumnStatistics statistics, Object colValue) {
+    return false;
   }
 }

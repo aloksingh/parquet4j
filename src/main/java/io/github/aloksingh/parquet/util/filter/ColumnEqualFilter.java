@@ -1,9 +1,10 @@
 package io.github.aloksingh.parquet.util.filter;
 
-import com.google.common.base.Objects;
+import io.github.aloksingh.parquet.model.ColumnStatistics;
 import io.github.aloksingh.parquet.model.LogicalColumnDescriptor;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 public class ColumnEqualFilter implements ColumnFilter{
   private final LogicalColumnDescriptor targetColumnDescriptor;
@@ -31,7 +32,7 @@ public class ColumnEqualFilter implements ColumnFilter{
         for (int i = 0; i < matches.size(); i++) {
           Object m = matches.get(i);
           Object v = listValues.get(i);
-          if (!Objects.equal(m, v)){
+          if (!Objects.equals(m, v)) {
             return false;
           }
         }
@@ -62,5 +63,64 @@ public class ColumnEqualFilter implements ColumnFilter{
   @Override
   public boolean isApplicable(LogicalColumnDescriptor columnDescriptor) {
     return targetColumnDescriptor.equals(columnDescriptor);
+  }
+
+  @Override
+  public boolean skip(ColumnStatistics statistics, Object colValue) {
+    if (targetColumnDescriptor.isPrimitive()) {
+      if (colValue == null) {
+        if (statistics.hasNullCount()) {
+          return statistics.nullCount() < 1;
+        }
+      }
+      Object min = ColumnStatistics.decodeStatValue(statistics.min(),
+          targetColumnDescriptor.getPhysicalType());
+      Object max = ColumnStatistics.decodeStatValue(statistics.max(),
+          targetColumnDescriptor.getPhysicalType());
+      switch (targetColumnDescriptor.getPhysicalType()) {
+        case BOOLEAN -> {
+          if (colValue != null) {
+            return (Objects.equals(min, colValue) || Objects.equals(max, colValue));
+          }
+        }
+        case INT32 -> {
+          if (colValue != null) {
+            Integer v = (Integer) colValue;
+            Integer i1 = (Integer) min;
+            Integer i2 = (Integer) max;
+            return i1 <= v && i2 >= v;
+          }
+        }
+        case INT64 -> {
+          if (colValue != null) {
+            Long v = (Long) colValue;
+            Long i1 = (Long) min;
+            Long i2 = (Long) max;
+            return i1 <= v && i2 >= v;
+          }
+        }
+        case FLOAT -> {
+          if (colValue != null) {
+            Float v = (Float) colValue;
+            Float i1 = (Float) min;
+            Float i2 = (Float) max;
+            return i1 <= v && i2 >= v;
+          }
+        }
+        case DOUBLE -> {
+          if (colValue != null) {
+            Double v = (Double) colValue;
+            Double i1 = (Double) min;
+            Double i2 = (Double) max;
+            return i1 <= v && i2 >= v;
+          }
+        }
+        case BYTE_ARRAY -> {
+        }
+        case FIXED_LEN_BYTE_ARRAY -> {
+        }
+      }
+    }
+    return false;
   }
 }

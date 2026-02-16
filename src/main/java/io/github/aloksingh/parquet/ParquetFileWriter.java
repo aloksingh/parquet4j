@@ -1,5 +1,14 @@
 package io.github.aloksingh.parquet;
 
+import io.github.aloksingh.parquet.model.ColumnDescriptor;
+import io.github.aloksingh.parquet.model.CompressionCodec;
+import io.github.aloksingh.parquet.model.LogicalColumnDescriptor;
+import io.github.aloksingh.parquet.model.MapMetadata;
+import io.github.aloksingh.parquet.model.ParquetException;
+import io.github.aloksingh.parquet.model.RowColumnGroup;
+import io.github.aloksingh.parquet.model.SchemaDescriptor;
+import io.github.aloksingh.parquet.model.Type;
+import io.github.aloksingh.parquet.util.ByteUtils;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
@@ -26,14 +35,6 @@ import org.apache.parquet.format.PageType;
 import org.apache.parquet.format.RowGroup;
 import org.apache.parquet.format.SchemaElement;
 import org.apache.parquet.format.Statistics;
-import io.github.aloksingh.parquet.model.ColumnDescriptor;
-import io.github.aloksingh.parquet.model.CompressionCodec;
-import io.github.aloksingh.parquet.model.LogicalColumnDescriptor;
-import io.github.aloksingh.parquet.model.MapMetadata;
-import io.github.aloksingh.parquet.model.ParquetException;
-import io.github.aloksingh.parquet.model.RowColumnGroup;
-import io.github.aloksingh.parquet.model.SchemaDescriptor;
-import io.github.aloksingh.parquet.model.Type;
 import shaded.parquet.org.apache.thrift.TException;
 import shaded.parquet.org.apache.thrift.protocol.TCompactProtocol;
 import shaded.parquet.org.apache.thrift.transport.TIOStreamTransport;
@@ -891,9 +892,8 @@ public class ParquetFileWriter implements ParquetWriter {
    * @param value Integer value to write
    */
   private void writeInt32(ByteArrayOutputStream buffer, int value) {
-    ByteBuffer bb = ByteBuffer.allocate(4).order(ByteOrder.LITTLE_ENDIAN);
-    bb.putInt(value);
-    buffer.write(bb.array(), 0, 4);
+    byte[] encodedArray = ByteUtils.intToBytes(value);
+    buffer.write(encodedArray, 0, 4);
   }
 
   /**
@@ -903,9 +903,8 @@ public class ParquetFileWriter implements ParquetWriter {
    * @param value Long value to write
    */
   private void writeInt64(ByteArrayOutputStream buffer, long value) {
-    ByteBuffer bb = ByteBuffer.allocate(8).order(ByteOrder.LITTLE_ENDIAN);
-    bb.putLong(value);
-    buffer.write(bb.array(), 0, 8);
+    byte[] encodedArray = ByteUtils.longToBytes(value);
+    buffer.write(encodedArray, 0, 8);
   }
 
   /**
@@ -915,9 +914,8 @@ public class ParquetFileWriter implements ParquetWriter {
    * @param value Float value to write
    */
   private void writeFloat(ByteArrayOutputStream buffer, float value) {
-    ByteBuffer bb = ByteBuffer.allocate(4).order(ByteOrder.LITTLE_ENDIAN);
-    bb.putFloat(value);
-    buffer.write(bb.array(), 0, 4);
+    byte[] encodedArray = ByteUtils.floatToBytes(value);
+    buffer.write(encodedArray, 0, 4);
   }
 
   /**
@@ -927,9 +925,8 @@ public class ParquetFileWriter implements ParquetWriter {
    * @param value Double value to write
    */
   private void writeDouble(ByteArrayOutputStream buffer, double value) {
-    ByteBuffer bb = ByteBuffer.allocate(8).order(ByteOrder.LITTLE_ENDIAN);
-    bb.putDouble(value);
-    buffer.write(bb.array(), 0, 8);
+    byte[] encodedArray = ByteUtils.doubleToBytes(value);
+    buffer.write(encodedArray, 0, 8);
   }
 
   /**

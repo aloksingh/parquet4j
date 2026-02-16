@@ -1,5 +1,6 @@
 package io.github.aloksingh.parquet.util.filter;
 
+import io.github.aloksingh.parquet.model.ColumnStatistics;
 import io.github.aloksingh.parquet.model.LogicalColumnDescriptor;
 import java.util.List;
 
@@ -50,5 +51,30 @@ public class ColumnFilterSet implements ColumnFilter{
   @Override
   public boolean isApplicable(LogicalColumnDescriptor columnDescriptor) {
     return this.columnDescriptor.equals(columnDescriptor);
+  }
+
+  @Override
+  public boolean skip(ColumnStatistics statistics, Object colValue) {
+    // Combine skip logic from all filters based on join type
+    for (ColumnFilter filter : filters) {
+      boolean shouldSkip = filter.skip(statistics, colValue);
+      switch (type) {
+        case All -> {
+          // For All join type, if any filter says don't skip, we don't skip
+          if (!shouldSkip) {
+            return false;
+          }
+        }
+        case Any -> {
+          // For Any join type, if any filter says skip, we skip
+          if (shouldSkip) {
+            return true;
+          }
+        }
+      }
+    }
+    // If All: all filters say skip, so skip
+    // If Any: no filter says skip, so don't skip
+    return type == FilterJoinType.All;
   }
 }

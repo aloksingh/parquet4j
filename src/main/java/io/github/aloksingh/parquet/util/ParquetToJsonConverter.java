@@ -7,16 +7,15 @@ import com.google.gson.JsonObject;
 import io.github.aloksingh.parquet.ParquetFileReader;
 import io.github.aloksingh.parquet.ParquetRowIterator;
 import io.github.aloksingh.parquet.model.ColumnDescriptor;
+import io.github.aloksingh.parquet.model.ColumnStatistics;
 import io.github.aloksingh.parquet.model.LogicalColumnDescriptor;
 import io.github.aloksingh.parquet.model.ParquetMetadata;
 import io.github.aloksingh.parquet.model.RowColumnGroup;
 import io.github.aloksingh.parquet.model.SchemaDescriptor;
-import io.github.aloksingh.parquet.model.Type;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.io.OutputStreamWriter;
 import java.io.Writer;
-import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
@@ -186,7 +185,7 @@ public class ParquetToJsonConverter {
           totalValues += columnChunk.numValues();
 
           if (columnChunk.statistics() != null) {
-            ParquetMetadata.ColumnStatistics colStats = columnChunk.statistics();
+            ColumnStatistics colStats = columnChunk.statistics();
 
             if (colStats.hasNullCount()) {
               totalNulls += colStats.nullCount();
@@ -195,10 +194,12 @@ public class ParquetToJsonConverter {
 
             // Add min/max from first row group (as examples)
             if (!stats.has("min") && colStats.hasMin()) {
-              stats.addProperty("min", decodeStatValue(colStats.min(), physicalCol.physicalType()));
+              stats.addProperty("min", String.valueOf(
+                  ColumnStatistics.decodeStatValue(colStats.min(), physicalCol.physicalType())));
             }
             if (!stats.has("max") && colStats.hasMax()) {
-              stats.addProperty("max", decodeStatValue(colStats.max(), physicalCol.physicalType()));
+              stats.addProperty("max", String.valueOf(
+                  ColumnStatistics.decodeStatValue(colStats.max(), physicalCol.physicalType())));
             }
           }
         }
@@ -212,88 +213,6 @@ public class ParquetToJsonConverter {
     }
 
     return stats;
-  }
-
-  /**
-   * Decode a statistics value based on its type.
-   * <p>
-   * Converts byte array representations of statistics values (min/max) to their
-   * string representations based on the Parquet physical type. Falls back to
-   * hex representation if decoding fails.
-   *
-   * @param value the byte array containing the encoded value
-   * @param type  the Parquet physical type (INT32, INT64, FLOAT, DOUBLE, BYTE_ARRAY, BOOLEAN)
-   * @return string representation of the decoded value, or hex string if decoding fails
-   */
-  private String decodeStatValue(byte[] value, Type type) {
-    if (value == null || value.length == 0) {
-      return null;
-    }
-
-    try {
-      switch (type) {
-        case INT32:
-          if (value.length >= 4) {
-            int intVal = littleEndianBuffer(value).getInt();
-            return String.valueOf(intVal);
-          }
-          break;
-        case INT64:
-          if (value.length >= 8) {
-            long longVal = littleEndianBuffer(value).getLong();
-            return String.valueOf(longVal);
-          }
-          break;
-        case FLOAT:
-          if (value.length >= 4) {
-            float floatVal = littleEndianBuffer(value).getFloat();
-            return String.valueOf(floatVal);
-          }
-          break;
-        case DOUBLE:
-          if (value.length >= 8) {
-            double doubleVal = littleEndianBuffer(value).getDouble();
-            return String.valueOf(doubleVal);
-          }
-          break;
-        case BYTE_ARRAY:
-          return new String(value, StandardCharsets.UTF_8);
-        case BOOLEAN:
-          if (value.length > 0) {
-            return String.valueOf(value[0] != 0);
-          }
-          break;
-      }
-    } catch (Exception e) {
-      // If decoding fails, return hex representation
-      return bytesToHex(value);
-    }
-
-    return bytesToHex(value);
-  }
-
-  private static ByteBuffer littleEndianBuffer(byte[] value) {
-    return ByteBuffer.wrap(value).order(java.nio.ByteOrder.LITTLE_ENDIAN);
-  }
-
-  /**
-   * Convert byte array to hex string.
-   * <p>
-   * Converts each byte to its two-digit hexadecimal representation and
-   * prefixes with "0x".
-   *
-   * @param bytes the byte array to convert
-   * @return hex string representation prefixed with "0x", or empty string if input is null/empty
-   */
-  private String bytesToHex(byte[] bytes) {
-    if (bytes == null || bytes.length == 0) {
-      return "";
-    }
-    StringBuilder sb = new StringBuilder();
-    for (byte b : bytes) {
-      sb.append(String.format("%02x", b));
-    }
-    return "0x" + sb.toString();
   }
 
   /**

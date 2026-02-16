@@ -1,5 +1,15 @@
 package io.github.aloksingh.parquet;
 
+import io.github.aloksingh.parquet.model.ColumnDescriptor;
+import io.github.aloksingh.parquet.model.ColumnStatistics;
+import io.github.aloksingh.parquet.model.CompressionCodec;
+import io.github.aloksingh.parquet.model.LogicalColumnDescriptor;
+import io.github.aloksingh.parquet.model.LogicalType;
+import io.github.aloksingh.parquet.model.MapMetadata;
+import io.github.aloksingh.parquet.model.ParquetException;
+import io.github.aloksingh.parquet.model.ParquetMetadata;
+import io.github.aloksingh.parquet.model.SchemaDescriptor;
+import io.github.aloksingh.parquet.model.Type;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.nio.ByteBuffer;
@@ -16,15 +26,6 @@ import org.apache.parquet.format.FileMetaData;
 import org.apache.parquet.format.KeyValue;
 import org.apache.parquet.format.RowGroup;
 import org.apache.parquet.format.SchemaElement;
-import io.github.aloksingh.parquet.model.ColumnDescriptor;
-import io.github.aloksingh.parquet.model.CompressionCodec;
-import io.github.aloksingh.parquet.model.LogicalColumnDescriptor;
-import io.github.aloksingh.parquet.model.LogicalType;
-import io.github.aloksingh.parquet.model.MapMetadata;
-import io.github.aloksingh.parquet.model.ParquetException;
-import io.github.aloksingh.parquet.model.ParquetMetadata;
-import io.github.aloksingh.parquet.model.SchemaDescriptor;
-import io.github.aloksingh.parquet.model.Type;
 import shaded.parquet.org.apache.thrift.TException;
 import shaded.parquet.org.apache.thrift.protocol.TCompactProtocol;
 import shaded.parquet.org.apache.thrift.transport.TIOStreamTransport;
@@ -192,7 +193,7 @@ public class ParquetMetadataReader {
             ? meta.getDictionary_page_offset() : -1;
 
         // Extract statistics if available
-        ParquetMetadata.ColumnStatistics statistics = null;
+        ColumnStatistics statistics = null;
         if (meta.isSetStatistics()) {
           org.apache.parquet.format.Statistics stats = meta.getStatistics();
           byte[] min = null;
@@ -221,7 +222,7 @@ public class ParquetMetadataReader {
             distinctCount = stats.getDistinct_count();
           }
 
-          statistics = new ParquetMetadata.ColumnStatistics(min, max, nullCount, distinctCount);
+          statistics = new ColumnStatistics(min, max, nullCount, distinctCount);
         }
 
         ParquetMetadata.ColumnChunkMetadata colMeta =
