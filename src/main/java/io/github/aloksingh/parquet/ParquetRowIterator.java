@@ -7,8 +7,8 @@ import io.github.aloksingh.parquet.model.MapMetadata;
 import io.github.aloksingh.parquet.model.Page;
 import io.github.aloksingh.parquet.model.ParquetException;
 import io.github.aloksingh.parquet.model.RowColumnGroup;
+import io.github.aloksingh.parquet.model.RowColumnGroupFactory;
 import io.github.aloksingh.parquet.model.SchemaDescriptor;
-import io.github.aloksingh.parquet.model.SimpleRowColumnGroup;
 import io.github.aloksingh.parquet.model.Type;
 import java.io.IOException;
 import java.util.ArrayList;
@@ -41,6 +41,7 @@ public class ParquetRowIterator implements RowColumnGroupIterator, AutoCloseable
   private final ParquetFileReader fileReader;
   private final SchemaDescriptor schema;
   private final boolean closeFileReader;
+  private final RowColumnGroupFactory rowColumnGroupFactory;
 
   private int currentRowGroupIndex;
   private int currentRowIndex;
@@ -61,7 +62,7 @@ public class ParquetRowIterator implements RowColumnGroupIterator, AutoCloseable
     this.currentRowIndex = 0;
     this.currentRowGroupData = null;
     this.currentRowGroupRowCount = 0;
-
+    this.rowColumnGroupFactory = new RowColumnGroupFactory(schema);
     // Load the first row group if available
     if (fileReader.getNumRowGroups() > 0) {
       loadRowGroup(0);
@@ -342,7 +343,7 @@ public class ParquetRowIterator implements RowColumnGroupIterator, AutoCloseable
 
     currentRowIndex++;
 
-    return new SimpleRowColumnGroup(schema, rowValues);
+    return rowColumnGroupFactory.createRowColumnGroup(rowValues);
   }
 
   /**

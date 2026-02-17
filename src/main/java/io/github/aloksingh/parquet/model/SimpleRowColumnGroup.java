@@ -29,6 +29,14 @@ public class SimpleRowColumnGroup implements RowColumnGroup {
    * @param schema the schema descriptor defining the structure of the row
    * @param logicalColumnValues array of values for each logical column in the row
    */
+  public SimpleRowColumnGroup(SchemaDescriptor schema,
+                              Map<String, Integer> columnNameToLogicalIndex,
+                              Object[] logicalColumnValues) {
+    this.schema = schema;
+    this.logicalColumnValues = logicalColumnValues;
+    this.columnNameToLogicalIndex = columnNameToLogicalIndex;
+  }
+
   public SimpleRowColumnGroup(SchemaDescriptor schema, Object[] logicalColumnValues) {
     this.schema = schema;
     this.logicalColumnValues = logicalColumnValues;
