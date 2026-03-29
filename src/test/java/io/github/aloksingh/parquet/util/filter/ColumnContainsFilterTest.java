@@ -7,167 +7,186 @@ import io.github.aloksingh.parquet.model.ColumnStatistics;
 import io.github.aloksingh.parquet.model.ListMetadata;
 import io.github.aloksingh.parquet.model.LogicalColumnDescriptor;
 import io.github.aloksingh.parquet.model.LogicalType;
-import io.github.aloksingh.parquet.model.MapMetadata;
 import io.github.aloksingh.parquet.model.Type;
 import io.github.aloksingh.parquet.util.ByteUtils;
 import java.util.Arrays;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
 
-public class ColumnEqualFilterTest {
+public class ColumnContainsFilterTest {
+
+  // Apply method tests for primitive strings
 
   @Test
-  public void testPrimitiveStringEqual() {
-    LogicalColumnDescriptor descriptor = new LogicalColumnDescriptor("col", LogicalType.PRIMITIVE, null, null);
-    ColumnEqualFilter filter = new ColumnEqualFilter(descriptor, "test");
+  public void testPrimitiveStringContains() {
+    LogicalColumnDescriptor descriptor =
+        new LogicalColumnDescriptor("col", LogicalType.PRIMITIVE, null, null);
+    ColumnContainsFilter filter = new ColumnContainsFilter(descriptor, "test");
+
+    assertTrue(filter.apply("this is a test string"));
+  }
+
+  @Test
+  public void testPrimitiveStringDoesNotContain() {
+    LogicalColumnDescriptor descriptor =
+        new LogicalColumnDescriptor("col", LogicalType.PRIMITIVE, null, null);
+    ColumnContainsFilter filter = new ColumnContainsFilter(descriptor, "test");
+
+    assertFalse(filter.apply("this is a sample"));
+  }
+
+  @Test
+  public void testPrimitiveStringExactMatch() {
+    LogicalColumnDescriptor descriptor =
+        new LogicalColumnDescriptor("col", LogicalType.PRIMITIVE, null, null);
+    ColumnContainsFilter filter = new ColumnContainsFilter(descriptor, "test");
 
     assertTrue(filter.apply("test"));
-    assertFalse(filter.apply("other"));
   }
 
   @Test
-  public void testPrimitiveIntegerEqual() {
+  public void testMapColumnContainsValueMatch() {
     LogicalColumnDescriptor descriptor =
-        new LogicalColumnDescriptor("col", LogicalType.PRIMITIVE, Type.INT32, null);
-    ColumnEqualFilter filter = new ColumnEqualFilter(descriptor, 42);
+        new LogicalColumnDescriptor("col", LogicalType.MAP, null, null);
+    ColumnContainsFilter filter = new ColumnContainsFilter(descriptor, "test");
 
-    assertTrue(filter.apply(42));
-    assertFalse(filter.apply(43));
+    assertTrue(filter.apply(Map.of("foo", "test")));
+    assertTrue(filter.apply(Map.of("bar", "test")));
+    assertFalse(filter.apply(Map.of("bar", "test1")));
+    assertTrue(filter.apply(Map.of("bar", "test1", "foo", "test")));
   }
 
   @Test
-  public void testPrimitiveIntegerColumnWithStringMatchedValueEqual() {
+  public void testMapColumnKeyContainsValueMatch() {
     LogicalColumnDescriptor descriptor =
-        new LogicalColumnDescriptor("col", LogicalType.PRIMITIVE, Type.INT32, null);
-    ColumnEqualFilter filter = new ColumnEqualFilter(descriptor, "42");
+        new LogicalColumnDescriptor("col", LogicalType.MAP, null, null);
+    ColumnContainsFilter filter = new ColumnContainsFilter(descriptor, "test", Optional.of("key1"));
 
-    assertTrue(filter.apply(42));
-    assertFalse(filter.apply(43));
+    assertTrue(filter.apply(Map.of("key1", "test")));
+    assertFalse(filter.apply(Map.of("bar", "test")));
+    assertFalse(filter.apply(Map.of("bar", "test1")));
+    assertTrue(filter.apply(Map.of("bar", "test1", "key1", "test")));
   }
 
   @Test
-  public void testPrimitiveDoubleEqual() {
-    LogicalColumnDescriptor descriptor = new LogicalColumnDescriptor("col", LogicalType.PRIMITIVE, null, null);
-    ColumnEqualFilter filter = new ColumnEqualFilter(descriptor, 3.14);
+  public void testPrimitiveStringEmptyMatch() {
+    LogicalColumnDescriptor descriptor =
+        new LogicalColumnDescriptor("col", LogicalType.PRIMITIVE, null, null);
+    ColumnContainsFilter filter = new ColumnContainsFilter(descriptor, "");
 
-    assertTrue(filter.apply(3.14));
-    assertFalse(filter.apply(3.15));
+    assertTrue(filter.apply("test"));
   }
 
   @Test
-  public void testPrimitiveNullValue() {
-    LogicalColumnDescriptor descriptor = new LogicalColumnDescriptor("col", LogicalType.PRIMITIVE, null, null);
-    ColumnEqualFilter filter = new ColumnEqualFilter(descriptor, "test");
+  public void testPrimitiveStringNullValue() {
+    LogicalColumnDescriptor descriptor =
+        new LogicalColumnDescriptor("col", LogicalType.PRIMITIVE, null, null);
+    ColumnContainsFilter filter = new ColumnContainsFilter(descriptor, "test");
 
     assertFalse(filter.apply(null));
   }
 
   @Test
-  public void testListEqual() {
-    List<String> matchList = Arrays.asList("a", "b", "c");
-    LogicalColumnDescriptor descriptor = new LogicalColumnDescriptor("col", LogicalType.LIST, (ListMetadata) null);
-    ColumnEqualFilter filter = new ColumnEqualFilter(descriptor, matchList);
+  public void testPrimitiveNonStringValue() {
+    LogicalColumnDescriptor descriptor =
+        new LogicalColumnDescriptor("col", LogicalType.PRIMITIVE, null, null);
+    ColumnContainsFilter filter = new ColumnContainsFilter(descriptor, "test");
+
+    assertFalse(filter.apply(42));
+  }
+
+  @Test
+  public void testPrimitiveIntegerValue() {
+    LogicalColumnDescriptor descriptor =
+        new LogicalColumnDescriptor("col", LogicalType.PRIMITIVE, null, null);
+    ColumnContainsFilter filter = new ColumnContainsFilter(descriptor, 5);
+
+    assertFalse(filter.apply(5));
+  }
+
+  // Apply method tests for lists
+
+  @Test
+  public void testListContainsElement() {
+    LogicalColumnDescriptor descriptor =
+        new LogicalColumnDescriptor("col", LogicalType.LIST, (ListMetadata) null);
+    ColumnContainsFilter filter = new ColumnContainsFilter(descriptor, "b");
 
     List<String> valueList = Arrays.asList("a", "b", "c");
     assertTrue(filter.apply(valueList));
   }
 
   @Test
-  public void testListNotEqual() {
-    List<String> matchList = Arrays.asList("a", "b", "c");
-    LogicalColumnDescriptor descriptor = new LogicalColumnDescriptor("col", LogicalType.LIST, (ListMetadata) null);
-    ColumnEqualFilter filter = new ColumnEqualFilter(descriptor, matchList);
-
-    List<String> valueList = Arrays.asList("a", "b", "d");
-    assertFalse(filter.apply(valueList));
-  }
-
-  @Test
-  public void testListDifferentSize() {
-    List<String> matchList = Arrays.asList("a", "b");
-    LogicalColumnDescriptor descriptor = new LogicalColumnDescriptor("col", LogicalType.LIST, (ListMetadata) null);
-    ColumnEqualFilter filter = new ColumnEqualFilter(descriptor, matchList);
+  public void testListDoesNotContainElement() {
+    LogicalColumnDescriptor descriptor =
+        new LogicalColumnDescriptor("col", LogicalType.LIST, (ListMetadata) null);
+    ColumnContainsFilter filter = new ColumnContainsFilter(descriptor, "d");
 
     List<String> valueList = Arrays.asList("a", "b", "c");
     assertFalse(filter.apply(valueList));
   }
 
   @Test
-  public void testMapEqual() {
-    Map<String, Integer> matchMap = new HashMap<>();
-    matchMap.put("key1", 1);
-    matchMap.put("key2", 2);
-
-    LogicalColumnDescriptor descriptor = new LogicalColumnDescriptor("col", LogicalType.MAP, (MapMetadata) null);
-    ColumnEqualFilter filter = new ColumnEqualFilter(descriptor, matchMap);
-
-    Map<String, Integer> valueMap = new HashMap<>();
-    valueMap.put("key1", 1);
-    valueMap.put("key2", 2);
-
-    assertTrue(filter.apply(valueMap));
-  }
-
-  @Test
-  public void testMapKeyValueEqual() {
-
+  public void testListContainsIntegerElement() {
     LogicalColumnDescriptor descriptor =
-        new LogicalColumnDescriptor("col", LogicalType.MAP, (MapMetadata) null);
-    ColumnEqualFilter filter = new ColumnEqualFilter(descriptor, 1, Optional.of("key1"));
-    Map<String, Integer> colValue = new HashMap<>();
-    colValue.put("key1", 1);
-    colValue.put("key2", 2);
-    assertTrue(filter.apply(colValue));
+        new LogicalColumnDescriptor("col", LogicalType.LIST, (ListMetadata) null);
+    ColumnContainsFilter filter = new ColumnContainsFilter(descriptor, 42);
+
+    List<Integer> valueList = Arrays.asList(10, 20, 42, 50);
+    assertTrue(filter.apply(valueList));
   }
 
   @Test
-  public void testMapNotEqual() {
-    Map<String, Integer> matchMap = new HashMap<>();
-    matchMap.put("key1", 1);
-    matchMap.put("key2", 2);
+  public void testListDoesNotContainIntegerElement() {
+    LogicalColumnDescriptor descriptor =
+        new LogicalColumnDescriptor("col", LogicalType.LIST, (ListMetadata) null);
+    ColumnContainsFilter filter = new ColumnContainsFilter(descriptor, 100);
 
-    LogicalColumnDescriptor descriptor = new LogicalColumnDescriptor("col", LogicalType.MAP, (MapMetadata) null);
-    ColumnEqualFilter filter = new ColumnEqualFilter(descriptor, matchMap);
-
-    Map<String, Integer> valueMap = new HashMap<>();
-    valueMap.put("key1", 1);
-    valueMap.put("key2", 3);
-
-    assertFalse(filter.apply(valueMap));
+    List<Integer> valueList = Arrays.asList(10, 20, 42, 50);
+    assertFalse(filter.apply(valueList));
   }
 
   @Test
-  public void testMapDifferentSize() {
-    Map<String, Integer> matchMap = new HashMap<>();
-    matchMap.put("key1", 1);
+  public void testListNullValue() {
+    LogicalColumnDescriptor descriptor =
+        new LogicalColumnDescriptor("col", LogicalType.LIST, (ListMetadata) null);
+    ColumnContainsFilter filter = new ColumnContainsFilter(descriptor, "test");
 
-    LogicalColumnDescriptor descriptor = new LogicalColumnDescriptor("col", LogicalType.MAP, (MapMetadata) null);
-    ColumnEqualFilter filter = new ColumnEqualFilter(descriptor, matchMap);
-
-    Map<String, Integer> valueMap = new HashMap<>();
-    valueMap.put("key1", 1);
-    valueMap.put("key2", 2);
-
-    assertFalse(filter.apply(valueMap));
+    assertFalse(filter.apply(null));
   }
 
   @Test
-  public void testMapMissingKey() {
-    Map<String, Integer> matchMap = new HashMap<>();
-    matchMap.put("key1", 1);
-    matchMap.put("key2", 2);
+  public void testListEmptyList() {
+    LogicalColumnDescriptor descriptor =
+        new LogicalColumnDescriptor("col", LogicalType.LIST, (ListMetadata) null);
+    ColumnContainsFilter filter = new ColumnContainsFilter(descriptor, "test");
 
-    LogicalColumnDescriptor descriptor = new LogicalColumnDescriptor("col", LogicalType.MAP, (MapMetadata) null);
-    ColumnEqualFilter filter = new ColumnEqualFilter(descriptor, matchMap);
+    List<String> valueList = Arrays.asList();
+    assertFalse(filter.apply(valueList));
+  }
 
-    Map<String, Integer> valueMap = new HashMap<>();
-    valueMap.put("key1", 1);
-    valueMap.put("key3", 2);
+  // isApplicable method tests
 
-    assertFalse(filter.apply(valueMap));
+  @Test
+  public void testIsApplicableSameDescriptor() {
+    LogicalColumnDescriptor descriptor =
+        new LogicalColumnDescriptor("col", LogicalType.PRIMITIVE, null, null);
+    ColumnContainsFilter filter = new ColumnContainsFilter(descriptor, "test");
+
+    assertTrue(filter.isApplicable(descriptor));
+  }
+
+  @Test
+  public void testIsApplicableDifferentDescriptor() {
+    LogicalColumnDescriptor descriptor1 =
+        new LogicalColumnDescriptor("col1", LogicalType.PRIMITIVE, null, null);
+    LogicalColumnDescriptor descriptor2 =
+        new LogicalColumnDescriptor("col2", LogicalType.PRIMITIVE, null, null);
+    ColumnContainsFilter filter = new ColumnContainsFilter(descriptor1, "test");
+
+    assertFalse(filter.isApplicable(descriptor2));
   }
 
   // Skip method tests
@@ -176,7 +195,7 @@ public class ColumnEqualFilterTest {
   public void testSkipWithNullValueAndNullCount() {
     LogicalColumnDescriptor descriptor =
         new LogicalColumnDescriptor("col", LogicalType.PRIMITIVE, Type.INT32, null);
-    ColumnEqualFilter filter = new ColumnEqualFilter(descriptor, null);
+    ColumnContainsFilter filter = new ColumnContainsFilter(descriptor, null);
 
     ColumnStatistics stats =
         new ColumnStatistics(ByteUtils.intToBytes(10), ByteUtils.intToBytes(20), 5L, null);
@@ -187,7 +206,7 @@ public class ColumnEqualFilterTest {
   public void testSkipWithNullValueAndZeroNullCount() {
     LogicalColumnDescriptor descriptor =
         new LogicalColumnDescriptor("col", LogicalType.PRIMITIVE, Type.INT32, null);
-    ColumnEqualFilter filter = new ColumnEqualFilter(descriptor, null);
+    ColumnContainsFilter filter = new ColumnContainsFilter(descriptor, null);
 
     ColumnStatistics stats =
         new ColumnStatistics(ByteUtils.intToBytes(10), ByteUtils.intToBytes(20), 0L, null);
@@ -198,7 +217,7 @@ public class ColumnEqualFilterTest {
   public void testSkipWithNullValueNoNullCountTracked() {
     LogicalColumnDescriptor descriptor =
         new LogicalColumnDescriptor("col", LogicalType.PRIMITIVE, Type.INT32, null);
-    ColumnEqualFilter filter = new ColumnEqualFilter(descriptor, null);
+    ColumnContainsFilter filter = new ColumnContainsFilter(descriptor, null);
 
     ColumnStatistics stats =
         new ColumnStatistics(ByteUtils.intToBytes(10), ByteUtils.intToBytes(20), null, null);
@@ -209,7 +228,7 @@ public class ColumnEqualFilterTest {
   public void testSkipBooleanMatchesMin() {
     LogicalColumnDescriptor descriptor =
         new LogicalColumnDescriptor("col", LogicalType.PRIMITIVE, Type.BOOLEAN, null);
-    ColumnEqualFilter filter = new ColumnEqualFilter(descriptor, false);
+    ColumnContainsFilter filter = new ColumnContainsFilter(descriptor, false);
 
     ColumnStatistics stats =
         new ColumnStatistics(ByteUtils.booleanToBytes(false), ByteUtils.booleanToBytes(true), 0L,
@@ -221,7 +240,7 @@ public class ColumnEqualFilterTest {
   public void testSkipBooleanMatchesMax() {
     LogicalColumnDescriptor descriptor =
         new LogicalColumnDescriptor("col", LogicalType.PRIMITIVE, Type.BOOLEAN, null);
-    ColumnEqualFilter filter = new ColumnEqualFilter(descriptor, true);
+    ColumnContainsFilter filter = new ColumnContainsFilter(descriptor, true);
 
     ColumnStatistics stats =
         new ColumnStatistics(ByteUtils.booleanToBytes(false), ByteUtils.booleanToBytes(true), 0L,
@@ -233,7 +252,7 @@ public class ColumnEqualFilterTest {
   public void testSkipInt32WithinRange() {
     LogicalColumnDescriptor descriptor =
         new LogicalColumnDescriptor("col", LogicalType.PRIMITIVE, Type.INT32, null);
-    ColumnEqualFilter filter = new ColumnEqualFilter(descriptor, 15);
+    ColumnContainsFilter filter = new ColumnContainsFilter(descriptor, 15);
 
     ColumnStatistics stats =
         new ColumnStatistics(ByteUtils.intToBytes(10), ByteUtils.intToBytes(20), 0L, null);
@@ -244,7 +263,7 @@ public class ColumnEqualFilterTest {
   public void testSkipInt32BelowRange() {
     LogicalColumnDescriptor descriptor =
         new LogicalColumnDescriptor("col", LogicalType.PRIMITIVE, Type.INT32, null);
-    ColumnEqualFilter filter = new ColumnEqualFilter(descriptor, 5);
+    ColumnContainsFilter filter = new ColumnContainsFilter(descriptor, 5);
 
     ColumnStatistics stats =
         new ColumnStatistics(ByteUtils.intToBytes(10), ByteUtils.intToBytes(20), 0L, null);
@@ -255,7 +274,7 @@ public class ColumnEqualFilterTest {
   public void testSkipInt32AboveRange() {
     LogicalColumnDescriptor descriptor =
         new LogicalColumnDescriptor("col", LogicalType.PRIMITIVE, Type.INT32, null);
-    ColumnEqualFilter filter = new ColumnEqualFilter(descriptor, 25);
+    ColumnContainsFilter filter = new ColumnContainsFilter(descriptor, 25);
 
     ColumnStatistics stats =
         new ColumnStatistics(ByteUtils.intToBytes(10), ByteUtils.intToBytes(20), 0L, null);
@@ -266,7 +285,7 @@ public class ColumnEqualFilterTest {
   public void testSkipInt32AtMin() {
     LogicalColumnDescriptor descriptor =
         new LogicalColumnDescriptor("col", LogicalType.PRIMITIVE, Type.INT32, null);
-    ColumnEqualFilter filter = new ColumnEqualFilter(descriptor, 10);
+    ColumnContainsFilter filter = new ColumnContainsFilter(descriptor, 10);
 
     ColumnStatistics stats =
         new ColumnStatistics(ByteUtils.intToBytes(10), ByteUtils.intToBytes(20), 0L, null);
@@ -277,7 +296,7 @@ public class ColumnEqualFilterTest {
   public void testSkipInt32AtMax() {
     LogicalColumnDescriptor descriptor =
         new LogicalColumnDescriptor("col", LogicalType.PRIMITIVE, Type.INT32, null);
-    ColumnEqualFilter filter = new ColumnEqualFilter(descriptor, 20);
+    ColumnContainsFilter filter = new ColumnContainsFilter(descriptor, 20);
 
     ColumnStatistics stats =
         new ColumnStatistics(ByteUtils.intToBytes(10), ByteUtils.intToBytes(20), 0L, null);
@@ -288,7 +307,7 @@ public class ColumnEqualFilterTest {
   public void testSkipInt64WithinRange() {
     LogicalColumnDescriptor descriptor =
         new LogicalColumnDescriptor("col", LogicalType.PRIMITIVE, Type.INT64, null);
-    ColumnEqualFilter filter = new ColumnEqualFilter(descriptor, 1500L);
+    ColumnContainsFilter filter = new ColumnContainsFilter(descriptor, 1500L);
 
     ColumnStatistics stats =
         new ColumnStatistics(ByteUtils.longToBytes(1000L), ByteUtils.longToBytes(2000L), 0L, null);
@@ -299,7 +318,7 @@ public class ColumnEqualFilterTest {
   public void testSkipInt64BelowRange() {
     LogicalColumnDescriptor descriptor =
         new LogicalColumnDescriptor("col", LogicalType.PRIMITIVE, Type.INT64, null);
-    ColumnEqualFilter filter = new ColumnEqualFilter(descriptor, 500L);
+    ColumnContainsFilter filter = new ColumnContainsFilter(descriptor, 500L);
 
     ColumnStatistics stats =
         new ColumnStatistics(ByteUtils.longToBytes(1000L), ByteUtils.longToBytes(2000L), 0L, null);
@@ -310,7 +329,7 @@ public class ColumnEqualFilterTest {
   public void testSkipInt64AboveRange() {
     LogicalColumnDescriptor descriptor =
         new LogicalColumnDescriptor("col", LogicalType.PRIMITIVE, Type.INT64, null);
-    ColumnEqualFilter filter = new ColumnEqualFilter(descriptor, 2500L);
+    ColumnContainsFilter filter = new ColumnContainsFilter(descriptor, 2500L);
 
     ColumnStatistics stats =
         new ColumnStatistics(ByteUtils.longToBytes(1000L), ByteUtils.longToBytes(2000L), 0L, null);
@@ -321,7 +340,7 @@ public class ColumnEqualFilterTest {
   public void testSkipFloatWithinRange() {
     LogicalColumnDescriptor descriptor =
         new LogicalColumnDescriptor("col", LogicalType.PRIMITIVE, Type.FLOAT, null);
-    ColumnEqualFilter filter = new ColumnEqualFilter(descriptor, 15.5f);
+    ColumnContainsFilter filter = new ColumnContainsFilter(descriptor, 15.5f);
 
     ColumnStatistics stats =
         new ColumnStatistics(ByteUtils.floatToBytes(10.0f), ByteUtils.floatToBytes(20.0f), 0L,
@@ -333,7 +352,7 @@ public class ColumnEqualFilterTest {
   public void testSkipFloatBelowRange() {
     LogicalColumnDescriptor descriptor =
         new LogicalColumnDescriptor("col", LogicalType.PRIMITIVE, Type.FLOAT, null);
-    ColumnEqualFilter filter = new ColumnEqualFilter(descriptor, 5.0f);
+    ColumnContainsFilter filter = new ColumnContainsFilter(descriptor, 5.0f);
 
     ColumnStatistics stats =
         new ColumnStatistics(ByteUtils.floatToBytes(10.0f), ByteUtils.floatToBytes(20.0f), 0L,
@@ -345,7 +364,7 @@ public class ColumnEqualFilterTest {
   public void testSkipFloatAboveRange() {
     LogicalColumnDescriptor descriptor =
         new LogicalColumnDescriptor("col", LogicalType.PRIMITIVE, Type.FLOAT, null);
-    ColumnEqualFilter filter = new ColumnEqualFilter(descriptor, 25.0f);
+    ColumnContainsFilter filter = new ColumnContainsFilter(descriptor, 25.0f);
 
     ColumnStatistics stats =
         new ColumnStatistics(ByteUtils.floatToBytes(10.0f), ByteUtils.floatToBytes(20.0f), 0L,
@@ -357,7 +376,7 @@ public class ColumnEqualFilterTest {
   public void testSkipDoubleWithinRange() {
     LogicalColumnDescriptor descriptor =
         new LogicalColumnDescriptor("col", LogicalType.PRIMITIVE, Type.DOUBLE, null);
-    ColumnEqualFilter filter = new ColumnEqualFilter(descriptor, 15.5);
+    ColumnContainsFilter filter = new ColumnContainsFilter(descriptor, 15.5);
 
     ColumnStatistics stats =
         new ColumnStatistics(ByteUtils.doubleToBytes(10.0), ByteUtils.doubleToBytes(20.0), 0L,
@@ -369,7 +388,7 @@ public class ColumnEqualFilterTest {
   public void testSkipDoubleBelowRange() {
     LogicalColumnDescriptor descriptor =
         new LogicalColumnDescriptor("col", LogicalType.PRIMITIVE, Type.DOUBLE, null);
-    ColumnEqualFilter filter = new ColumnEqualFilter(descriptor, 5.0);
+    ColumnContainsFilter filter = new ColumnContainsFilter(descriptor, 5.0);
 
     ColumnStatistics stats =
         new ColumnStatistics(ByteUtils.doubleToBytes(10.0), ByteUtils.doubleToBytes(20.0), 0L,
@@ -381,7 +400,7 @@ public class ColumnEqualFilterTest {
   public void testSkipDoubleAboveRange() {
     LogicalColumnDescriptor descriptor =
         new LogicalColumnDescriptor("col", LogicalType.PRIMITIVE, Type.DOUBLE, null);
-    ColumnEqualFilter filter = new ColumnEqualFilter(descriptor, 25.0);
+    ColumnContainsFilter filter = new ColumnContainsFilter(descriptor, 25.0);
 
     ColumnStatistics stats =
         new ColumnStatistics(ByteUtils.doubleToBytes(10.0), ByteUtils.doubleToBytes(20.0), 0L,
@@ -393,7 +412,7 @@ public class ColumnEqualFilterTest {
   public void testSkipByteArray() {
     LogicalColumnDescriptor descriptor =
         new LogicalColumnDescriptor("col", LogicalType.PRIMITIVE, Type.BYTE_ARRAY, null);
-    ColumnEqualFilter filter = new ColumnEqualFilter(descriptor, "test");
+    ColumnContainsFilter filter = new ColumnContainsFilter(descriptor, "test");
 
     ColumnStatistics stats = new ColumnStatistics("a".getBytes(), "z".getBytes(), 0L, null);
     assertFalse(filter.skip(stats, "test"));
@@ -403,7 +422,7 @@ public class ColumnEqualFilterTest {
   public void testSkipFixedLenByteArray() {
     LogicalColumnDescriptor descriptor =
         new LogicalColumnDescriptor("col", LogicalType.PRIMITIVE, Type.FIXED_LEN_BYTE_ARRAY, null);
-    ColumnEqualFilter filter = new ColumnEqualFilter(descriptor, "test");
+    ColumnContainsFilter filter = new ColumnContainsFilter(descriptor, "test");
 
     ColumnStatistics stats = new ColumnStatistics("aaaa".getBytes(), "zzzz".getBytes(), 0L, null);
     assertFalse(filter.skip(stats, "test"));
@@ -414,22 +433,9 @@ public class ColumnEqualFilterTest {
     List<String> matchList = Arrays.asList("a", "b", "c");
     LogicalColumnDescriptor descriptor =
         new LogicalColumnDescriptor("col", LogicalType.LIST, (ListMetadata) null);
-    ColumnEqualFilter filter = new ColumnEqualFilter(descriptor, matchList);
+    ColumnContainsFilter filter = new ColumnContainsFilter(descriptor, "b");
 
     ColumnStatistics stats = new ColumnStatistics(null, null, 0L, null);
     assertFalse(filter.skip(stats, matchList));
   }
-
-  @Test
-  public void testSkipMapType() {
-    Map<String, Integer> matchMap = new HashMap<>();
-    matchMap.put("key1", 1);
-    LogicalColumnDescriptor descriptor =
-        new LogicalColumnDescriptor("col", LogicalType.MAP, (MapMetadata) null);
-    ColumnEqualFilter filter = new ColumnEqualFilter(descriptor, matchMap);
-
-    ColumnStatistics stats = new ColumnStatistics(null, null, 0L, null);
-    assertFalse(filter.skip(stats, matchMap));
-  }
-
 }

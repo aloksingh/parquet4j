@@ -7,6 +7,7 @@ import com.google.gson.JsonObject;
 import io.github.aloksingh.parquet.ParquetFileReader;
 import io.github.aloksingh.parquet.RowColumnGroupIterator;
 import io.github.aloksingh.parquet.model.ColumnDescriptor;
+import io.github.aloksingh.parquet.model.ColumnStatistics;
 import io.github.aloksingh.parquet.model.LogicalColumnDescriptor;
 import io.github.aloksingh.parquet.model.MapMetadata;
 import io.github.aloksingh.parquet.model.ParquetMetadata;
@@ -317,7 +318,7 @@ public class ParquetFileInspector implements AutoCloseable {
       // Add statistics if available
       if (col.statistics() != null) {
         JsonObject statsObj = new JsonObject();
-        ParquetMetadata.ColumnStatistics stats = col.statistics();
+        ColumnStatistics stats = col.statistics();
 
         if (stats.hasNullCount()) {
           statsObj.addProperty("nullCount", stats.nullCount());
@@ -738,7 +739,7 @@ public class ParquetFileInspector implements AutoCloseable {
 
       // Display statistics if available
       if (col.statistics() != null) {
-        ParquetMetadata.ColumnStatistics stats = col.statistics();
+        ColumnStatistics stats = col.statistics();
         sb.append("  Statistics:\n");
 
         if (stats.hasNullCount()) {

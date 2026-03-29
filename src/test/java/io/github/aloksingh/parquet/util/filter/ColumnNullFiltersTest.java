@@ -1,10 +1,11 @@
 package io.github.aloksingh.parquet.util.filter;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.github.aloksingh.parquet.model.ListMetadata;
 import io.github.aloksingh.parquet.model.LogicalColumnDescriptor;
 import io.github.aloksingh.parquet.model.LogicalType;
-import io.github.aloksingh.parquet.model.ListMetadata;
 import io.github.aloksingh.parquet.model.MapMetadata;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -22,108 +23,108 @@ public class ColumnNullFiltersTest {
   // IsNull Tests
   @Test
   public void testIsNullWithNullValue() {
-    ColumnIsNullFilter filter = new ColumnIsNullFilter();
+    ColumnIsNullFilter filter = new ColumnIsNullFilter(primitiveDescriptor);
 
-    assertTrue(filter.apply(primitiveDescriptor, null));
+    assertTrue(filter.apply(null));
   }
 
   @Test
   public void testIsNullWithNonNullPrimitive() {
-    ColumnIsNullFilter filter = new ColumnIsNullFilter();
+    ColumnIsNullFilter filter = new ColumnIsNullFilter(primitiveDescriptor);
 
-    assertFalse(filter.apply(primitiveDescriptor, "test"));
-    assertFalse(filter.apply(primitiveDescriptor, 42));
-    assertFalse(filter.apply(primitiveDescriptor, 0));
-    assertFalse(filter.apply(primitiveDescriptor, ""));
+    assertFalse(filter.apply("test"));
+    assertFalse(filter.apply(42));
+    assertFalse(filter.apply(0));
+    assertFalse(filter.apply(""));
   }
 
   @Test
   public void testIsNullWithList() {
-    ColumnIsNullFilter filter = new ColumnIsNullFilter();
+    ColumnIsNullFilter filter = new ColumnIsNullFilter(listDescriptor);
 
-    assertFalse(filter.apply(listDescriptor, Arrays.asList("a", "b")));
-    assertFalse(filter.apply(listDescriptor, Arrays.asList()));
-    assertTrue(filter.apply(listDescriptor, null));
+    assertFalse(filter.apply(Arrays.asList("a", "b")));
+    assertFalse(filter.apply(Arrays.asList()));
+    assertTrue(filter.apply(null));
   }
 
   @Test
   public void testIsNullWithMap() {
-    ColumnIsNullFilter filter = new ColumnIsNullFilter();
+    ColumnIsNullFilter filter = new ColumnIsNullFilter(mapDescriptor);
 
-    assertFalse(filter.apply(mapDescriptor, new HashMap<>()));
-    assertTrue(filter.apply(mapDescriptor, null));
+    assertFalse(filter.apply(new HashMap<>()));
+    assertTrue(filter.apply(null));
   }
 
   // IsNotNull Tests
   @Test
   public void testIsNotNullWithNullValue() {
-    ColumnIsNotNullFilter filter = new ColumnIsNotNullFilter();
+    ColumnIsNotNullFilter filter = new ColumnIsNotNullFilter(primitiveDescriptor);
 
-    assertFalse(filter.apply(primitiveDescriptor, null));
+    assertFalse(filter.apply(null));
   }
 
   @Test
   public void testIsNotNullWithNonNullPrimitive() {
-    ColumnIsNotNullFilter filter = new ColumnIsNotNullFilter();
+    ColumnIsNotNullFilter filter = new ColumnIsNotNullFilter(primitiveDescriptor);
 
-    assertTrue(filter.apply(primitiveDescriptor, "test"));
-    assertTrue(filter.apply(primitiveDescriptor, 42));
-    assertTrue(filter.apply(primitiveDescriptor, 0));
-    assertTrue(filter.apply(primitiveDescriptor, ""));
-    assertTrue(filter.apply(primitiveDescriptor, false));
+    assertTrue(filter.apply("test"));
+    assertTrue(filter.apply(42));
+    assertTrue(filter.apply(0));
+    assertTrue(filter.apply(""));
+    assertTrue(filter.apply(false));
   }
 
   @Test
   public void testIsNotNullWithList() {
-    ColumnIsNotNullFilter filter = new ColumnIsNotNullFilter();
+    ColumnIsNotNullFilter filter = new ColumnIsNotNullFilter(listDescriptor);
 
-    assertTrue(filter.apply(listDescriptor, Arrays.asList("a", "b")));
-    assertTrue(filter.apply(listDescriptor, Arrays.asList()));
-    assertFalse(filter.apply(listDescriptor, null));
+    assertTrue(filter.apply(Arrays.asList("a", "b")));
+    assertTrue(filter.apply(Arrays.asList()));
+    assertFalse(filter.apply(null));
   }
 
   @Test
   public void testIsNotNullWithMap() {
-    ColumnIsNotNullFilter filter = new ColumnIsNotNullFilter();
+    ColumnIsNotNullFilter filter = new ColumnIsNotNullFilter(mapDescriptor);
 
-    assertTrue(filter.apply(mapDescriptor, new HashMap<>()));
-    assertFalse(filter.apply(mapDescriptor, null));
+    assertTrue(filter.apply(new HashMap<>()));
+    assertFalse(filter.apply(null));
   }
 
   @Test
   public void testIsNotNullWithZeroValues() {
-    ColumnIsNotNullFilter filter = new ColumnIsNotNullFilter();
+    ColumnIsNotNullFilter filter = new ColumnIsNotNullFilter(primitiveDescriptor);
 
     // Zero is not null
-    assertTrue(filter.apply(primitiveDescriptor, 0));
-    assertTrue(filter.apply(primitiveDescriptor, 0L));
-    assertTrue(filter.apply(primitiveDescriptor, 0.0));
-    assertTrue(filter.apply(primitiveDescriptor, 0.0f));
+    assertTrue(filter.apply(0));
+    assertTrue(filter.apply(0L));
+    assertTrue(filter.apply(0.0));
+    assertTrue(filter.apply(0.0f));
   }
 
   @Test
   public void testIsNullWithZeroValues() {
-    ColumnIsNullFilter filter = new ColumnIsNullFilter();
+    ColumnIsNullFilter filter = new ColumnIsNullFilter(primitiveDescriptor);
 
     // Zero is not null
-    assertFalse(filter.apply(primitiveDescriptor, 0));
-    assertFalse(filter.apply(primitiveDescriptor, 0L));
-    assertFalse(filter.apply(primitiveDescriptor, 0.0));
-    assertFalse(filter.apply(primitiveDescriptor, 0.0f));
+    assertFalse(filter.apply(0));
+    assertFalse(filter.apply(0L));
+    assertFalse(filter.apply(0.0));
+    assertFalse(filter.apply(0.0f));
   }
 
   @Test
   public void testNullFiltersIgnoreColumnType() {
-    ColumnIsNullFilter isNullFilter = new ColumnIsNullFilter();
-    ColumnIsNotNullFilter isNotNullFilter = new ColumnIsNotNullFilter();
+    ColumnIsNullFilter isNullFilter = new ColumnIsNullFilter(primitiveDescriptor);
+    ColumnIsNotNullFilter isNotNullFilter = new ColumnIsNotNullFilter(primitiveDescriptor);
 
     // Null filters should work consistently across all column types
-    assertTrue(isNullFilter.apply(primitiveDescriptor, null));
-    assertTrue(isNullFilter.apply(listDescriptor, null));
-    assertTrue(isNullFilter.apply(mapDescriptor, null));
+    assertTrue(isNullFilter.apply(null));
+    assertTrue(isNullFilter.apply(null));
+    assertTrue(isNullFilter.apply(null));
 
-    assertFalse(isNotNullFilter.apply(primitiveDescriptor, null));
-    assertFalse(isNotNullFilter.apply(listDescriptor, null));
-    assertFalse(isNotNullFilter.apply(mapDescriptor, null));
+    assertFalse(isNotNullFilter.apply(null));
+    assertFalse(isNotNullFilter.apply(null));
+    assertFalse(isNotNullFilter.apply(null));
   }
 }
