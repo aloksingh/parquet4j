@@ -9,6 +9,7 @@ import io.github.aloksingh.parquet.model.RowColumnGroup;
 import io.github.aloksingh.parquet.model.SchemaDescriptor;
 import io.github.aloksingh.parquet.model.Type;
 import io.github.aloksingh.parquet.util.ByteUtils;
+import io.github.aloksingh.parquet.util.GrowableByteBuffer;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.nio.ByteBuffer;
@@ -75,7 +76,8 @@ import shaded.parquet.org.apache.thrift.transport.TIOStreamTransport;
 public class ParquetFileWriter implements ParquetWriter {
   private static final byte[] PARQUET_MAGIC = "PAR1".getBytes(StandardCharsets.UTF_8);
 
-  private static final int MB = 1024 * 1024; // 1MB
+  private static final int KB = 1024 ; // 1MB
+  private static final int MB =  KB * KB; // 1MB
   private static final int DEFAULT_PAGE_SIZE = 1 * MB; // 1MB
   private static final int DEFAULT_ROW_GROUP_SIZE = 128 * MB; // 128MB
 
@@ -811,23 +813,22 @@ public class ParquetFileWriter implements ParquetWriter {
     pageHeader.setData_page_header(dataPageHeader);
 
     // Serialize page header using Thrift
-    ByteBufferOutputStream headerBuffer = new ByteBufferOutputStream(256);
-    try {
+
+    try(ByteBufferOutputStream headerBuffer = new ByteBufferOutputStream(KB)) {
       pageHeader.write(new TCompactProtocol(new TIOStreamTransport(headerBuffer)));
+      byte[] headerBytes = headerBuffer.toByteArray();
+
+      // Write to output stream
+      outputStream.write(headerBytes);
+      outputStream.write(compressedPageData);
+
+      int totalBytesWritten = headerBytes.length + compressedPageData.length;
+      currentPosition += totalBytesWritten;
+
+      return new PageInfo(uncompressedPageData.length, compressedPageData.length, headerBytes.length);
     } catch (TException e) {
       throw new IOException("Failed to write page header", e);
     }
-
-    byte[] headerBytes = headerBuffer.toByteArray();
-
-    // Write to output stream
-    outputStream.write(headerBytes);
-    outputStream.write(compressedPageData);
-
-    int totalBytesWritten = headerBytes.length + compressedPageData.length;
-    currentPosition += totalBytesWritten;
-
-    return new PageInfo(uncompressedPageData.length, compressedPageData.length, headerBytes.length);
   }
 
   /**
@@ -1234,18 +1235,16 @@ public class ParquetFileWriter implements ParquetWriter {
       fileMetaData.setCreated_by("java-parquet-rs ParquetFileWriter");
 
       // Serialize metadata using Thrift
-      ByteBufferOutputStream metadataBuffer = new ByteBufferOutputStream(4096);
-      try {
+      byte[] metadataBytes = null;
+      try(ByteBufferOutputStream metadataBuffer = new ByteBufferOutputStream(64*KB)) {
         fileMetaData.write(new TCompactProtocol(new TIOStreamTransport(metadataBuffer)));
+        metadataBytes = metadataBuffer.toByteArray();
       } catch (TException e) {
         throw new IOException("Failed to write file metadata", e);
       }
 
-      byte[] metadataBytes = metadataBuffer.toByteArray();
-
       // Write metadata
       outputStream.write(metadataBytes);
-
       // Write metadata length as 4-byte little-endian integer
       ByteBuffer lengthBuffer = ByteBuffer.allocate(4).order(ByteOrder.LITTLE_ENDIAN);
       lengthBuffer.putInt(metadataBytes.length);
@@ -1266,10 +1265,10 @@ public class ParquetFileWriter implements ParquetWriter {
    * An OutputStream backed by a growable ByteBuffer, used for Thrift serialization.
    */
   private static final class ByteBufferOutputStream extends OutputStream {
-    private ByteBuffer buffer;
+    private final GrowableByteBuffer buffer;
 
     ByteBufferOutputStream(int initialCapacity) {
-      this.buffer = allocateBuffer(initialCapacity);
+      this.buffer = new GrowableByteBuffer(initialCapacity, 32*KB);
     }
 
     @Override
@@ -1285,22 +1284,20 @@ public class ParquetFileWriter implements ParquetWriter {
     }
 
     private void ensureCapacity(int needed) {
-      if (buffer.remaining() >= needed) {
-        return;
-      }
-      ByteBuffer grown =
-          allocateBuffer(Math.max(buffer.capacity() * 2, buffer.position() + needed));
-      buffer.flip();
-      grown.put(buffer);
-      buffer = grown;
+      buffer.ensureCapacity(needed);
     }
 
     byte[] toByteArray() {
-      ByteBuffer view = buffer.duplicate();
-      view.flip();
-      byte[] result = new byte[view.remaining()];
-      view.get(result);
-      return result;
+      return buffer.getArray(0, buffer.position());
+    }
+
+    @Override
+    public void close(){
+      try {
+        this.buffer.close();
+      } catch (Exception e) {
+        throw new RuntimeException(e);
+      }
     }
   }
 }
