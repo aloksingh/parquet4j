@@ -9,7 +9,6 @@ import io.github.aloksingh.parquet.model.RowColumnGroup;
 import io.github.aloksingh.parquet.model.SchemaDescriptor;
 import io.github.aloksingh.parquet.model.Type;
 import io.github.aloksingh.parquet.util.ByteUtils;
-import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.nio.ByteBuffer;
@@ -75,19 +74,23 @@ import shaded.parquet.org.apache.thrift.transport.TIOStreamTransport;
  */
 public class ParquetFileWriter implements ParquetWriter {
   private static final byte[] PARQUET_MAGIC = "PAR1".getBytes(StandardCharsets.UTF_8);
-  private static final int DEFAULT_PAGE_SIZE = 1024 * 1024; // 1MB
-  private static final int DEFAULT_ROW_GROUP_SIZE = 128 * 1024 * 1024; // 128MB
+
+  private static final int MB = 1024 * 1024; // 1MB
+  private static final int DEFAULT_PAGE_SIZE = 1 * MB; // 1MB
+  private static final int DEFAULT_ROW_GROUP_SIZE = 128 * MB; // 128MB
+
 
   private final Path filePath;
   private final SchemaDescriptor schema;
   private final CompressionCodec compressionCodec;
-  private final int pageSize;
-  private final int rowGroupSize;
+  private final int pageBytes;
+  private final int rowGroupBytes;
 
   private OutputStream outputStream;
   private long currentPosition;
   private final List<RowGroup> rowGroups;
   private final List<RowColumnGroup> currentRowGroupRows;
+  private long currentRowGroupBytes;
   private int totalRowCount;
   private boolean closed;
   private final Compressor compressor;
@@ -109,20 +112,21 @@ public class ParquetFileWriter implements ParquetWriter {
    * @param filePath         Path to the output Parquet file
    * @param schema           Schema descriptor for the file
    * @param compressionCodec Compression codec to use
-   * @param pageSize         Target page size in bytes
-   * @param rowGroupSize     Target row group size in bytes
+   * @param pageBytes         Target page size in bytes
+   * @param rowGroupBytes     Target row group size in bytes
    */
   public ParquetFileWriter(Path filePath, SchemaDescriptor schema,
-                           CompressionCodec compressionCodec, int pageSize,
-                           int rowGroupSize) {
+                           CompressionCodec compressionCodec, int pageBytes,
+                           int rowGroupBytes) {
     this.filePath = filePath;
     this.schema = schema;
     this.compressionCodec = compressionCodec;
-    this.pageSize = pageSize;
-    this.rowGroupSize = rowGroupSize;
+    this.pageBytes = pageBytes;
+    this.rowGroupBytes = rowGroupBytes;
     this.rowGroups = new ArrayList<>();
     this.currentRowGroupRows = new ArrayList<>();
     this.currentPosition = 0;
+    this.currentRowGroupBytes = 0;
     this.totalRowCount = 0;
     this.closed = false;
     this.compressor = Compressor.create(compressionCodec);
@@ -149,8 +153,8 @@ public class ParquetFileWriter implements ParquetWriter {
   }
 
   /**
-   * Add a row to the Parquet file. Rows are buffered and written when the row group reaches
-   * a threshold size (currently 1000 rows).
+   * Add a row to the Parquet file. Rows are buffered and written when the estimated
+   * row group size exceeds the configured {@code rowGroupBytes} limit.
    *
    * @param row Row data to add to the file
    * @throws IllegalStateException if writer is closed
@@ -177,16 +181,46 @@ public class ParquetFileWriter implements ParquetWriter {
     }
 
     currentRowGroupRows.add(row);
+    currentRowGroupBytes += estimateRowBytes(row);
 
-    // Check if we should flush the row group (simple size check based on row count)
-    // In a production implementation, this should track actual byte size
-    if (currentRowGroupRows.size() >= 1000) {
+    if (currentRowGroupBytes >= rowGroupBytes) {
       try {
         flushRowGroup();
       } catch (IOException e) {
         throw new ParquetException("Failed to flush row group", e);
       }
     }
+  }
+
+  private long estimateRowBytes(RowColumnGroup row) {
+    long bytes = 0;
+    for (int i = 0; i < row.getColumnCount(); i++) {
+      Object value = row.getColumnValue(i);
+      if (value == null) {
+        continue;
+      }
+      ColumnDescriptor col = row.getColumns().get(i);
+      bytes += switch (col.physicalType()) {
+        case BOOLEAN -> 1;
+        case INT32, FLOAT -> 4;
+        case INT64, DOUBLE -> 8;
+        case INT96 -> 12;
+        case FIXED_LEN_BYTE_ARRAY -> col.typeLength();
+        case BYTE_ARRAY -> {
+          if (value instanceof byte[] ba) {
+            yield 4 + ba.length;
+          } else if (value instanceof String s) {
+            yield 4 + s.length();
+          } else if (value instanceof Map<?, ?> map) {
+            // Rough estimate for map entries
+            yield 4 + map.size() * 64L;
+          } else {
+            yield 16;
+          }
+        }
+      };
+    }
+    return bytes;
   }
 
   /**
@@ -239,6 +273,7 @@ public class ParquetFileWriter implements ParquetWriter {
     rowGroups.add(rowGroup);
     totalRowCount += currentRowGroupRows.size();
     currentRowGroupRows.clear();
+    currentRowGroupBytes = 0;
   }
 
   /**
@@ -617,12 +652,15 @@ public class ParquetFileWriter implements ParquetWriter {
    * @return Encoded byte array
    * @throws IOException if encoding fails
    */
-  private byte[] encodeStatValue(Object value, Type type) throws IOException {
-    ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+  private byte[] encodeStatValue(Object value, Type type) {
+    if (type == Type.BYTE_ARRAY || type == Type.FIXED_LEN_BYTE_ARRAY) {
+      return getByteArray(value);
+    }
 
+    ByteBuffer buffer = allocateBuffer(8);
     switch (type) {
       case BOOLEAN:
-        buffer.write(((Boolean) value) ? 1 : 0);
+        buffer.put(((Boolean) value) ? (byte) 1 : (byte) 0);
         break;
 
       case INT32:
@@ -641,15 +679,14 @@ public class ParquetFileWriter implements ParquetWriter {
         writeDouble(buffer, ((Number) value).doubleValue());
         break;
 
-      case BYTE_ARRAY:
-      case FIXED_LEN_BYTE_ARRAY:
-        return getByteArray(value);
-
       default:
         throw new UnsupportedOperationException("Unsupported type for statistics: " + type);
     }
 
-    return buffer.toByteArray();
+    buffer.flip();
+    byte[] result = new byte[buffer.remaining()];
+    buffer.get(result);
+    return result;
   }
 
   /**
@@ -737,25 +774,26 @@ public class ParquetFileWriter implements ParquetWriter {
                                            List<Integer> repetitionLevels,
                                            int numValues) throws IOException {
 
-    ByteArrayOutputStream pageBuffer = new ByteArrayOutputStream();
-
     // Write repetition levels (if needed)
-    if (columnDesc.maxRepetitionLevel() > 0) {
-      byte[] repetitionLevelData = encodeRLE(repetitionLevels, columnDesc.maxRepetitionLevel());
-      pageBuffer.write(repetitionLevelData);
-    }
+    byte[] repetitionLevelData = columnDesc.maxRepetitionLevel() > 0
+        ? encodeRLE(repetitionLevels, columnDesc.maxRepetitionLevel())
+        : new byte[0];
 
     // Write definition levels (if needed)
-    if (columnDesc.maxDefinitionLevel() > 0) {
-      byte[] definitionLevelData = encodeRLE(definitionLevels, columnDesc.maxDefinitionLevel());
-      pageBuffer.write(definitionLevelData);
-    }
+    byte[] definitionLevelData = columnDesc.maxDefinitionLevel() > 0
+        ? encodeRLE(definitionLevels, columnDesc.maxDefinitionLevel())
+        : new byte[0];
 
     // Write values using PLAIN encoding
     byte[] valueData = encodeValuesPlain(values, columnDesc.physicalType());
-    pageBuffer.write(valueData);
 
-    byte[] uncompressedPageData = pageBuffer.toByteArray();
+    ByteBuffer pageBuffer =
+        allocateBuffer(repetitionLevelData.length + definitionLevelData.length + valueData.length);
+    pageBuffer.put(repetitionLevelData);
+    pageBuffer.put(definitionLevelData);
+    pageBuffer.put(valueData);
+
+    byte[] uncompressedPageData = pageBuffer.array();
     byte[] compressedPageData = compress(uncompressedPageData);
 
     // Create data page header
@@ -773,7 +811,7 @@ public class ParquetFileWriter implements ParquetWriter {
     pageHeader.setData_page_header(dataPageHeader);
 
     // Serialize page header using Thrift
-    ByteArrayOutputStream headerBuffer = new ByteArrayOutputStream();
+    ByteBufferOutputStream headerBuffer = new ByteBufferOutputStream(256);
     try {
       pageHeader.write(new TCompactProtocol(new TIOStreamTransport(headerBuffer)));
     } catch (TException e) {
@@ -819,7 +857,23 @@ public class ParquetFileWriter implements ParquetWriter {
    */
   private byte[] encodeValuesPlain(List<Object> values, Type type)
       throws IOException {
-    ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+    // Pre-compute total encoded size
+    int totalSize = 0;
+    for (Object value : values) {
+      if (value == null) {
+        continue;
+      }
+      totalSize += switch (type) {
+        case BOOLEAN -> 1;
+        case INT32, FLOAT -> 4;
+        case INT64, DOUBLE -> 8;
+        case BYTE_ARRAY -> 4 + getByteArray(value).length;
+        case FIXED_LEN_BYTE_ARRAY -> getByteArray(value).length;
+        default -> throw new UnsupportedOperationException("Unsupported type: " + type);
+      };
+    }
+
+    ByteBuffer buffer = allocateBuffer(totalSize);
 
     for (Object value : values) {
       if (value == null) {
@@ -830,7 +884,7 @@ public class ParquetFileWriter implements ParquetWriter {
       switch (type) {
         case BOOLEAN:
           // Booleans are bit-packed, but for simplicity we'll write bytes
-          buffer.write(((Boolean) value) ? 1 : 0);
+          buffer.put(((Boolean) value) ? (byte) 1 : (byte) 0);
           break;
 
         case INT32:
@@ -862,7 +916,14 @@ public class ParquetFileWriter implements ParquetWriter {
       }
     }
 
-    return buffer.toByteArray();
+    return buffer.array();
+  }
+
+  private static ByteBuffer allocateBuffer(int totalSize) {
+    if (totalSize > (32 * MB)) {
+      System.out.printf("Large buffer allocated: %d\n", totalSize);
+    }
+    return ByteBuffer.allocate(totalSize);
   }
 
   /**
@@ -891,9 +952,8 @@ public class ParquetFileWriter implements ParquetWriter {
    * @param buffer Output buffer to write to
    * @param value Integer value to write
    */
-  private void writeInt32(ByteArrayOutputStream buffer, int value) {
-    byte[] encodedArray = ByteUtils.intToBytes(value);
-    buffer.write(encodedArray, 0, 4);
+  private void writeInt32(ByteBuffer buffer, int value) {
+    buffer.put(ByteUtils.intToBytes(value), 0, 4);
   }
 
   /**
@@ -902,9 +962,8 @@ public class ParquetFileWriter implements ParquetWriter {
    * @param buffer Output buffer to write to
    * @param value Long value to write
    */
-  private void writeInt64(ByteArrayOutputStream buffer, long value) {
-    byte[] encodedArray = ByteUtils.longToBytes(value);
-    buffer.write(encodedArray, 0, 8);
+  private void writeInt64(ByteBuffer buffer, long value) {
+    buffer.put(ByteUtils.longToBytes(value), 0, 8);
   }
 
   /**
@@ -913,9 +972,8 @@ public class ParquetFileWriter implements ParquetWriter {
    * @param buffer Output buffer to write to
    * @param value Float value to write
    */
-  private void writeFloat(ByteArrayOutputStream buffer, float value) {
-    byte[] encodedArray = ByteUtils.floatToBytes(value);
-    buffer.write(encodedArray, 0, 4);
+  private void writeFloat(ByteBuffer buffer, float value) {
+    buffer.put(ByteUtils.floatToBytes(value), 0, 4);
   }
 
   /**
@@ -924,9 +982,8 @@ public class ParquetFileWriter implements ParquetWriter {
    * @param buffer Output buffer to write to
    * @param value Double value to write
    */
-  private void writeDouble(ByteArrayOutputStream buffer, double value) {
-    byte[] encodedArray = ByteUtils.doubleToBytes(value);
-    buffer.write(encodedArray, 0, 8);
+  private void writeDouble(ByteBuffer buffer, double value) {
+    buffer.put(ByteUtils.doubleToBytes(value), 0, 8);
   }
 
   /**
@@ -936,10 +993,10 @@ public class ParquetFileWriter implements ParquetWriter {
    * @param value Byte array to write
    * @throws IOException if writing fails
    */
-  private void writeByteArray(ByteArrayOutputStream buffer, byte[] value) throws IOException {
+  private void writeByteArray(ByteBuffer buffer, byte[] value) {
     // Write length as 4-byte little-endian integer
     writeInt32(buffer, value.length);
-    buffer.write(value);
+    buffer.put(value);
   }
 
   /**
@@ -949,8 +1006,8 @@ public class ParquetFileWriter implements ParquetWriter {
    * @param value Byte array to write
    * @throws IOException if writing fails
    */
-  private void writeFixedByteArray(ByteArrayOutputStream buffer, byte[] value) throws IOException {
-    buffer.write(value);
+  private void writeFixedByteArray(ByteBuffer buffer, byte[] value) {
+    buffer.put(value);
   }
 
   /**
@@ -1177,7 +1234,7 @@ public class ParquetFileWriter implements ParquetWriter {
       fileMetaData.setCreated_by("java-parquet-rs ParquetFileWriter");
 
       // Serialize metadata using Thrift
-      ByteArrayOutputStream metadataBuffer = new ByteArrayOutputStream();
+      ByteBufferOutputStream metadataBuffer = new ByteBufferOutputStream(4096);
       try {
         fileMetaData.write(new TCompactProtocol(new TIOStreamTransport(metadataBuffer)));
       } catch (TException e) {
@@ -1202,6 +1259,48 @@ public class ParquetFileWriter implements ParquetWriter {
         outputStream.close();
       }
       closed = true;
+    }
+  }
+
+  /**
+   * An OutputStream backed by a growable ByteBuffer, used for Thrift serialization.
+   */
+  private static final class ByteBufferOutputStream extends OutputStream {
+    private ByteBuffer buffer;
+
+    ByteBufferOutputStream(int initialCapacity) {
+      this.buffer = allocateBuffer(initialCapacity);
+    }
+
+    @Override
+    public void write(int b) {
+      ensureCapacity(1);
+      buffer.put((byte) b);
+    }
+
+    @Override
+    public void write(byte[] b, int off, int len) {
+      ensureCapacity(len);
+      buffer.put(b, off, len);
+    }
+
+    private void ensureCapacity(int needed) {
+      if (buffer.remaining() >= needed) {
+        return;
+      }
+      ByteBuffer grown =
+          allocateBuffer(Math.max(buffer.capacity() * 2, buffer.position() + needed));
+      buffer.flip();
+      grown.put(buffer);
+      buffer = grown;
+    }
+
+    byte[] toByteArray() {
+      ByteBuffer view = buffer.duplicate();
+      view.flip();
+      byte[] result = new byte[view.remaining()];
+      view.get(result);
+      return result;
     }
   }
 }
