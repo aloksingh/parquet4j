@@ -151,6 +151,40 @@ class GrowableByteBufferTest {
   }
 
   @Test
+  void clearResetsPositionAndAllowsRewrite() {
+    GrowableByteBuffer buf = new GrowableByteBuffer(4, 4);
+    buf.ensureCapacity(6);
+    buf.put(new byte[] {1, 2, 3, 4, 5, 6}, 0, 6);
+    assertEquals(6, buf.position());
+
+    buf.clear();
+    assertEquals(0, buf.position());
+
+    // Write new data after clear
+    buf.put(new byte[] {10, 20, 30}, 0, 3);
+    assertEquals(3, buf.position());
+    assertArrayEquals(new byte[] {10, 20, 30}, buf.getArray(0, 3));
+  }
+
+  @Test
+  void clearRetainsBackingArrays() {
+    GrowableByteBuffer buf = new GrowableByteBuffer(4, 4);
+    buf.ensureCapacity(10);
+    buf.put(new byte[10], 0, 10);
+
+    buf.clear();
+
+    // Can write up to previous capacity without calling ensureCapacity
+    byte[] data = new byte[10];
+    for (int i = 0; i < 10; i++) {
+      data[i] = (byte) (i + 1);
+    }
+    buf.put(data, 0, 10);
+    assertEquals(10, buf.position());
+    assertArrayEquals(data, buf.getArray(0, 10));
+  }
+
+  @Test
   void mixedSingleAndBulkWrites() {
     GrowableByteBuffer buf = new GrowableByteBuffer(3, 3);
 

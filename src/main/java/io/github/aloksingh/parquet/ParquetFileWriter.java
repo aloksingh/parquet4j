@@ -787,47 +787,52 @@ public class ParquetFileWriter implements ParquetWriter {
         : new byte[0];
 
     // Write values using PLAIN encoding
-    byte[] valueData = encodeValuesPlain(values, columnDesc.physicalType());
 
-    ByteBuffer pageBuffer =
-        allocateBuffer(repetitionLevelData.length + definitionLevelData.length + valueData.length);
-    pageBuffer.put(repetitionLevelData);
-    pageBuffer.put(definitionLevelData);
-    pageBuffer.put(valueData);
+    try (var pageBuffer = new GrowableByteBuffer(MB, MB)) {
 
-    byte[] uncompressedPageData = pageBuffer.array();
-    byte[] compressedPageData = compress(uncompressedPageData);
+      byte[] valueData = encodeValuesPlain(values, columnDesc.physicalType(), pageBuffer);
+      pageBuffer.clear();
 
-    // Create data page header
-    DataPageHeader dataPageHeader = new DataPageHeader();
-    dataPageHeader.setNum_values(numValues);
-    dataPageHeader.setEncoding(org.apache.parquet.format.Encoding.PLAIN);
-    dataPageHeader.setDefinition_level_encoding(org.apache.parquet.format.Encoding.RLE);
-    dataPageHeader.setRepetition_level_encoding(org.apache.parquet.format.Encoding.RLE);
+      pageBuffer.put(repetitionLevelData);
+      pageBuffer.put(definitionLevelData);
+      pageBuffer.put(valueData);
 
-    // Write page header
-    PageHeader pageHeader = new PageHeader();
-    pageHeader.setType(PageType.DATA_PAGE);
-    pageHeader.setUncompressed_page_size(uncompressedPageData.length);
-    pageHeader.setCompressed_page_size(compressedPageData.length);
-    pageHeader.setData_page_header(dataPageHeader);
+      byte[] uncompressedPageData = pageBuffer.array();
+      byte[] compressedPageData = compress(uncompressedPageData);
+      // Create data page header
+      DataPageHeader dataPageHeader = new DataPageHeader();
+      dataPageHeader.setNum_values(numValues);
+      dataPageHeader.setEncoding(org.apache.parquet.format.Encoding.PLAIN);
+      dataPageHeader.setDefinition_level_encoding(org.apache.parquet.format.Encoding.RLE);
+      dataPageHeader.setRepetition_level_encoding(org.apache.parquet.format.Encoding.RLE);
 
-    // Serialize page header using Thrift
+      // Write page header
+      PageHeader pageHeader = new PageHeader();
+      pageHeader.setType(PageType.DATA_PAGE);
+      pageHeader.setUncompressed_page_size(uncompressedPageData.length);
+      pageHeader.setCompressed_page_size(compressedPageData.length);
+      pageHeader.setData_page_header(dataPageHeader);
 
-    try(ByteBufferOutputStream headerBuffer = new ByteBufferOutputStream(KB)) {
-      pageHeader.write(new TCompactProtocol(new TIOStreamTransport(headerBuffer)));
-      byte[] headerBytes = headerBuffer.toByteArray();
+      // Serialize page header using Thrift
 
-      // Write to output stream
-      outputStream.write(headerBytes);
-      outputStream.write(compressedPageData);
+      try (ByteBufferOutputStream headerBuffer = new ByteBufferOutputStream(KB)) {
+        pageHeader.write(new TCompactProtocol(new TIOStreamTransport(headerBuffer)));
+        byte[] headerBytes = headerBuffer.toByteArray();
 
-      int totalBytesWritten = headerBytes.length + compressedPageData.length;
-      currentPosition += totalBytesWritten;
+        // Write to output stream
+        outputStream.write(headerBytes);
+        outputStream.write(compressedPageData);
 
-      return new PageInfo(uncompressedPageData.length, compressedPageData.length, headerBytes.length);
-    } catch (TException e) {
-      throw new IOException("Failed to write page header", e);
+        int totalBytesWritten = headerBytes.length + compressedPageData.length;
+        currentPosition += totalBytesWritten;
+
+        return new PageInfo(uncompressedPageData.length, compressedPageData.length,
+            headerBytes.length);
+      } catch (TException e) {
+        throw new IOException("Failed to write page header", e);
+      }
+    } catch (Exception e) {
+      throw new RuntimeException(e);
     }
   }
 
@@ -856,26 +861,24 @@ public class ParquetFileWriter implements ParquetWriter {
    * @return Encoded byte array in PLAIN format
    * @throws IOException if encoding fails
    */
-  private byte[] encodeValuesPlain(List<Object> values, Type type)
+  private byte[] encodeValuesPlain(List<Object> values, Type type, GrowableByteBuffer buffer)
       throws IOException {
     // Pre-compute total encoded size
-    int totalSize = 0;
-    for (Object value : values) {
-      if (value == null) {
-        continue;
-      }
-      totalSize += switch (type) {
-        case BOOLEAN -> 1;
-        case INT32, FLOAT -> 4;
-        case INT64, DOUBLE -> 8;
-        case BYTE_ARRAY -> 4 + getByteArray(value).length;
-        case FIXED_LEN_BYTE_ARRAY -> getByteArray(value).length;
-        default -> throw new UnsupportedOperationException("Unsupported type: " + type);
-      };
-    }
-
-    ByteBuffer buffer = allocateBuffer(totalSize);
-
+//    int totalSize = 0;
+//    for (Object value : values) {
+//      if (value == null) {
+//        continue;
+//      }
+//      totalSize += switch (type) {
+//        case BOOLEAN -> 1;
+//        case INT32, FLOAT -> 4;
+//        case INT64, DOUBLE -> 8;
+//        case BYTE_ARRAY -> 4 + getByteArray(value).length;
+//        case FIXED_LEN_BYTE_ARRAY -> getByteArray(value).length;
+//        default -> throw new UnsupportedOperationException("Unsupported type: " + type);
+//      };
+//    }
+    buffer.clear();
     for (Object value : values) {
       if (value == null) {
         // Nulls are handled by definition levels, skip writing value
@@ -916,13 +919,13 @@ public class ParquetFileWriter implements ParquetWriter {
           throw new UnsupportedOperationException("Unsupported type: " + type);
       }
     }
-
     return buffer.array();
   }
 
   private static ByteBuffer allocateBuffer(int totalSize) {
     if (totalSize > (32 * MB)) {
       System.out.printf("Large buffer allocated: %d\n", totalSize);
+      new Throwable().printStackTrace();
     }
     return ByteBuffer.allocate(totalSize);
   }
@@ -1008,6 +1011,70 @@ public class ParquetFileWriter implements ParquetWriter {
    * @throws IOException if writing fails
    */
   private void writeFixedByteArray(ByteBuffer buffer, byte[] value) {
+    buffer.put(value);
+  }
+
+  /**
+   * Write a 32-bit integer in little-endian format.
+   *
+   * @param buffer Output buffer to write to
+   * @param value  Integer value to write
+   */
+  private void writeInt32(GrowableByteBuffer buffer, int value) {
+    buffer.put(ByteUtils.intToBytes(value), 0, 4);
+  }
+
+  /**
+   * Write a 64-bit integer in little-endian format.
+   *
+   * @param buffer Output buffer to write to
+   * @param value  Long value to write
+   */
+  private void writeInt64(GrowableByteBuffer buffer, long value) {
+    buffer.put(ByteUtils.longToBytes(value), 0, 8);
+  }
+
+  /**
+   * Write a 32-bit float in little-endian format.
+   *
+   * @param buffer Output buffer to write to
+   * @param value  Float value to write
+   */
+  private void writeFloat(GrowableByteBuffer buffer, float value) {
+    buffer.put(ByteUtils.floatToBytes(value), 0, 4);
+  }
+
+  /**
+   * Write a 64-bit double in little-endian format.
+   *
+   * @param buffer Output buffer to write to
+   * @param value  Double value to write
+   */
+  private void writeDouble(GrowableByteBuffer buffer, double value) {
+    buffer.put(ByteUtils.doubleToBytes(value), 0, 8);
+  }
+
+  /**
+   * Write a variable-length byte array with 4-byte length prefix.
+   *
+   * @param buffer Output buffer to write to
+   * @param value  Byte array to write
+   * @throws IOException if writing fails
+   */
+  private void writeByteArray(GrowableByteBuffer buffer, byte[] value) {
+    // Write length as 4-byte little-endian integer
+    writeInt32(buffer, value.length);
+    buffer.put(value);
+  }
+
+  /**
+   * Write a fixed-length byte array without length prefix.
+   *
+   * @param buffer Output buffer to write to
+   * @param value  Byte array to write
+   * @throws IOException if writing fails
+   */
+  private void writeFixedByteArray(GrowableByteBuffer buffer, byte[] value) {
     buffer.put(value);
   }
 

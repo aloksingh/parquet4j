@@ -38,6 +38,7 @@ public class GrowableByteBuffer implements AutoCloseable{
   }
 
   public void put(byte b) {
+    ensureCapacity(1);
     byte[] current = arrays.get(currentArrayIndex);
     if (currentArrayOffset == current.length) {
       currentArrayIndex++;
@@ -48,7 +49,12 @@ public class GrowableByteBuffer implements AutoCloseable{
     position++;
   }
 
+  public void put(byte[] b) {
+    put(b, 0, b.length);
+  }
+
   public void put(byte[] b, int off, int len) {
+    ensureCapacity(len);
     int remaining = len;
     int srcOff = off;
     while (remaining > 0) {
@@ -82,6 +88,10 @@ public class GrowableByteBuffer implements AutoCloseable{
     return position;
   }
 
+  public byte[] array() {
+    return getArray(0, position);
+  }
+
   public byte[] getArray(int off, int len) {
     byte[] result = new byte[len];
     int destOff = 0;
@@ -107,8 +117,15 @@ public class GrowableByteBuffer implements AutoCloseable{
     return result;
   }
 
+  public void clear() {
+    this.position = 0;
+    this.currentArrayIndex = 0;
+    this.currentArrayOffset = 0;
+  }
+
   @Override
   public void close() throws Exception {
     this.arrays.clear();
   }
+
 }
