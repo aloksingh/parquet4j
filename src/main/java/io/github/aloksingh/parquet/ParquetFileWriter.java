@@ -87,6 +87,7 @@ public class ParquetFileWriter implements ParquetWriter {
   private final CompressionCodec compressionCodec;
   private final int pageBytes;
   private final int rowGroupBytes;
+  private final GrowableByteBuffer buffer;
 
   private OutputStream outputStream;
   private long currentPosition;
@@ -132,6 +133,7 @@ public class ParquetFileWriter implements ParquetWriter {
     this.totalRowCount = 0;
     this.closed = false;
     this.compressor = Compressor.create(compressionCodec);
+    this.buffer = new GrowableByteBuffer(rowGroupBytes, MB);
   }
 
   /**
@@ -242,6 +244,7 @@ public class ParquetFileWriter implements ParquetWriter {
 
     // Check if we have logical columns (for maps, structs, etc.)
     if (schema.hasLogicalColumns()) {
+
       // Write logical columns, which may map to multiple physical columns
       for (int logicalIndex = 0; logicalIndex < schema.getNumLogicalColumns(); logicalIndex++) {
         LogicalColumnDescriptor logicalCol = schema.getLogicalColumn(logicalIndex);
@@ -787,52 +790,46 @@ public class ParquetFileWriter implements ParquetWriter {
         : new byte[0];
 
     // Write values using PLAIN encoding
+    byte[] valueData = encodeValuesPlain(values, columnDesc.physicalType());
 
-    try (var pageBuffer = new GrowableByteBuffer(MB, MB)) {
+    buffer.clear();
+    buffer.put(repetitionLevelData);
+    buffer.put(definitionLevelData);
+    buffer.put(valueData);
 
-      byte[] valueData = encodeValuesPlain(values, columnDesc.physicalType(), pageBuffer);
-      pageBuffer.clear();
+    byte[] uncompressedPageData = buffer.array();
+    byte[] compressedPageData = compress(uncompressedPageData);
+    // Create data page header
+    DataPageHeader dataPageHeader = new DataPageHeader();
+    dataPageHeader.setNum_values(numValues);
+    dataPageHeader.setEncoding(org.apache.parquet.format.Encoding.PLAIN);
+    dataPageHeader.setDefinition_level_encoding(org.apache.parquet.format.Encoding.RLE);
+    dataPageHeader.setRepetition_level_encoding(org.apache.parquet.format.Encoding.RLE);
 
-      pageBuffer.put(repetitionLevelData);
-      pageBuffer.put(definitionLevelData);
-      pageBuffer.put(valueData);
+    // Write page header
+    PageHeader pageHeader = new PageHeader();
+    pageHeader.setType(PageType.DATA_PAGE);
+    pageHeader.setUncompressed_page_size(uncompressedPageData.length);
+    pageHeader.setCompressed_page_size(compressedPageData.length);
+    pageHeader.setData_page_header(dataPageHeader);
 
-      byte[] uncompressedPageData = pageBuffer.array();
-      byte[] compressedPageData = compress(uncompressedPageData);
-      // Create data page header
-      DataPageHeader dataPageHeader = new DataPageHeader();
-      dataPageHeader.setNum_values(numValues);
-      dataPageHeader.setEncoding(org.apache.parquet.format.Encoding.PLAIN);
-      dataPageHeader.setDefinition_level_encoding(org.apache.parquet.format.Encoding.RLE);
-      dataPageHeader.setRepetition_level_encoding(org.apache.parquet.format.Encoding.RLE);
+    // Serialize page header using Thrift
 
-      // Write page header
-      PageHeader pageHeader = new PageHeader();
-      pageHeader.setType(PageType.DATA_PAGE);
-      pageHeader.setUncompressed_page_size(uncompressedPageData.length);
-      pageHeader.setCompressed_page_size(compressedPageData.length);
-      pageHeader.setData_page_header(dataPageHeader);
+    try (ByteBufferOutputStream headerBuffer = new ByteBufferOutputStream(KB)) {
+      pageHeader.write(new TCompactProtocol(new TIOStreamTransport(headerBuffer)));
+      byte[] headerBytes = headerBuffer.toByteArray();
 
-      // Serialize page header using Thrift
+      // Write to output stream
+      outputStream.write(headerBytes);
+      outputStream.write(compressedPageData);
 
-      try (ByteBufferOutputStream headerBuffer = new ByteBufferOutputStream(KB)) {
-        pageHeader.write(new TCompactProtocol(new TIOStreamTransport(headerBuffer)));
-        byte[] headerBytes = headerBuffer.toByteArray();
+      int totalBytesWritten = headerBytes.length + compressedPageData.length;
+      currentPosition += totalBytesWritten;
 
-        // Write to output stream
-        outputStream.write(headerBytes);
-        outputStream.write(compressedPageData);
-
-        int totalBytesWritten = headerBytes.length + compressedPageData.length;
-        currentPosition += totalBytesWritten;
-
-        return new PageInfo(uncompressedPageData.length, compressedPageData.length,
-            headerBytes.length);
-      } catch (TException e) {
-        throw new IOException("Failed to write page header", e);
-      }
-    } catch (Exception e) {
-      throw new RuntimeException(e);
+      return new PageInfo(uncompressedPageData.length, compressedPageData.length,
+          headerBytes.length);
+    } catch (TException e) {
+      throw new IOException("Failed to write page header", e);
     }
   }
 
@@ -861,23 +858,8 @@ public class ParquetFileWriter implements ParquetWriter {
    * @return Encoded byte array in PLAIN format
    * @throws IOException if encoding fails
    */
-  private byte[] encodeValuesPlain(List<Object> values, Type type, GrowableByteBuffer buffer)
+  private byte[] encodeValuesPlain(List<Object> values, Type type)
       throws IOException {
-    // Pre-compute total encoded size
-//    int totalSize = 0;
-//    for (Object value : values) {
-//      if (value == null) {
-//        continue;
-//      }
-//      totalSize += switch (type) {
-//        case BOOLEAN -> 1;
-//        case INT32, FLOAT -> 4;
-//        case INT64, DOUBLE -> 8;
-//        case BYTE_ARRAY -> 4 + getByteArray(value).length;
-//        case FIXED_LEN_BYTE_ARRAY -> getByteArray(value).length;
-//        default -> throw new UnsupportedOperationException("Unsupported type: " + type);
-//      };
-//    }
     buffer.clear();
     for (Object value : values) {
       if (value == null) {
@@ -1319,7 +1301,9 @@ public class ParquetFileWriter implements ParquetWriter {
 
       // Write magic number at the end
       outputStream.write(PARQUET_MAGIC);
-
+      buffer.close();
+    } catch (Exception e) {
+      throw new RuntimeException(e);
     } finally {
       if (outputStream != null) {
         outputStream.close();
