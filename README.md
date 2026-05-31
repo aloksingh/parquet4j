@@ -19,6 +19,8 @@ The library provides a simple way to
 - Basic support for simple Map<key, value> columns
 - GZIP support works without any external dependencies
 - SNAPPY, ZSTD, LZ4 codecs are supported using third-party libraries.
+  - Conditional compression : The idea comes from https://arxiv.org/abs/2602.17335 where the authors describe an optimization to help improve parsing speeds on GPUS. Essentially, it compression is conditionally applied only when the space savings will be greater than some fixed threshold. This implementation defaults that threshold to 90% of the uncompressed size.
+  - 
 
 ## Current Limitations
 
