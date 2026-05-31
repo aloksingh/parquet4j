@@ -91,6 +91,7 @@ public class ParquetFileWriter implements ParquetWriter {
   private int totalRowCount;
   private boolean closed;
   private final Compressor compressor;
+  private final double minCompressionRatio;
 
   /**
    * Create a new ParquetFileWriter with default settings.
@@ -115,6 +116,27 @@ public class ParquetFileWriter implements ParquetWriter {
   public ParquetFileWriter(Path filePath, SchemaDescriptor schema,
                            CompressionCodec compressionCodec, int pageSize,
                            int rowGroupSize) {
+    this(filePath, schema, compressionCodec, pageSize, rowGroupSize,
+        DEFAULT_MIN_COMPRESSION_RATIO);
+  }
+
+  private static final double DEFAULT_MIN_COMPRESSION_RATIO = 0.90;
+
+  /**
+   * Create a new ParquetFileWriter with custom settings and compression ratio threshold.
+   *
+   * @param filePath              Path to the output Parquet file
+   * @param schema                Schema descriptor for the file
+   * @param compressionCodec      Compression codec to use
+   * @param pageSize              Target page size in bytes
+   * @param rowGroupSize          Target row group size in bytes
+   * @param minCompressionRatio   Minimum ratio of compressed/uncompressed size required
+   *                              to keep compression (0.0 to 1.0). 0.90 means compression
+   *                              is kept only when it achieves at least 10% reduction.
+   */
+  public ParquetFileWriter(Path filePath, SchemaDescriptor schema,
+                           CompressionCodec compressionCodec, int pageSize,
+                           int rowGroupSize, double minCompressionRatio) {
     this.filePath = filePath;
     this.schema = schema;
     this.compressionCodec = compressionCodec;
@@ -126,6 +148,7 @@ public class ParquetFileWriter implements ParquetWriter {
     this.totalRowCount = 0;
     this.closed = false;
     this.compressor = Compressor.create(compressionCodec);
+    this.minCompressionRatio = minCompressionRatio;
   }
 
   /**
@@ -302,7 +325,7 @@ public class ParquetFileWriter implements ParquetWriter {
         org.apache.parquet.format.Encoding.PLAIN  // For values
     ));
     columnMetaData.setPath_in_schema(Arrays.asList(columnDesc.path()));
-    columnMetaData.setCodec(convertCompressionCodec(compressionCodec));
+    columnMetaData.setCodec(convertCompressionCodec(pageInfo.effectiveCodec));
     columnMetaData.setNum_values(values.size());
     // Total sizes MUST include page headers + page data
     columnMetaData.setTotal_uncompressed_size(pageInfo.total_uncompressed_size);
@@ -424,7 +447,7 @@ public class ParquetFileWriter implements ParquetWriter {
         org.apache.parquet.format.Encoding.PLAIN  // For values
     ));
     columnMetaData.setPath_in_schema(Arrays.asList(columnDesc.path()));
-    columnMetaData.setCodec(convertCompressionCodec(compressionCodec));
+    columnMetaData.setCodec(convertCompressionCodec(pageInfo.effectiveCodec));
     columnMetaData.setNum_values(numValues);
     // Total sizes MUST include page headers + page data
     columnMetaData.setTotal_uncompressed_size(pageInfo.total_uncompressed_size);
@@ -675,30 +698,21 @@ public class ParquetFileWriter implements ParquetWriter {
    * Helper class to return page size information after writing a data page.
    */
   private static class PageInfo {
-    /** Size of uncompressed page data (without header) */
     final int uncompressed_page_size;
-    /** Size of compressed page data (without header) */
     final int compressed_page_size;
-    /** Size of the page header */
     final int header_size;
-    /** Total compressed size (header + compressed data) */
     final int total_compressed_size;
-    /** Total uncompressed size (header + uncompressed data) */
     final int total_uncompressed_size;
+    final CompressionCodec effectiveCodec;
 
-    /**
-     * Create page information.
-     *
-     * @param uncompressed_page_size Size of uncompressed page data
-     * @param compressed_page_size Size of compressed page data
-     * @param header_size Size of page header
-     */
-    PageInfo(int uncompressed_page_size, int compressed_page_size, int header_size) {
+    PageInfo(int uncompressed_page_size, int compressed_page_size, int header_size,
+             CompressionCodec effectiveCodec) {
       this.uncompressed_page_size = uncompressed_page_size;
       this.compressed_page_size = compressed_page_size;
       this.header_size = header_size;
       this.total_compressed_size = header_size + compressed_page_size;
       this.total_uncompressed_size = header_size + uncompressed_page_size;
+      this.effectiveCodec = effectiveCodec;
     }
   }
 
@@ -756,7 +770,24 @@ public class ParquetFileWriter implements ParquetWriter {
     pageBuffer.write(valueData);
 
     byte[] uncompressedPageData = pageBuffer.toByteArray();
-    byte[] compressedPageData = compress(uncompressedPageData);
+    byte[] compressedPageData;
+    CompressionCodec effectiveCodec;
+
+    if (compressionCodec == CompressionCodec.UNCOMPRESSED
+        || uncompressedPageData.length == 0) {
+      compressedPageData = uncompressedPageData;
+      effectiveCodec = CompressionCodec.UNCOMPRESSED;
+    } else {
+      byte[] candidate = compress(uncompressedPageData);
+      double ratio = (double) candidate.length / (double) uncompressedPageData.length;
+      if (ratio < minCompressionRatio) {
+        compressedPageData = candidate;
+        effectiveCodec = compressionCodec;
+      } else {
+        compressedPageData = uncompressedPageData;
+        effectiveCodec = CompressionCodec.UNCOMPRESSED;
+      }
+    }
 
     // Create data page header
     DataPageHeader dataPageHeader = new DataPageHeader();
@@ -789,7 +820,8 @@ public class ParquetFileWriter implements ParquetWriter {
     int totalBytesWritten = headerBytes.length + compressedPageData.length;
     currentPosition += totalBytesWritten;
 
-    return new PageInfo(uncompressedPageData.length, compressedPageData.length, headerBytes.length);
+    return new PageInfo(uncompressedPageData.length, compressedPageData.length, headerBytes.length,
+        effectiveCodec);
   }
 
   /**
