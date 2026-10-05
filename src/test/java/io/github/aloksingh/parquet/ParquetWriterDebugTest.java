@@ -11,6 +11,7 @@ import io.github.aloksingh.parquet.model.LogicalType;
 import io.github.aloksingh.parquet.model.RowColumnGroup;
 import io.github.aloksingh.parquet.model.SchemaDescriptor;
 import io.github.aloksingh.parquet.model.SimpleRowColumnGroup;
+import io.github.aloksingh.parquet.model.PrimitiveLogicalType;
 import io.github.aloksingh.parquet.model.Type;
 import java.nio.file.Path;
 import java.util.Arrays;
@@ -40,7 +41,8 @@ class ParquetWriterDebugTest {
             "name",
             LogicalType.PRIMITIVE,
             Type.BYTE_ARRAY,
-            new ColumnDescriptor(Type.BYTE_ARRAY, new String[] {"name"}, 0, 0, 0)
+            new ColumnDescriptor(Type.BYTE_ARRAY, new String[] {"name"}, 0, 0, 0,
+                PrimitiveLogicalType.string())
         )
     );
     SchemaDescriptor schema = SchemaDescriptor.fromLogicalColumns(

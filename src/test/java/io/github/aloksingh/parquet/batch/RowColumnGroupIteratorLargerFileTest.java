@@ -293,7 +293,7 @@ public class RowColumnGroupIteratorLargerFileTest {
       RowColumnGroup firstRow = iterator.next();
 
       // Get column descriptor
-      ColumnDescriptor colDescriptor = firstRow.getColumns().get(0);
+      ColumnDescriptor colDescriptor = firstRow.getPhysicalColumns().get(0);
 
       // Type-safe access
       String value = firstRow.getColumnValue(colDescriptor, String.class);

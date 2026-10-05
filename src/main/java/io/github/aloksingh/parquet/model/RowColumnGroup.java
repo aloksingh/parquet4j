@@ -1,7 +1,6 @@
 package io.github.aloksingh.parquet.model;
 
 import java.util.List;
-
 /**
  * Represents a single row with values from all columns in a Parquet file.
  * <p>
@@ -9,8 +8,15 @@ import java.util.List;
  * of data read from a Parquet file. It allows retrieval of column values by index, name,
  * or column descriptor, and provides access to schema information.
  * </p>
+ * <p>
+ * The logical column list returned by {@link #getColumns()} is aligned with the value order
+ * used by {@link #getColumnValue(int)} and the count returned by {@link #getColumnCount()}:
+ * one descriptor per logical value (top-level field, including MAP/LIST/STRUCT columns).
+ * Physical leaf descriptors stay reachable through {@link #getPhysicalColumns()}.
+ * </p>
  *
  * @see ColumnDescriptor
+ * @see LogicalColumnDescriptor
  * @see SchemaDescriptor
  */
 public interface RowColumnGroup {
@@ -26,15 +32,19 @@ public interface RowColumnGroup {
   SchemaDescriptor getSchema();
 
   /**
-   * Returns all column descriptors for this row.
-   * <p>
-   * Each column descriptor contains metadata about a specific column, including its name,
-   * type, and encoding information.
-   * </p>
+   * Returns the logical column descriptors for this row, in the same order as the values
+   * returned by {@link #getColumnValue(int)} (one per logical value).
+   *
+   * @return an immutable list of {@link LogicalColumnDescriptor} objects, never {@code null}
+   */
+  List<LogicalColumnDescriptor> getColumns();
+
+  /**
+   * Returns the physical leaf descriptors of this row's schema, in depth-first schema order.
    *
    * @return an immutable list of {@link ColumnDescriptor} objects, never {@code null}
    */
-  List<ColumnDescriptor> getColumns();
+  List<ColumnDescriptor> getPhysicalColumns();
 
   /**
    * Returns the value of the column at the specified index.

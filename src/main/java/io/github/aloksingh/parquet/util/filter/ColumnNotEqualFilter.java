@@ -1,98 +1,16 @@
 package io.github.aloksingh.parquet.util.filter;
 
-import static io.github.aloksingh.parquet.util.filter.ColumnFilterHelper.CFH;
-
-import io.github.aloksingh.parquet.model.ColumnStatistics;
 import io.github.aloksingh.parquet.model.LogicalColumnDescriptor;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
 import java.util.Optional;
 
-public class ColumnNotEqualFilter implements ColumnFilter {
-  private final LogicalColumnDescriptor targetColumnDescriptor;
-  private final Object matchValue;
-  private final Optional<String> mapKey;
-
-  public ColumnNotEqualFilter(LogicalColumnDescriptor targetColumnDescriptor, Object matchValue) {
-    this(targetColumnDescriptor, matchValue, Optional.empty());
+/** A bound neq predicate. See {@link ColumnFilters} for null semantics. */
+public class ColumnNotEqualFilter extends TypedColumnFilter {
+  public ColumnNotEqualFilter(LogicalColumnDescriptor column, Object matchValue) {
+    this(column, matchValue, Optional.empty());
   }
 
-  public ColumnNotEqualFilter(LogicalColumnDescriptor targetColumnDescriptor, Object matchValue,
-                              Optional<String> mapKey) {
-    this.targetColumnDescriptor = targetColumnDescriptor;
-    this.matchValue = mapKey.isPresent() ? matchValue :
-        CFH.convertToColumnType(targetColumnDescriptor, matchValue);
-    this.mapKey = mapKey;
-  }
-
-  @Override
-  public boolean apply(Object colValue) {
-    if (colValue == null) {
-      return matchValue != null;
-    }
-    if (targetColumnDescriptor.isPrimitive()) {
-      return !Objects.equals(matchValue, colValue);
-    } else {
-      if (targetColumnDescriptor.isList()) {
-        List listValues = (List) colValue;
-        List matches = (List) matchValue;
-        if (listValues.size() != matches.size()) {
-          return true;
-        }
-        for (int i = 0; i < matches.size(); i++) {
-          Object m = matches.get(i);
-          Object v = listValues.get(i);
-          if (!Objects.equals(m, v)) {
-            return true;
-          }
-        }
-        return false;
-      }
-      if (targetColumnDescriptor.isMap()) {
-        // If mapKey is present, extract value from colValue map at that key and compare with matchValue
-        if (mapKey.isPresent()) {
-          Map valueMap = (Map) colValue;
-          Object actualValue = valueMap.get(mapKey.get());
-          if (actualValue != null) {
-            return !Objects.equals(CFH.convertToClassType(actualValue.getClass(), matchValue),
-                actualValue);
-          } else {
-            return matchValue != null;
-          }
-        }
-
-        // Otherwise, compare entire maps
-        Map valueMap = (Map) colValue;
-        Map matchMap = (Map) matchValue;
-        if (valueMap.size() != matchMap.size()) {
-          return true;
-        }
-        for (Object key : matchMap.keySet()) {
-          if (!valueMap.containsKey(key)) {
-            return true;
-          }
-          Object v = valueMap.get(key);
-          Object m = matchMap.get(key);
-          if (!java.util.Objects.equals(v, m)) {
-            return true;
-          }
-        }
-        return false;
-      }
-    }
-    return false;
-  }
-
-  @Override
-  public boolean isApplicable(LogicalColumnDescriptor columnDescriptor) {
-    return targetColumnDescriptor.equals(columnDescriptor);
-  }
-
-  @Override
-  public boolean skip(ColumnStatistics statistics, Object colValue) {
-    // Conservative approach: don't skip by default
-    // TODO: Implement proper statistics-based skipping once value decoding is available
-    return false;
+  public ColumnNotEqualFilter(LogicalColumnDescriptor column, Object matchValue,
+                            Optional<String> mapKey) {
+    super(column, FilterOperator.neq, matchValue, mapKey);
   }
 }

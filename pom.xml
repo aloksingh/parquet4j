@@ -90,6 +90,13 @@
             <artifactId>junit-jupiter-params</artifactId>
             <scope>test</scope>
         </dependency>
+        <!-- Independent reader/writer oracle for Parquet interoperability tests. -->
+        <dependency>
+            <groupId>org.duckdb</groupId>
+            <artifactId>duckdb_jdbc</artifactId>
+            <version>1.5.6.0</version>
+            <scope>test</scope>
+        </dependency>
         <!-- JSON parsing for test validation and ParquetFileInspector -->
         <dependency>
             <groupId>com.google.code.gson</groupId>

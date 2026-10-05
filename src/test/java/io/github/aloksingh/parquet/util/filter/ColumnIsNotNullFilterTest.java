@@ -1,6 +1,8 @@
 package io.github.aloksingh.parquet.util.filter;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static io.github.aloksingh.parquet.util.filter.FilterTestSupport.*;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.aloksingh.parquet.model.ColumnStatistics;
@@ -21,7 +23,7 @@ public class ColumnIsNotNullFilterTest {
   @Test
   public void testApplyNullValue() {
     LogicalColumnDescriptor descriptor =
-        new LogicalColumnDescriptor("col", LogicalType.PRIMITIVE, null, null);
+        primitive("col", Type.INT32);
     ColumnIsNotNullFilter filter = new ColumnIsNotNullFilter(descriptor);
 
     assertFalse(filter.apply(null));
@@ -30,7 +32,7 @@ public class ColumnIsNotNullFilterTest {
   @Test
   public void testApplyNonNullInteger() {
     LogicalColumnDescriptor descriptor =
-        new LogicalColumnDescriptor("col", LogicalType.PRIMITIVE, null, null);
+        primitive("col", Type.INT32);
     ColumnIsNotNullFilter filter = new ColumnIsNotNullFilter(descriptor);
 
     assertTrue(filter.apply(42));
@@ -39,7 +41,7 @@ public class ColumnIsNotNullFilterTest {
   @Test
   public void testApplyNonNullString() {
     LogicalColumnDescriptor descriptor =
-        new LogicalColumnDescriptor("col", LogicalType.PRIMITIVE, null, null);
+        primitive("col", Type.BYTE_ARRAY);
     ColumnIsNotNullFilter filter = new ColumnIsNotNullFilter(descriptor);
 
     assertTrue(filter.apply("test"));
@@ -48,7 +50,7 @@ public class ColumnIsNotNullFilterTest {
   @Test
   public void testApplyNonNullDouble() {
     LogicalColumnDescriptor descriptor =
-        new LogicalColumnDescriptor("col", LogicalType.PRIMITIVE, null, null);
+        primitive("col", Type.DOUBLE);
     ColumnIsNotNullFilter filter = new ColumnIsNotNullFilter(descriptor);
 
     assertTrue(filter.apply(3.14));
@@ -57,7 +59,7 @@ public class ColumnIsNotNullFilterTest {
   @Test
   public void testApplyNonNullBoolean() {
     LogicalColumnDescriptor descriptor =
-        new LogicalColumnDescriptor("col", LogicalType.PRIMITIVE, null, null);
+        primitive("col", Type.BOOLEAN);
     ColumnIsNotNullFilter filter = new ColumnIsNotNullFilter(descriptor);
 
     assertTrue(filter.apply(true));
@@ -67,7 +69,7 @@ public class ColumnIsNotNullFilterTest {
   @Test
   public void testApplyNonNullObject() {
     LogicalColumnDescriptor descriptor =
-        new LogicalColumnDescriptor("col", LogicalType.PRIMITIVE, null, null);
+        primitive("col", Type.INT32);
     ColumnIsNotNullFilter filter = new ColumnIsNotNullFilter(descriptor);
 
     assertTrue(filter.apply(new Object()));
@@ -76,7 +78,7 @@ public class ColumnIsNotNullFilterTest {
   @Test
   public void testApplyZeroValue() {
     LogicalColumnDescriptor descriptor =
-        new LogicalColumnDescriptor("col", LogicalType.PRIMITIVE, null, null);
+        primitive("col", Type.INT32);
     ColumnIsNotNullFilter filter = new ColumnIsNotNullFilter(descriptor);
 
     // Zero is not null
@@ -86,7 +88,7 @@ public class ColumnIsNotNullFilterTest {
   @Test
   public void testApplyEmptyString() {
     LogicalColumnDescriptor descriptor =
-        new LogicalColumnDescriptor("col", LogicalType.PRIMITIVE, null, null);
+        primitive("col", Type.BYTE_ARRAY);
     ColumnIsNotNullFilter filter = new ColumnIsNotNullFilter(descriptor);
 
     // Empty string is not null
@@ -98,7 +100,7 @@ public class ColumnIsNotNullFilterTest {
   @Test
   public void testMapKeyValueIsNotNull() {
     LogicalColumnDescriptor descriptor =
-        new LogicalColumnDescriptor("col", LogicalType.MAP, (MapMetadata) null);
+        map(Type.INT32);
     ColumnIsNotNullFilter filter = new ColumnIsNotNullFilter(descriptor, Optional.of("key1"));
 
     Map<String, Integer> colValue = new HashMap<>();
@@ -111,7 +113,7 @@ public class ColumnIsNotNullFilterTest {
   @Test
   public void testMapKeyValueIsNull() {
     LogicalColumnDescriptor descriptor =
-        new LogicalColumnDescriptor("col", LogicalType.MAP, (MapMetadata) null);
+        map(Type.INT32);
     ColumnIsNotNullFilter filter = new ColumnIsNotNullFilter(descriptor, Optional.of("key1"));
 
     Map<String, Integer> colValue = new HashMap<>();
@@ -124,7 +126,7 @@ public class ColumnIsNotNullFilterTest {
   @Test
   public void testMapKeyMissingTreatedAsNull() {
     LogicalColumnDescriptor descriptor =
-        new LogicalColumnDescriptor("col", LogicalType.MAP, (MapMetadata) null);
+        map(Type.INT32);
     ColumnIsNotNullFilter filter = new ColumnIsNotNullFilter(descriptor, Optional.of("key3"));
 
     Map<String, Integer> colValue = new HashMap<>();
@@ -135,18 +137,18 @@ public class ColumnIsNotNullFilterTest {
   }
 
   @Test
-  public void testMapItselfNullWithKeyReturnsTrue() {
+  public void testMapItselfNullWithKeyReturnsFalse() {
     LogicalColumnDescriptor descriptor =
-        new LogicalColumnDescriptor("col", LogicalType.MAP, (MapMetadata) null);
+        map(Type.INT32);
     ColumnIsNotNullFilter filter = new ColumnIsNotNullFilter(descriptor, Optional.of("key1"));
 
-    assertTrue(filter.apply(null));
+    assertFalse(filter.apply(null));
   }
 
   @Test
   public void testMapWithoutKeyCheckMapItself() {
     LogicalColumnDescriptor descriptor =
-        new LogicalColumnDescriptor("col", LogicalType.MAP, (MapMetadata) null);
+        map(Type.INT32);
     ColumnIsNotNullFilter filter = new ColumnIsNotNullFilter(descriptor);
 
     Map<String, Integer> colValue = new HashMap<>();
@@ -159,7 +161,7 @@ public class ColumnIsNotNullFilterTest {
   @Test
   public void testMapWithoutKeyNullMap() {
     LogicalColumnDescriptor descriptor =
-        new LogicalColumnDescriptor("col", LogicalType.MAP, (MapMetadata) null);
+        map(Type.INT32);
     ColumnIsNotNullFilter filter = new ColumnIsNotNullFilter(descriptor);
 
     assertFalse(filter.apply(null));
@@ -168,7 +170,7 @@ public class ColumnIsNotNullFilterTest {
   @Test
   public void testMapKeyValueWithStringNotNull() {
     LogicalColumnDescriptor descriptor =
-        new LogicalColumnDescriptor("col", LogicalType.MAP, (MapMetadata) null);
+        map(Type.BYTE_ARRAY);
     ColumnIsNotNullFilter filter = new ColumnIsNotNullFilter(descriptor, Optional.of("name"));
 
     Map<String, String> colValue = new HashMap<>();
@@ -181,7 +183,7 @@ public class ColumnIsNotNullFilterTest {
   @Test
   public void testMapKeyValueWithStringNull() {
     LogicalColumnDescriptor descriptor =
-        new LogicalColumnDescriptor("col", LogicalType.MAP, (MapMetadata) null);
+        map(Type.BYTE_ARRAY);
     ColumnIsNotNullFilter filter = new ColumnIsNotNullFilter(descriptor, Optional.of("name"));
 
     Map<String, String> colValue = new HashMap<>();
@@ -194,7 +196,7 @@ public class ColumnIsNotNullFilterTest {
   @Test
   public void testMapKeyValueWithDoubleNotNull() {
     LogicalColumnDescriptor descriptor =
-        new LogicalColumnDescriptor("col", LogicalType.MAP, (MapMetadata) null);
+        map(Type.DOUBLE);
     ColumnIsNotNullFilter filter = new ColumnIsNotNullFilter(descriptor, Optional.of("score"));
 
     Map<String, Double> colValue = new HashMap<>();
@@ -207,7 +209,7 @@ public class ColumnIsNotNullFilterTest {
   @Test
   public void testMapKeyValueWithDoubleNull() {
     LogicalColumnDescriptor descriptor =
-        new LogicalColumnDescriptor("col", LogicalType.MAP, (MapMetadata) null);
+        map(Type.DOUBLE);
     ColumnIsNotNullFilter filter = new ColumnIsNotNullFilter(descriptor, Optional.of("score"));
 
     Map<String, Double> colValue = new HashMap<>();
@@ -220,7 +222,7 @@ public class ColumnIsNotNullFilterTest {
   @Test
   public void testMapKeyValueWithLongNotNull() {
     LogicalColumnDescriptor descriptor =
-        new LogicalColumnDescriptor("col", LogicalType.MAP, (MapMetadata) null);
+        map(Type.INT64);
     ColumnIsNotNullFilter filter = new ColumnIsNotNullFilter(descriptor, Optional.of("timestamp"));
 
     Map<String, Long> colValue = new HashMap<>();
@@ -233,7 +235,7 @@ public class ColumnIsNotNullFilterTest {
   @Test
   public void testMapKeyValueWithLongNull() {
     LogicalColumnDescriptor descriptor =
-        new LogicalColumnDescriptor("col", LogicalType.MAP, (MapMetadata) null);
+        map(Type.INT64);
     ColumnIsNotNullFilter filter = new ColumnIsNotNullFilter(descriptor, Optional.of("timestamp"));
 
     Map<String, Long> colValue = new HashMap<>();
@@ -246,7 +248,7 @@ public class ColumnIsNotNullFilterTest {
   @Test
   public void testMapKeyValueWithZeroIsNotNull() {
     LogicalColumnDescriptor descriptor =
-        new LogicalColumnDescriptor("col", LogicalType.MAP, (MapMetadata) null);
+        map(Type.INT32);
     ColumnIsNotNullFilter filter = new ColumnIsNotNullFilter(descriptor, Optional.of("count"));
 
     Map<String, Integer> colValue = new HashMap<>();
@@ -259,7 +261,7 @@ public class ColumnIsNotNullFilterTest {
   @Test
   public void testMapKeyValueWithEmptyStringIsNotNull() {
     LogicalColumnDescriptor descriptor =
-        new LogicalColumnDescriptor("col", LogicalType.MAP, (MapMetadata) null);
+        map(Type.BYTE_ARRAY);
     ColumnIsNotNullFilter filter = new ColumnIsNotNullFilter(descriptor, Optional.of("name"));
 
     Map<String, String> colValue = new HashMap<>();
@@ -274,7 +276,7 @@ public class ColumnIsNotNullFilterTest {
   @Test
   public void testIsApplicableSameDescriptor() {
     LogicalColumnDescriptor descriptor =
-        new LogicalColumnDescriptor("col", LogicalType.PRIMITIVE, null, null);
+        primitive("col", Type.INT32);
     ColumnIsNotNullFilter filter = new ColumnIsNotNullFilter(descriptor);
 
     assertTrue(filter.isApplicable(descriptor));
@@ -283,9 +285,9 @@ public class ColumnIsNotNullFilterTest {
   @Test
   public void testIsApplicableDifferentDescriptor() {
     LogicalColumnDescriptor descriptor1 =
-        new LogicalColumnDescriptor("col1", LogicalType.PRIMITIVE, null, null);
+        primitive("col1", Type.INT32);
     LogicalColumnDescriptor descriptor2 =
-        new LogicalColumnDescriptor("col2", LogicalType.PRIMITIVE, null, null);
+        primitive("col2", Type.INT32);
     ColumnIsNotNullFilter filter = new ColumnIsNotNullFilter(descriptor1);
 
     assertFalse(filter.isApplicable(descriptor2));
@@ -296,7 +298,7 @@ public class ColumnIsNotNullFilterTest {
   @Test
   public void testSkipWithNullCountZero() {
     LogicalColumnDescriptor descriptor =
-        new LogicalColumnDescriptor("col", LogicalType.PRIMITIVE, Type.INT32, null);
+        primitive("col", Type.INT32);
     ColumnIsNotNullFilter filter = new ColumnIsNotNullFilter(descriptor);
 
     ColumnStatistics stats =
@@ -308,7 +310,7 @@ public class ColumnIsNotNullFilterTest {
   @Test
   public void testSkipWithNullCountGreaterThanZero() {
     LogicalColumnDescriptor descriptor =
-        new LogicalColumnDescriptor("col", LogicalType.PRIMITIVE, Type.INT32, null);
+        primitive("col", Type.INT32);
     ColumnIsNotNullFilter filter = new ColumnIsNotNullFilter(descriptor);
 
     ColumnStatistics stats =
@@ -320,7 +322,7 @@ public class ColumnIsNotNullFilterTest {
   @Test
   public void testSkipWithNullCountOne() {
     LogicalColumnDescriptor descriptor =
-        new LogicalColumnDescriptor("col", LogicalType.PRIMITIVE, Type.INT32, null);
+        primitive("col", Type.INT32);
     ColumnIsNotNullFilter filter = new ColumnIsNotNullFilter(descriptor);
 
     ColumnStatistics stats =
@@ -331,7 +333,7 @@ public class ColumnIsNotNullFilterTest {
   @Test
   public void testSkipWithNoNullCountTracked() {
     LogicalColumnDescriptor descriptor =
-        new LogicalColumnDescriptor("col", LogicalType.PRIMITIVE, Type.INT32, null);
+        primitive("col", Type.INT32);
     ColumnIsNotNullFilter filter = new ColumnIsNotNullFilter(descriptor);
 
     ColumnStatistics stats =
@@ -342,7 +344,7 @@ public class ColumnIsNotNullFilterTest {
   @Test
   public void testSkipWithInt64NullCountZero() {
     LogicalColumnDescriptor descriptor =
-        new LogicalColumnDescriptor("col", LogicalType.PRIMITIVE, Type.INT64, null);
+        primitive("col", Type.INT64);
     ColumnIsNotNullFilter filter = new ColumnIsNotNullFilter(descriptor);
 
     ColumnStatistics stats =
@@ -353,7 +355,7 @@ public class ColumnIsNotNullFilterTest {
   @Test
   public void testSkipWithInt64NullCountPresent() {
     LogicalColumnDescriptor descriptor =
-        new LogicalColumnDescriptor("col", LogicalType.PRIMITIVE, Type.INT64, null);
+        primitive("col", Type.INT64);
     ColumnIsNotNullFilter filter = new ColumnIsNotNullFilter(descriptor);
 
     ColumnStatistics stats =
@@ -364,7 +366,7 @@ public class ColumnIsNotNullFilterTest {
   @Test
   public void testSkipWithFloatNullCountZero() {
     LogicalColumnDescriptor descriptor =
-        new LogicalColumnDescriptor("col", LogicalType.PRIMITIVE, Type.FLOAT, null);
+        primitive("col", Type.FLOAT);
     ColumnIsNotNullFilter filter = new ColumnIsNotNullFilter(descriptor);
 
     ColumnStatistics stats =
@@ -376,7 +378,7 @@ public class ColumnIsNotNullFilterTest {
   @Test
   public void testSkipWithDoubleNullCountZero() {
     LogicalColumnDescriptor descriptor =
-        new LogicalColumnDescriptor("col", LogicalType.PRIMITIVE, Type.DOUBLE, null);
+        primitive("col", Type.DOUBLE);
     ColumnIsNotNullFilter filter = new ColumnIsNotNullFilter(descriptor);
 
     ColumnStatistics stats =
@@ -388,7 +390,7 @@ public class ColumnIsNotNullFilterTest {
   @Test
   public void testSkipWithBooleanNullCountZero() {
     LogicalColumnDescriptor descriptor =
-        new LogicalColumnDescriptor("col", LogicalType.PRIMITIVE, Type.BOOLEAN, null);
+        primitive("col", Type.BOOLEAN);
     ColumnIsNotNullFilter filter = new ColumnIsNotNullFilter(descriptor);
 
     ColumnStatistics stats =
@@ -400,7 +402,7 @@ public class ColumnIsNotNullFilterTest {
   @Test
   public void testSkipWithByteArrayNullCountZero() {
     LogicalColumnDescriptor descriptor =
-        new LogicalColumnDescriptor("col", LogicalType.PRIMITIVE, Type.BYTE_ARRAY, null);
+        primitive("col", Type.BYTE_ARRAY);
     ColumnIsNotNullFilter filter = new ColumnIsNotNullFilter(descriptor);
 
     ColumnStatistics stats = new ColumnStatistics("a".getBytes(), "z".getBytes(), 0L, null);
@@ -410,7 +412,7 @@ public class ColumnIsNotNullFilterTest {
   @Test
   public void testSkipWithByteArrayNullCountPresent() {
     LogicalColumnDescriptor descriptor =
-        new LogicalColumnDescriptor("col", LogicalType.PRIMITIVE, Type.BYTE_ARRAY, null);
+        primitive("col", Type.BYTE_ARRAY);
     ColumnIsNotNullFilter filter = new ColumnIsNotNullFilter(descriptor);
 
     ColumnStatistics stats = new ColumnStatistics("a".getBytes(), "z".getBytes(), 3L, null);
@@ -420,8 +422,7 @@ public class ColumnIsNotNullFilterTest {
   @Test
   public void testSkipWithListTypeNullCountZero() {
     LogicalColumnDescriptor descriptor =
-        new LogicalColumnDescriptor("col", LogicalType.LIST,
-            (io.github.aloksingh.parquet.model.ListMetadata) null);
+        list(Type.INT32);
     ColumnIsNotNullFilter filter = new ColumnIsNotNullFilter(descriptor);
 
     ColumnStatistics stats = new ColumnStatistics(null, null, 0L, null);
@@ -431,8 +432,7 @@ public class ColumnIsNotNullFilterTest {
   @Test
   public void testSkipWithListTypeNullCountPresent() {
     LogicalColumnDescriptor descriptor =
-        new LogicalColumnDescriptor("col", LogicalType.LIST,
-            (io.github.aloksingh.parquet.model.ListMetadata) null);
+        list(Type.INT32);
     ColumnIsNotNullFilter filter = new ColumnIsNotNullFilter(descriptor);
 
     ColumnStatistics stats = new ColumnStatistics(null, null, 7L, null);
@@ -442,8 +442,7 @@ public class ColumnIsNotNullFilterTest {
   @Test
   public void testSkipWithMapTypeNullCountZero() {
     LogicalColumnDescriptor descriptor =
-        new LogicalColumnDescriptor("col", LogicalType.MAP,
-            (io.github.aloksingh.parquet.model.MapMetadata) null);
+        map(Type.INT32);
     ColumnIsNotNullFilter filter = new ColumnIsNotNullFilter(descriptor);
 
     ColumnStatistics stats = new ColumnStatistics(null, null, 0L, null);
@@ -453,11 +452,11 @@ public class ColumnIsNotNullFilterTest {
   @Test
   public void testSkipWithMapTypeNullCountPresent() {
     LogicalColumnDescriptor descriptor =
-        new LogicalColumnDescriptor("col", LogicalType.MAP,
-            (io.github.aloksingh.parquet.model.MapMetadata) null);
+        map(Type.INT32);
     ColumnIsNotNullFilter filter = new ColumnIsNotNullFilter(descriptor);
 
     ColumnStatistics stats = new ColumnStatistics(null, null, 100L, null);
     assertFalse(filter.skip(stats, null));
   }
 }
+

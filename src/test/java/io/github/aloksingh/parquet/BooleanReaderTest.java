@@ -7,7 +7,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.aloksingh.parquet.model.ColumnDescriptor;
 import io.github.aloksingh.parquet.model.ColumnValues;
-import io.github.aloksingh.parquet.model.ParquetException;
 import io.github.aloksingh.parquet.model.SchemaDescriptor;
 import io.github.aloksingh.parquet.model.Type;
 import java.io.IOException;
@@ -15,11 +14,18 @@ import java.util.List;
 import org.junit.jupiter.api.Test;
 
 /**
- * Specific tests for boolean data type support
+ * Specific tests for boolean data type support.
+ *
+ * <p>File-based assertions compare against exact golden values (pyarrow exports).
+ * Unexpected decode failures fail the test.
  */
 class BooleanReaderTest {
 
   private static final String TEST_DATA_DIR = "src/test/data/";
+
+  /** alltypes_plain.parquet bool_col: alternating true/false over 8 rows. */
+  private static final List<Boolean> ALLTYPES_PLAIN_BOOL_COL =
+      List.of(true, false, true, false, true, false, true, false);
 
   @Test
   void testBitPackedBooleanReading() {
@@ -27,7 +33,6 @@ class BooleanReaderTest {
     java.nio.ByteBuffer buffer = java.nio.ByteBuffer.wrap(new byte[] {
         (byte) 0b10101010  // Alternating true/false for 8 values
     });
-
     boolean[] result = BitPackedReader.readBooleans(buffer, 8);
 
     assertEquals(8, result.length);
@@ -47,7 +52,6 @@ class BooleanReaderTest {
     java.nio.ByteBuffer buffer = java.nio.ByteBuffer.wrap(new byte[] {
         (byte) 0b00001111  // First 4 bits true, next 4 false
     });
-
     boolean[] result = BitPackedReader.readBooleans(buffer, 5);
 
     assertEquals(5, result.length);
@@ -71,87 +75,53 @@ class BooleanReaderTest {
   @Test
   void testReadBooleanFromParquetFile() throws IOException {
     String filePath = TEST_DATA_DIR + "alltypes_plain.parquet";
-
     try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
       ParquetFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
       SchemaDescriptor schema = reader.getSchema();
 
       // Find the boolean column
+      boolean found = false;
       for (int i = 0; i < schema.getNumColumns(); i++) {
         ColumnDescriptor col = schema.getColumn(i);
-
         if (col.physicalType() == Type.BOOLEAN) {
-          System.out.println("Testing BOOLEAN column: " + col.getPathString());
+          found = true;
+          ColumnValues values = rowGroup.readColumn(i);
+          List<Boolean> boolValues = values.decodeAsBoolean();
 
-          try {
-            ColumnValues values = rowGroup.readColumn(i);
-            List<Boolean> boolValues = values.decodeAsBoolean();
-
-            assertNotNull(boolValues);
-            assertTrue(boolValues.size() > 0);
-
-            System.out.println("Successfully read " + boolValues.size() + " boolean values");
-            System.out.println("Values: " + boolValues);
-
-            // The bool_col in alltypes_plain.parquet typically has a pattern
-            // Verify we got actual boolean values (not all the same)
-            boolean hasTrue = boolValues.contains(true);
-            boolean hasFalse = boolValues.contains(false);
-
-            // Should have at least one of each (unless it's a special test file)
-            assertTrue(hasTrue || hasFalse, "Should have at least some boolean values");
-
-          } catch (ParquetException e) {
-            // If it's using an encoding we don't support yet, that's okay
-            if (e.getMessage().contains("Unsupported encoding")) {
-              System.out.println("Skipping: " + e.getMessage());
-            } else {
-              throw e;
-            }
-          }
-
-          return;  // Found and tested the boolean column
+          assertNotNull(boolValues);
+          assertEquals(ALLTYPES_PLAIN_BOOL_COL, boolValues,
+              col.getPathString() + " must match the golden values exactly");
+          break;
         }
       }
+      assertTrue(found, "alltypes_plain.parquet must contain a BOOLEAN column");
     }
   }
 
   @Test
   void testBooleanWithDifferentFiles() throws IOException {
-    String[] testFiles = {
-        "alltypes_plain.parquet",
-        "alltypes_plain.snappy.parquet"
-    };
+    // Exact golden values per file; read or decode failures fail the test.
+    assertEquals(ALLTYPES_PLAIN_BOOL_COL,
+        readBooleanColumn("alltypes_plain.parquet"), "alltypes_plain bool_col");
+    assertEquals(List.of(true, false),
+        readBooleanColumn("alltypes_plain.snappy.parquet"), "alltypes_plain.snappy bool_col");
+  }
 
-    for (String fileName : testFiles) {
-      String filePath = TEST_DATA_DIR + fileName;
-      System.out.println("\nTesting file: " + fileName);
-
-      try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
-        ParquetFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
-        SchemaDescriptor schema = reader.getSchema();
-
-        for (int i = 0; i < schema.getNumColumns(); i++) {
-          ColumnDescriptor col = schema.getColumn(i);
-
-          if (col.physicalType() == Type.BOOLEAN) {
-            try {
-              ColumnValues values = rowGroup.readColumn(i);
-              List<Boolean> boolValues = values.decodeAsBoolean();
-
-              System.out.println("  Column " + col.getPathString() +
-                  ": read " + boolValues.size() + " values");
-              assertNotNull(boolValues);
-
-            } catch (Exception e) {
-              System.out.println("  Column " + col.getPathString() +
-                  ": skipped (" + e.getMessage() + ")");
-            }
-          }
+  private List<Boolean> readBooleanColumn(String fileName) throws IOException {
+    String filePath = TEST_DATA_DIR + fileName;
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
+      ParquetFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
+      SchemaDescriptor schema = reader.getSchema();
+      for (int i = 0; i < schema.getNumColumns(); i++) {
+        ColumnDescriptor col = schema.getColumn(i);
+        if (col.physicalType() == Type.BOOLEAN) {
+          ColumnValues values = rowGroup.readColumn(i);
+          List<Boolean> boolValues = values.decodeAsBoolean();
+          assertNotNull(boolValues, fileName + ": " + col.getPathString());
+          return boolValues;
         }
-      } catch (Exception e) {
-        System.out.println("  File failed: " + e.getMessage());
       }
     }
+    throw new AssertionError("No BOOLEAN column found in " + fileName);
   }
 }

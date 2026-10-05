@@ -1,5 +1,6 @@
 package io.github.aloksingh.parquet;
 
+import io.github.aloksingh.parquet.model.ParquetException;
 import io.github.aloksingh.parquet.model.RowColumnGroup;
 import io.github.aloksingh.parquet.util.filter.ColumnFilter;
 import io.github.aloksingh.parquet.util.filter.FilterJoinType;
@@ -13,7 +14,13 @@ import java.util.NoSuchElementException;
  *
  * <p>This iterator wraps a {@link ParquetRowIterator} and filters rows based on one or more
  * {@link ColumnFilter} predicates. Only rows that match ALL specified filters are returned.
- * The filtering is applied lazily during iteration for memory efficiency.
+ * The filtering is applied lazily during iteration for memory efficiency. Construction binds
+ * metadata only; the first hasNext()/next() performs lookahead. Predicate failures surface as
+ * {@link io.github.aloksingh.parquet.model.ParquetException} naming the predicate expression
+ * and row position (original failure kept as cause); read failures propagate as-is. Failures
+ * are cached and rethrown on subsequent iteration attempts rather than becoming EOF, and only
+ * a false delegate.hasNext() counts as exhaustion. The filter also drives the delegate's
+ * conservative row-group pruning.
  *
  * <p>Filters are evaluated against logical columns (user-facing columns) and their values.
  * Multiple filters can be combined using {@link io.github.aloksingh.parquet.util.filter.ColumnFilterSet}
@@ -45,6 +52,8 @@ public class FilteringParquetRowIterator implements RowColumnGroupIterator, Auto
   private final RowColumnGroupFilter filter;
   private RowColumnGroup nextMatchingRow;
   private boolean hasSearchedForNext;
+  private Throwable iterationFailure;
+  private long rowsScanned;
 
   /**
    * Create a filtering iterator with a single column filter.
@@ -57,8 +66,15 @@ public class FilteringParquetRowIterator implements RowColumnGroupIterator, Auto
   }
 
   public FilteringParquetRowIterator(ParquetRowIterator delegate, RowColumnGroupFilter filter) {
+    if (delegate == null) throw new IllegalArgumentException("Delegate must not be null");
     this.delegate = delegate;
     this.filter = filter;
+    // Binding consults metadata only; do not advance or evaluate any row in this constructor.
+    if (filter != null) {
+      filter.requiredColumns(delegate.getSchema());
+      // Share the delegate's row-group loading path so pruning applies here too.
+      delegate.attachPruningFilter(filter);
+    }
     this.nextMatchingRow = null;
     this.hasSearchedForNext = false;
   }
@@ -79,30 +95,37 @@ public class FilteringParquetRowIterator implements RowColumnGroupIterator, Auto
    * This method advances the underlying iterator until a matching row is found.
    */
   private void findNextMatchingRow() {
-    if (hasSearchedForNext) {
-      return;
-    }
+    if (iterationFailure instanceof RuntimeException failure) throw failure;
+    if (iterationFailure instanceof Error failure) throw failure;
+    if (hasSearchedForNext) return;
 
     nextMatchingRow = null;
-    hasSearchedForNext = true;
-
-    // Iterate through rows until we find one that matches
     try {
       while (delegate.hasNext()) {
+        RowColumnGroup row = delegate.next();
+        boolean matched;
         try {
-          RowColumnGroup row = delegate.next();
-          if (matchesFilters(row)) {
-            nextMatchingRow = row;
-            break;
-          }
-        } catch (NoSuchElementException e) {
-          // Delegate iterator exhausted unexpectedly, stop searching
+          matched = matchesFilters(row);
+        } catch (RuntimeException predicateFailure) {
+          // Predicate failures carry the expression and row position; the original stays
+          // the cause. Delegate read failures below propagate unwrapped and unmasked.
+          throw new ParquetException("Failed to evaluate filter " + filter.expression()
+              + " at row " + rowsScanned + " in " + delegate.getSourceDescription()
+              + (predicateFailure.getMessage() == null ? ""
+                  : ": " + predicateFailure.getMessage()), predicateFailure);
+        }
+        rowsScanned++;
+        if (matched) {
+          nextMatchingRow = row;
           break;
         }
       }
-    } catch (Exception e) {
-      // Unexpected error during iteration
-      nextMatchingRow = null;
+      hasSearchedForNext = true;
+    } catch (RuntimeException | Error failure) {
+      // Cache and rethrow, including predicate/delegate NoSuchElementException. Only a false
+      // delegate.hasNext() is exhaustion. A failed lookahead must never resume at a later row.
+      iterationFailure = failure;
+      throw failure;
     }
   }
 

@@ -13,26 +13,39 @@ import io.github.aloksingh.parquet.model.ParquetException;
  * to decompress data compressed with ZSTD.
  * </p>
  */
-public class ZstdDecompressor implements Decompressor {
+public class ZstdDecompressor extends BoundedDecompressor {
 
   /**
    * Constructs a new ZSTD decompressor.
    */
   public ZstdDecompressor() {
   }
+
+  /** Constructs a decompressor with explicit page byte limits.
+   * @param options the input and output allocation limits
+   */
+  public ZstdDecompressor(io.github.aloksingh.parquet.PageReadOptions options) {
+    super(options);
+  }
   @Override
-  public ByteBuffer decompress(ByteBuffer compressed, int uncompressedSize) throws IOException {
+  protected ByteBuffer decompressBounded(ByteBuffer compressed, int uncompressedSize) throws IOException {
     byte[] compressedBytes = new byte[compressed.remaining()];
     compressed.get(compressedBytes);
 
     byte[] uncompressed = new byte[uncompressedSize];
-    long actualSize = Zstd.decompressByteArray(uncompressed, 0, uncompressedSize,
-        compressedBytes, 0, compressedBytes.length);
+    long actualSize;
+    try {
+      actualSize = Zstd.decompressByteArray(uncompressed, 0, uncompressedSize,
+          compressedBytes, 0, compressedBytes.length);
+    } catch (com.github.luben.zstd.ZstdException error) {
+      throw new IOException("ZSTD decompression failed: " + error.getMessage(), error);
+    }
 
+    if (Zstd.isError(actualSize)) {
+      throw new IOException("ZSTD decompression failed: " + Zstd.getErrorName(actualSize));
+    }
     if (actualSize != uncompressedSize) {
-      throw new ParquetException(String.format(
-          "Decompressed size mismatch: expected %d, got %d",
-          uncompressedSize, actualSize));
+      throw new IOException("ZSTD size mismatch: expected " + uncompressedSize + ", got " + actualSize);
     }
 
     return ByteBuffer.wrap(uncompressed);

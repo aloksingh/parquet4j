@@ -3,6 +3,7 @@ package io.github.aloksingh.parquet;
 import java.io.IOException;
 import io.github.aloksingh.parquet.codec.GzipCompressor;
 import io.github.aloksingh.parquet.codec.Lz4Compressor;
+import io.github.aloksingh.parquet.codec.Lz4RawCompressor;
 import io.github.aloksingh.parquet.codec.SnappyCompressor;
 import io.github.aloksingh.parquet.codec.UncompressedCompressor;
 import io.github.aloksingh.parquet.codec.ZstdCompressor;
@@ -42,6 +43,7 @@ public interface Compressor {
       case SNAPPY -> new SnappyCompressor();
       case GZIP -> new GzipCompressor();
       case LZ4 -> new Lz4Compressor();
+      case LZ4_RAW -> new Lz4RawCompressor();
       case ZSTD -> new ZstdCompressor();
       default -> throw new ParquetException("Unsupported compression codec: " + codec);
     };

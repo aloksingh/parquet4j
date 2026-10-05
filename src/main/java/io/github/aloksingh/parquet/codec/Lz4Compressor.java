@@ -1,70 +1,43 @@
 package io.github.aloksingh.parquet.codec;
 
-import java.io.ByteArrayOutputStream;
-import java.io.IOException;
-import net.jpountz.lz4.LZ4Compressor;
-import net.jpountz.lz4.LZ4Factory;
 import io.github.aloksingh.parquet.Compressor;
+import java.io.ByteArrayOutputStream;
+import java.io.DataOutputStream;
+import java.io.IOException;
+import net.jpountz.lz4.LZ4Factory;
 
 /**
- * LZ4 compressor implementation using the Hadoop LZ4 block format.
+ * The deprecated Parquet LZ4 codec, using Apache Hadoop's block stream framing.
+ * Each outer block has a big-endian uncompressed byte count, followed by one or
+ * more big-endian compressed chunk lengths and their raw LZ4 blocks. New files
+ * should prefer {@code CompressionCodec.LZ4_RAW} for interoperable unframed LZ4.
  *
- * <p>This compressor uses the LZ4 compression algorithm with the Hadoop-specific
- * format that includes a 4-byte little-endian length prefix before each compressed block.
- * This format is compatible with Parquet files that use LZ4 compression.
- *
- * <p>The implementation uses the fastest available LZ4 compressor instance from
- * the LZ4Factory for optimal performance.
- *
- * @see Compressor
+ * @see <a href="https://github.com/apache/hadoop/blob/rel/release-3.4.1/hadoop-common-project/hadoop-common/src/main/java/org/apache/hadoop/io/compress/BlockCompressorStream.java">Hadoop BlockCompressorStream</a>
  */
 public class Lz4Compressor implements Compressor {
+  private static final int CHUNK_SIZE = 64 * 1024;
+  private static final net.jpountz.lz4.LZ4Compressor COMPRESSOR = LZ4Factory.fastestInstance().fastCompressor();
 
-  /**
-   * Constructs a new LZ4 compressor.
-   */
+  /** Constructs a legacy Hadoop-framed LZ4 compressor. */
   public Lz4Compressor() {
   }
 
-  /** Factory instance for creating LZ4 compressors */
-  private static final LZ4Factory factory = LZ4Factory.fastestInstance();
-
-  /** Fast LZ4 compressor instance for compression operations */
-  private static final LZ4Compressor compressor = factory.fastCompressor();
-
-  /**
-   * Compresses the input data using LZ4 compression with Hadoop block format.
-   *
-   * <p>The output format consists of:
-   * <ul>
-   *   <li>4-byte little-endian integer: length of compressed data</li>
-   *   <li>Compressed data bytes</li>
-   * </ul>
-   *
-   * @param uncompressed the uncompressed input data to compress
-   * @return byte array containing the 4-byte length prefix followed by compressed data
-   * @throws IOException if an I/O error occurs during compression
-   */
   @Override
   public byte[] compress(byte[] uncompressed) throws IOException {
-    // Compress the data
-    int maxCompressedLength = compressor.maxCompressedLength(uncompressed.length);
-    byte[] compressed = new byte[maxCompressedLength];
-    int compressedLength = compressor.compress(uncompressed, 0, uncompressed.length,
-        compressed, 0, maxCompressedLength);
-
-    // Write in Hadoop LZ4 format: 4-byte length prefix + compressed data
-    ByteArrayOutputStream output = new ByteArrayOutputStream(4 + compressedLength);
-
-    // Write compressed block size (little-endian)
-    output.write(compressedLength & 0xFF);
-    output.write((compressedLength >> 8) & 0xFF);
-    output.write((compressedLength >> 16) & 0xFF);
-    output.write((compressedLength >> 24) & 0xFF);
-
-    // Write compressed data
-    output.write(compressed, 0, compressedLength);
-
-    return output.toByteArray();
+    ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+    DataOutputStream output = new DataOutputStream(bytes);
+    output.writeInt(uncompressed.length);
+    if (uncompressed.length != 0) {
+      byte[] compressed = new byte[COMPRESSOR.maxCompressedLength(CHUNK_SIZE)];
+      for (int offset = 0; offset < uncompressed.length;) {
+        int length = Math.min(CHUNK_SIZE, uncompressed.length - offset);
+        int compressedLength = COMPRESSOR.compress(uncompressed, offset, length,
+            compressed, 0, compressed.length);
+        output.writeInt(compressedLength);
+        output.write(compressed, 0, compressedLength);
+        offset += length;
+      }
+    }
+    return bytes.toByteArray();
   }
 }

@@ -40,4 +40,34 @@ public interface ChunkReader {
    * @throws IllegalArgumentException if position is negative or length is invalid
    */
   ByteBuffer readBytes(long position, int length) throws IOException;
+
+  /**
+   * Fills the destination's remaining range with an exact positional read.
+   * Short reads are retried, and EOF (including a zero-progress read) is an error.
+   * The destination's position advances; its limit is unchanged.
+   *
+   * @param position starting byte offset
+   * @param destination buffer range to fill
+   * @throws IOException if reading fails or the source ends before the range is filled
+   * @throws IllegalArgumentException if the range is negative or overflows
+   */
+  default void readInto(long position, ByteBuffer destination) throws IOException {
+    if (position < 0 || position > Long.MAX_VALUE - destination.remaining()) {
+      throw new IllegalArgumentException("Invalid byte range at " + position);
+    }
+    long offset = position;
+    while (destination.hasRemaining()) {
+      int requested = destination.remaining();
+      ByteBuffer bytes = readBytes(offset, requested).duplicate();
+      int count = bytes.remaining();
+      if (count == 0) {
+        throw new java.io.EOFException("Unexpected EOF at " + offset + "; needed " + requested + " more bytes");
+      }
+      if (count > requested) {
+        throw new IOException("ChunkReader returned more bytes than requested");
+      }
+      destination.put(bytes);
+      offset += count;
+    }
+  }
 }

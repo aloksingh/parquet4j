@@ -11,6 +11,7 @@ import io.github.aloksingh.parquet.model.ParquetMetadata;
 import io.github.aloksingh.parquet.model.RowColumnGroup;
 import io.github.aloksingh.parquet.model.SchemaDescriptor;
 import io.github.aloksingh.parquet.model.SimpleRowColumnGroup;
+import io.github.aloksingh.parquet.model.PrimitiveLogicalType;
 import io.github.aloksingh.parquet.model.Type;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -41,7 +42,8 @@ class ParquetCompressionTest {
             "data",
             LogicalType.PRIMITIVE,
             Type.BYTE_ARRAY,
-            new ColumnDescriptor(Type.BYTE_ARRAY, new String[] {"data"}, 0, 0, 0)
+            new ColumnDescriptor(Type.BYTE_ARRAY, new String[] {"data"}, 0, 0, 0,
+                PrimitiveLogicalType.string())
         )
     );
     SchemaDescriptor schema = SchemaDescriptor.fromLogicalColumns(
@@ -125,7 +127,8 @@ class ParquetCompressionTest {
             "name",
             LogicalType.PRIMITIVE,
             Type.BYTE_ARRAY,
-            new ColumnDescriptor(Type.BYTE_ARRAY, new String[] {"name"}, 1, 0, 0)
+            new ColumnDescriptor(Type.BYTE_ARRAY, new String[] {"name"}, 1, 0, 0,
+                PrimitiveLogicalType.string())
         ),
         new LogicalColumnDescriptor(
             "value",

@@ -18,7 +18,10 @@ import java.util.List;
 import org.junit.jupiter.api.Test;
 
 /**
- * Tests for Parquet reader implementation
+ * Tests for Parquet reader implementation.
+ *
+ * <p>Value assertions compare against exact golden values (pyarrow exports of the
+ * corpus files). Unexpected read/decode failures fail the test.
  */
 class ParquetReaderTest {
 
@@ -27,44 +30,34 @@ class ParquetReaderTest {
   @Test
   void testReadMetadata() throws IOException {
     String filePath = TEST_DATA_DIR + "alltypes_plain.parquet";
-
     try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
       ParquetMetadata metadata = reader.getMetadata();
-
       assertNotNull(metadata);
-      assertTrue(metadata.getNumRowGroups() > 0);
-      assertTrue(metadata.fileMetadata().numRows() > 0);
-
-      System.out.println("\n=== Testing: " + filePath + " ===");
-      reader.printMetadata();
+      assertEquals(1, metadata.getNumRowGroups());
+      assertEquals(8, metadata.fileMetadata().numRows());
+      assertEquals(11, metadata.fileMetadata().schema().getNumColumns());
     }
   }
 
   @Test
   void testReadAllTypesPlain() throws IOException {
     String filePath = TEST_DATA_DIR + "alltypes_plain.parquet";
-
     try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
       assertEquals(1, reader.getNumRowGroups());
 
       ParquetFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
-      assertTrue(rowGroup.getNumColumns() > 0);
-      assertTrue(rowGroup.getNumRows() > 0);
+      assertEquals(11, rowGroup.getNumColumns());
+      assertEquals(8, rowGroup.getNumRows());
 
-      // Test reading a column
+      // Every column must yield at least one page
       SchemaDescriptor schema = reader.getSchema();
       for (int i = 0; i < schema.getNumColumns(); i++) {
-        ColumnDescriptor col = schema.getColumn(i);
-        System.out.println("Reading column: " + col.getPathString() +
-            " (type: " + col.physicalType() + ")");
-
         PageReader pageReader = rowGroup.getColumnPageReader(i);
         List<Page> pages = pageReader.readAllPages();
 
         assertNotNull(pages);
-        assertTrue(pages.size() > 0);
-
-        System.out.println("  Pages read: " + pages.size());
+        assertTrue(pages.size() > 0,
+            "Column " + schema.getColumn(i).getPathString() + " must have pages");
       }
     }
   }
@@ -72,31 +65,25 @@ class ParquetReaderTest {
   @Test
   void testReadInt32Values() throws IOException {
     String filePath = TEST_DATA_DIR + "alltypes_plain.parquet";
-
     try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
       ParquetFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
       SchemaDescriptor schema = reader.getSchema();
 
-      // Find an INT32 column
+      // Exact golden values for every INT32 column
       for (int i = 0; i < schema.getNumColumns(); i++) {
         ColumnDescriptor col = schema.getColumn(i);
-
         if (col.physicalType() == Type.INT32) {
-          System.out.println("\nReading INT32 column: " + col.getPathString());
+          ColumnValues values = rowGroup.readColumn(i);
+          List<Integer> int32Values = values.decodeAsInt32();
 
-          try {
-            ColumnValues values = rowGroup.readColumn(i);
-            List<Integer> int32Values = values.decodeAsInt32();
-
-            assertNotNull(int32Values);
-            System.out.println("  Values read: " + int32Values.size());
-            System.out.println("  First few values: " +
-                int32Values.subList(0, Math.min(5, int32Values.size())));
-          } catch (Exception e) {
-            System.out.println("  Skipped (encoding not yet fully supported): " + e.getMessage());
-          }
-
-          break;  // Test only one column
+          assertNotNull(int32Values);
+          List<Integer> expected = switch (col.getPathString()) {
+            case "id" -> List.of(4, 5, 6, 7, 2, 3, 0, 1);
+            case "tinyint_col", "smallint_col", "int_col" -> List.of(0, 1, 0, 1, 0, 1, 0, 1);
+            default -> throw new AssertionError(
+                "Unexpected INT32 column " + col.getPathString());
+          };
+          assertEquals(expected, int32Values, col.getPathString() + " values");
         }
       }
     }
@@ -105,27 +92,26 @@ class ParquetReaderTest {
   @Test
   void testReadStringValues() throws IOException {
     String filePath = TEST_DATA_DIR + "alltypes_plain.parquet";
-
     try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
       ParquetFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
       SchemaDescriptor schema = reader.getSchema();
 
-      // Find a BYTE_ARRAY column (typically strings)
+      // Exact golden values for every BYTE_ARRAY column
       for (int i = 0; i < schema.getNumColumns(); i++) {
         ColumnDescriptor col = schema.getColumn(i);
-
         if (col.physicalType() == Type.BYTE_ARRAY) {
-          System.out.println("\nReading BYTE_ARRAY column: " + col.getPathString());
-
           ColumnValues values = rowGroup.readColumn(i);
           List<String> stringValues = values.decodeAsString();
 
           assertNotNull(stringValues);
-          System.out.println("  Values read: " + stringValues.size());
-          System.out.println("  First few values: " +
-              stringValues.subList(0, Math.min(5, stringValues.size())));
-
-          break;  // Test only one column
+          List<String> expected = switch (col.getPathString()) {
+            case "date_string_col" -> List.of("03/01/09", "03/01/09", "04/01/09",
+                "04/01/09", "02/01/09", "02/01/09", "01/01/09", "01/01/09");
+            case "string_col" -> List.of("0", "1", "0", "1", "0", "1", "0", "1");
+            default -> throw new AssertionError(
+                "Unexpected BYTE_ARRAY column " + col.getPathString());
+          };
+          assertEquals(expected, stringValues, col.getPathString() + " values");
         }
       }
     }
@@ -134,34 +120,21 @@ class ParquetReaderTest {
   @Test
   void testReadBooleanValues() throws IOException {
     String filePath = TEST_DATA_DIR + "alltypes_plain.parquet";
-
     try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
       ParquetFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
       SchemaDescriptor schema = reader.getSchema();
 
-      // Find a BOOLEAN column
+      // Find the BOOLEAN column and assert its exact golden values
       for (int i = 0; i < schema.getNumColumns(); i++) {
         ColumnDescriptor col = schema.getColumn(i);
-
         if (col.physicalType() == Type.BOOLEAN) {
-          System.out.println("\nReading BOOLEAN column: " + col.getPathString());
+          ColumnValues values = rowGroup.readColumn(i);
+          List<Boolean> boolValues = values.decodeAsBoolean();
 
-          try {
-            ColumnValues values = rowGroup.readColumn(i);
-            List<Boolean> boolValues = values.decodeAsBoolean();
-
-            assertNotNull(boolValues);
-            System.out.println("  Values read: " + boolValues.size());
-            System.out.println("  First few values: " +
-                boolValues.subList(0, Math.min(5, boolValues.size())));
-
-            // Verify we got some values
-            assertTrue(boolValues.size() > 0);
-          } catch (Exception e) {
-            System.out.println("  Skipped (encoding not yet fully supported): " + e.getMessage());
-          }
-
-          break;  // Test only one column
+          assertNotNull(boolValues);
+          assertEquals(List.of(true, false, true, false, true, false, true, false),
+              boolValues, col.getPathString() + " values");
+          break;
         }
       }
     }
@@ -170,27 +143,21 @@ class ParquetReaderTest {
   @Test
   void testReadFloatValues() throws IOException {
     String filePath = TEST_DATA_DIR + "alltypes_plain.parquet";
-
     try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
       ParquetFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
       SchemaDescriptor schema = reader.getSchema();
 
-      // Find a FLOAT column
+      // Find the FLOAT column and assert its exact golden values
       for (int i = 0; i < schema.getNumColumns(); i++) {
         ColumnDescriptor col = schema.getColumn(i);
-
         if (col.physicalType() == Type.FLOAT) {
-          System.out.println("\nReading FLOAT column: " + col.getPathString());
-
           ColumnValues values = rowGroup.readColumn(i);
           List<Float> floatValues = values.decodeAsFloat();
 
           assertNotNull(floatValues);
-          System.out.println("  Values read: " + floatValues.size());
-          System.out.println("  First few values: " +
-              floatValues.subList(0, Math.min(5, floatValues.size())));
-
-          break;  // Test only one column
+          assertEquals(List.of(0.0f, 1.1f, 0.0f, 1.1f, 0.0f, 1.1f, 0.0f, 1.1f),
+              floatValues, col.getPathString() + " values");
+          break;
         }
       }
     }
@@ -199,46 +166,39 @@ class ParquetReaderTest {
   @Test
   void testReadSnappyCompressed() throws IOException {
     String filePath = TEST_DATA_DIR + "alltypes_plain.snappy.parquet";
-
     try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
-      System.out.println("\n=== Testing Snappy compressed file ===");
-      reader.printMetadata();
+      ParquetMetadata metadata = reader.getMetadata();
+      assertEquals(1, metadata.getNumRowGroups());
+      assertEquals(2, metadata.fileMetadata().numRows());
 
-      // Verify we can read data
       ParquetFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
-      assertTrue(rowGroup.getNumRows() > 0);
+      assertEquals(2, rowGroup.getNumRows());
 
-      // Read first column
-      PageReader pageReader = rowGroup.getColumnPageReader(0);
-      List<Page> pages = pageReader.readAllPages();
-      assertNotNull(pages);
-      assertTrue(pages.size() > 0);
+      // Read first column and verify its exact golden values (id)
+      ColumnValues values = rowGroup.readColumn(0);
+      assertEquals(List.of(6, 7), values.decodeAsInt32(), "id values");
     }
   }
 
   @Test
   void testReadMultipleFiles() throws IOException {
-    String[] testFiles = {
-        "alltypes_plain.parquet",
-        "binary.parquet",
-        "nulls.snappy.parquet"
+    // Exact golden row/column counts per file; read failures fail the test.
+    Object[][] expected = {
+        {"alltypes_plain.parquet", 8, 11},
+        {"binary.parquet", 12, 1},
+        {"nulls.snappy.parquet", 8, 1},
     };
-
-    for (String fileName : testFiles) {
+    for (Object[] spec : expected) {
+      String fileName = (String) spec[0];
       String filePath = TEST_DATA_DIR + fileName;
-      System.out.println("\n=== Testing file: " + fileName + " ===");
-
       try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
         ParquetMetadata metadata = reader.getMetadata();
         assertNotNull(metadata);
-        assertTrue(metadata.getNumRowGroups() > 0);
-
-        System.out.printf("  Rows: %d, Row Groups: %d, Columns: %d%n",
-            metadata.fileMetadata().numRows(),
-            metadata.getNumRowGroups(),
-            metadata.fileMetadata().schema().getNumColumns());
-      } catch (Exception e) {
-        System.err.println("  Failed to read: " + e.getMessage());
+        assertEquals((int) spec[1], metadata.fileMetadata().numRows(),
+            fileName + " row count");
+        assertEquals((int) spec[2], metadata.fileMetadata().schema().getNumColumns(),
+            fileName + " column count");
+        assertTrue(metadata.getNumRowGroups() > 0, fileName + " row groups");
       }
     }
   }

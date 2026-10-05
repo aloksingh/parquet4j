@@ -1,109 +1,121 @@
 package io.github.aloksingh.parquet;
 
+import java.io.EOFException;
 import java.io.IOException;
-import java.io.RandomAccessFile;
 import java.nio.ByteBuffer;
+import java.nio.channels.ClosedChannelException;
+import java.nio.channels.FileChannel;
 import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 
 /**
- * ChunkReader implementation for reading from local files.
+ * Thread-safe local-file reads using {@link FileChannel} positional I/O. Concurrent
+ * readers do not share or move a file cursor. The file length is captured on open.
  *
- * <p>This class provides thread-safe random access to files using
- * {@link RandomAccessFile}. It is designed for reading Parquet files
- * from the local filesystem.
- *
- * <p>Example usage:
- * <pre>{@code
- * try (FileChunkReader reader = new FileChunkReader("data.parquet")) {
- *   ByteBuffer chunk = reader.readBytes(0, 1024);
- * }
- * }</pre>
- *
- * @see ChunkReader
+ * <p>{@link #readBytes(long, int)} reads completely up to the captured EOF, clamping
+ * a request that extends beyond it. A file truncated after opening fails explicitly.
  */
 public class FileChunkReader implements ChunkReader, AutoCloseable {
-  private final RandomAccessFile file;
+  private final Path path;
+  private final FileChannel channel;
   private final long length;
 
   /**
-   * Creates a new FileChunkReader for the specified path.
-   *
-   * @param path the path to the file to read
-   * @throws IOException if the file cannot be opened or read
+   * Opens a file for reading.
+   * @param path the path to read
+   * @throws IOException if opening or determining the length fails
    */
   public FileChunkReader(Path path) throws IOException {
-    this.file = new RandomAccessFile(path.toFile(), "r");
-    this.length = file.length();
+    FileChannel opened = FileChannel.open(path, StandardOpenOption.READ);
+    try {
+      this.length = opened.size();
+      this.channel = opened;
+      this.path = path;
+    } catch (IOException | RuntimeException e) {
+      try {
+        opened.close();
+      } catch (IOException closeFailure) {
+        e.addSuppressed(closeFailure);
+      }
+      throw e;
+    }
   }
 
   /**
-   * Creates a new FileChunkReader for the specified path string.
-   *
-   * @param path the path string to the file to read
-   * @throws IOException if the file cannot be opened or read
+   * Opens a file for reading.
+   * @param path the path string to read
+   * @throws IOException if opening or determining the length fails
    */
   public FileChunkReader(String path) throws IOException {
     this(Path.of(path));
   }
 
-  /**
-   * Returns the total length of the file in bytes.
-   *
-   * @return the file length in bytes
-   */
+  /** The path this reader was opened from; used for error context. */
+  public Path getPath() {
+    return path;
+  }
+
   @Override
-  public long length() {
+  public long length() throws IOException {
+    ensureOpen();
     return length;
   }
 
   /**
-   * Reads a chunk of bytes from the file at the specified position.
-   *
-   * <p>This method is thread-safe. If the requested length exceeds the
-   * available bytes from the position to the end of file, it will read
-   * only the available bytes.
-   *
-   * @param position the byte position to start reading from (0-based)
-   * @param length the number of bytes to read
-   * @return a ByteBuffer containing the read bytes
-   * @throws IOException if position is negative, beyond file length,
-   *                     or if an I/O error occurs during reading
+   * Reads the requested range completely, clamping only at EOF.
+   * @param position starting byte offset (an offset equal to EOF is allowed)
+   * @param length requested byte count
+   * @return a buffer positioned at zero with its limit equal to bytes read
+   * @throws IllegalArgumentException if the range is negative or overflows
+   * @throws IOException if closed, positioned beyond EOF, or truncated while reading
    */
   @Override
   public ByteBuffer readBytes(long position, int length) throws IOException {
-    if (position < 0) {
-      throw new IOException(String.format(
-          "Invalid position: %d", position));
+    ensureOpen();
+    if (position < 0 || length < 0 || position > Long.MAX_VALUE - length) {
+      throw new IllegalArgumentException("Invalid byte range: position=" + position + ", length=" + length);
     }
-
-    if (position >= this.length) {
-      throw new IOException(String.format(
-          "Position %d is beyond file length %d", position, this.length));
+    if (position > this.length) {
+      throw new IOException("Position " + position + " is beyond file length " + this.length);
     }
-
-    // Clamp length to available bytes (for reading headers from small files)
-    int availableBytes = (int) Math.min(length, this.length - position);
-    byte[] buffer = new byte[availableBytes];
-
-    synchronized (file) {
-      file.seek(position);
-      int bytesRead = file.read(buffer);
-      if (bytesRead != availableBytes) {
-        throw new IOException(String.format(
-            "Expected to read %d bytes, but only read %d bytes",
-            availableBytes, bytesRead));
-      }
-    }
-    return ByteBuffer.wrap(buffer);
+    int availableBytes = (int) Math.min((long) length, this.length - position);
+    ByteBuffer buffer = ByteBuffer.allocate(availableBytes);
+    readInto(position, buffer);
+    return buffer.flip();
   }
 
-  /**
-   * Closes the underlying file handle.
-   *
-   * @throws IOException if an I/O error occurs
-   */
+  /** Fills the destination by complete positional reads without an intermediate buffer. */
+  @Override
+  public void readInto(long position, ByteBuffer destination) throws IOException {
+    ensureOpen();
+    if (position < 0 || position > Long.MAX_VALUE - destination.remaining()) {
+      throw new IllegalArgumentException("Invalid byte range at " + position);
+    }
+    if (position > length) {
+      throw new IOException("Position " + position + " is beyond file length " + length);
+    }
+    long offset = position;
+    while (destination.hasRemaining()) {
+      int read = channel.read(destination, offset);
+      if (read < 0) {
+        throw new EOFException("Unexpected EOF at " + offset + "; needed " + destination.remaining() + " more bytes");
+      }
+      if (read == 0) {
+        throw new IOException("File read made no progress at " + offset);
+      }
+      offset += read;
+    }
+  }
+
+  private void ensureOpen() throws ClosedChannelException {
+    if (!channel.isOpen()) {
+      throw new ClosedChannelException();
+    }
+  }
+
+  /** @throws IOException if closing the channel fails */
   @Override
   public void close() throws IOException {
-    file.close();
+    channel.close();
   }
 }

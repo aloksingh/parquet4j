@@ -1,445 +1,219 @@
 package io.github.aloksingh.parquet;
 
+import io.github.aloksingh.parquet.model.ParquetException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
+import java.util.Objects;
 
 /**
- * Decoder for DELTA_BINARY_PACKED encoding.
- * <p>
- * Format (from Apache Parquet spec):
- * - Header:
- * - block_size (varint) - number of values in each block (multiple of 128)
- * - num_mini_blocks (varint) - number of mini-blocks per block
- * - total_value_count (varint) - total values in the page
- * - first_value (zigzag varint) - the first value
- * - For each block:
- * - min_delta (zigzag varint) - minimum delta in this block
- * - For each mini-block:
- * - bit_width (1 byte) - bits needed for deltas in this mini-block
- * - bit-packed deltas - packed values representing (value[i] - value[i-1] - min_delta)
+ * Bounded DELTA_BINARY_PACKED decoding. Headers, used miniblock widths and full
+ * padded payloads are checked before allocating output. Miniblock tables and
+ * padding are read in place, never allocated according to an untrusted block size.
  */
 public class DeltaBinaryPackedDecoder {
   private final ByteBuffer buffer;
   private final boolean is64Bit;
+  private final int maxValues;
   private final int startPosition;
-
-  // Header fields
-  private int blockSize;
-  private int numMiniBlocks;
-  private int totalValueCount;
-  private long firstValue;
-
-  // Per-block state
-  private long minDelta;
-  private int valuesPerMiniBlock;
-  private byte[] miniBlockBitWidths;
-
-  // Decoding state
-  private long lastValue;
-  private boolean firstValueConsumed;
-  private int blockEndOffset;
+  private final int blockSize;
+  private final int numMiniBlocks;
+  private final int totalValueCount;
+  private final int valuesPerMiniBlock;
+  private final long firstValue;
 
   /**
-   * Constructs a new DELTA_BINARY_PACKED decoder for the given buffer.
-   *
-   * @param buffer the ByteBuffer containing encoded DELTA_BINARY_PACKED data
-   * @param is64Bit true if decoding 64-bit integers, false for 32-bit integers
+   * Constructs a decoder with the safe default value-count bound (16 Mi values).
+   * @param buffer encoded stream; its position advances as values are decoded
+   * @param is64Bit true for INT64, false for INT32
    */
   public DeltaBinaryPackedDecoder(ByteBuffer buffer, boolean is64Bit) {
-    this.buffer = buffer;
+    this(buffer, is64Bit, PageReadOptions.DEFAULT.maxValuesPerPage());
+  }
+
+  /**
+   * Constructs a decoder bounded by the caller's page/non-null value count.
+   * The bound does not restrict the legal block shape: a 128-value block can hold
+   * a two-value page, but no output/padding arrays are allocated for that block.
+   * @param buffer encoded stream
+   * @param is64Bit true for INT64, false for INT32
+   * @param maxValues maximum permitted wire and requested value count (may be zero)
+   * @throws IllegalArgumentException if the bound is negative
+   * @throws ParquetException for malformed/truncated data or counts exceeding the bound
+   */
+  public DeltaBinaryPackedDecoder(ByteBuffer buffer, boolean is64Bit, int maxValues) {
+    if (maxValues < 0) throw new IllegalArgumentException("Negative DELTA value count bound");
+    this.buffer = Objects.requireNonNull(buffer, "buffer");
     this.buffer.order(ByteOrder.LITTLE_ENDIAN);
     this.is64Bit = is64Bit;
-    this.firstValueConsumed = false;
+    this.maxValues = maxValues;
     this.startPosition = buffer.position();
-    // Initialize header immediately to ensure it's only read once
-    initializeHeader();
-  }
-
-  /**
-   * Get the number of bytes consumed from the buffer since construction.
-   * <p>
-   * This method returns the total number of bytes read from the buffer during decoding.
-   * If all values have been consumed and a block end offset is available, it returns
-   * the maximum of the current position and block end offset to account for any trailing
-   * padding or unread miniblocks.
-   *
-   * @return the number of bytes consumed from the buffer
-   */
-  public int getBytesConsumed() {
-    int currentOffset = buffer.position() - startPosition;
-    // If all values have been consumed and we have a block end offset,
-    // return the maximum of current position and block end offset
-    // to account for any trailing padding or unread miniblocks
-    if (blockEndOffset > 0) {
-      return Math.max(currentOffset, blockEndOffset - startPosition);
+    this.blockSize = readUnsignedVarInt(buffer, "block size");
+    this.numMiniBlocks = readUnsignedVarInt(buffer, "miniblock count");
+    this.totalValueCount = readUnsignedVarInt(buffer, "value count");
+    if (blockSize == 0 || blockSize % 128 != 0 || numMiniBlocks == 0
+        || blockSize % numMiniBlocks != 0 || (blockSize / numMiniBlocks) % 32 != 0) {
+      throw new ParquetException("Invalid DELTA block/miniblock shape");
     }
-    return currentOffset;
+    if (totalValueCount > maxValues) {
+      throw new ParquetException("DELTA value count " + totalValueCount + " exceeds limit " + maxValues);
+    }
+    this.valuesPerMiniBlock = blockSize / numMiniBlocks;
+    this.firstValue = readZigzagVarLong(buffer);
+    validateSignedWidth(firstValue);
+    // Validate without advancing the caller or allocating tables/output arrays.
+    validatePayload(buffer.duplicate());
   }
 
-  /**
-   * Get the total number of values in this DELTA_BINARY_PACKED block.
-   * <p>
-   * This value is read from the header during initialization and represents
-   * the total count of values encoded in this DELTA_BINARY_PACKED stream.
-   *
-   * @return the total number of encoded values
-   */
+  /** @return the bytes actually consumed from the caller buffer since construction */
+  public int getBytesConsumed() {
+    return buffer.position() - startPosition;
+  }
+
+  /** @return the bounded wire count read from the header */
   public int getTotalValueCount() {
     return totalValueCount;
   }
 
   /**
-   * Decode all values as 32-bit integers.
-   * <p>
-   * This method decodes up to {@code expectedValues} from the DELTA_BINARY_PACKED stream.
-   * It processes all encoded blocks and mini-blocks to ensure all bytes are consumed from
-   * the buffer, even if fewer values are requested than are encoded.
-   * <p>
-   * The decoder maintains internal state and processes:
-   * <ul>
-   *   <li>The first value (stored directly in the header)</li>
-   *   <li>All subsequent blocks containing mini-blocks of bit-packed delta values</li>
-   * </ul>
-   *
-   * @param expectedValues the number of values to decode and return
-   * @return an array of decoded 32-bit integer values
+   * Decodes a requested prefix. Positive prefix requests consume the full encoded
+   * stream so consecutive DELTA streams remain correctly aligned.
+   * @param expectedValues requested count, no greater than the bounded wire count
+   * @return decoded INT32 values
+   * @throws ParquetException if the stream supplies fewer values than requested
    */
   public int[] decodeInt32(int expectedValues) {
-    // Guard against zero expectedValues to avoid division by zero in header initialization
-    if (expectedValues == 0) {
-      return new int[0];
-    }
-
+    validateRequested(expectedValues);
     int[] result = new int[expectedValues];
-    int index = 0;
-
-    // Consume first value
-    if (index < expectedValues && index < totalValueCount) {
-      result[index++] = (int) firstValue;
-      lastValue = firstValue;
-      firstValueConsumed = true;
-    }
-
-    // Track how many values have been processed from the encoded blocks
-    int valuesProcessed = 1; // We've processed the first value
-
-    // Process blocks until we have consumed ALL encoded values
-    // IMPORTANT: We must process all blocks to consume all bytes, not just until we have expectedValues!
-    while (valuesProcessed < totalValueCount) {
-      // Read block header (min delta + bit widths)
-      readBlockHeader(valuesProcessed);
-
-      // Process each mini-block in this block
-      // IMPORTANT: We must process ALL mini-blocks to consume all bytes from the buffer
-      for (int mb = 0; mb < numMiniBlocks; mb++) {
-        int bitWidth = miniBlockBitWidths[mb] & 0xFF;
-
-        // Calculate how many values are encoded in this mini-block
-        int valuesRemainingOverall = totalValueCount - valuesProcessed;
-        if (valuesRemainingOverall <= 0) {
-          // No more values to process, exit the miniblock loop
-          break;
-        }
-        int valuesInThisMiniBlock = Math.min(valuesPerMiniBlock, valuesRemainingOverall);
-
-        // Calculate how many values we actually want to use
-        int valuesToUse = Math.min(valuesInThisMiniBlock, expectedValues - index);
-
-        if (bitWidth == 0) {
-          // All deltas are min_delta - no bytes to consume from buffer
-          for (int i = 0; i < valuesToUse; i++) {
-            lastValue += minDelta;
-            result[index++] = (int) lastValue;
-          }
-          valuesProcessed += valuesInThisMiniBlock;
-        } else {
-          // Mini-blocks are atomic: we MUST read the FULL miniblock (valuesPerMiniBlock values)
-          // even if we only need valuesInThisMiniBlock values, matching parquet-java behavior
-          // This is because the file format stores full miniblocks with padding
-          long[] deltas = readBitPackedInt64Values(bitWidth, valuesPerMiniBlock);
-          // But only use the values we actually need
-          for (int i = 0; i < valuesToUse && i < valuesInThisMiniBlock; i++) {
-            lastValue += minDelta + deltas[i];
-            result[index++] = (int) lastValue;
-          }
-          valuesProcessed += valuesInThisMiniBlock;
-        }
-      }
-    }
-
-    // DO NOT advance buffer to blockEndOffset
-    // The decoder should leave the buffer exactly where it stopped reading
-    // This is important for DELTA_BYTE_ARRAY which has TWO consecutive DELTA_BINARY_PACKED streams
-
+    if (expectedValues != 0) decodeValues(expectedValues, result, null);
     return result;
   }
 
   /**
-   * Decode all values as 64-bit integers.
-   * <p>
-   * This method decodes up to {@code expectedValues} from the DELTA_BINARY_PACKED stream.
-   * It processes all encoded blocks and mini-blocks to ensure all bytes are consumed from
-   * the buffer, even if fewer values are requested than are encoded.
-   * <p>
-   * The decoder maintains internal state and processes:
-   * <ul>
-   *   <li>The first value (stored directly in the header)</li>
-   *   <li>All subsequent blocks containing mini-blocks of bit-packed delta values</li>
-   * </ul>
-   *
-   * @param expectedValues the number of values to decode and return
-   * @return an array of decoded 64-bit integer values
+   * @param expectedValues requested count, no greater than the bounded wire count
+   * @return decoded INT64 values, consuming the full stream for positive prefix requests
+   * @throws ParquetException if the stream supplies fewer values than requested
    */
   public long[] decodeInt64(int expectedValues) {
-    // Guard against zero expectedValues to avoid division by zero in header initialization
-    if (expectedValues == 0) {
-      return new long[0];
-    }
-
+    validateRequested(expectedValues);
     long[] result = new long[expectedValues];
-    int index = 0;
-
-    // Consume first value
-    if (index < expectedValues && index < totalValueCount) {
-      result[index++] = firstValue;
-      lastValue = firstValue;
-      firstValueConsumed = true;
-    }
-
-    // Track how many values have been processed from the encoded blocks
-    int valuesProcessed = 1; // We've processed the first value
-
-    // Process blocks until we have consumed ALL encoded values
-    // IMPORTANT: We must process all blocks to consume all bytes, not just until we have expectedValues!
-    while (valuesProcessed < totalValueCount) {
-      // Read block header (min delta + bit widths)
-      readBlockHeader(valuesProcessed);
-
-      // Process each mini-block in this block
-      // IMPORTANT: We must process ALL mini-blocks to consume all bytes from the buffer
-      for (int mb = 0; mb < numMiniBlocks; mb++) {
-        int bitWidth = miniBlockBitWidths[mb] & 0xFF;
-
-        // Calculate how many values are encoded in this mini-block
-        int valuesRemainingOverall = totalValueCount - valuesProcessed;
-        if (valuesRemainingOverall <= 0) {
-          // No more values to process, exit the miniblock loop
-          break;
-        }
-        int valuesInThisMiniBlock = Math.min(valuesPerMiniBlock, valuesRemainingOverall);
-
-        // Calculate how many values we actually want to use
-        int valuesToUse = Math.min(valuesInThisMiniBlock, expectedValues - index);
-
-        if (bitWidth == 0) {
-          // All deltas are min_delta - no bytes to consume from buffer
-          for (int i = 0; i < valuesToUse; i++) {
-            lastValue += minDelta;
-            result[index++] = lastValue;
-          }
-          valuesProcessed += valuesInThisMiniBlock;
-        } else {
-          // Mini-blocks are atomic: we MUST read the FULL miniblock (valuesPerMiniBlock values)
-          // even if we only need valuesInThisMiniBlock values, matching parquet-java behavior
-          // This is because the file format stores full miniblocks with padding
-          long[] deltas = readBitPackedInt64Values(bitWidth, valuesPerMiniBlock);
-          // But only use the values we actually need
-          for (int i = 0; i < valuesToUse && i < valuesInThisMiniBlock; i++) {
-            lastValue += minDelta + deltas[i];
-            result[index++] = lastValue;
-          }
-          valuesProcessed += valuesInThisMiniBlock;
-        }
-      }
-    }
-
-    // DO NOT advance buffer to blockEndOffset
-    // The decoder should leave the buffer exactly where it stopped reading
-    // This is important for DELTA_BYTE_ARRAY which has TWO consecutive DELTA_BINARY_PACKED streams
-
+    if (expectedValues != 0) decodeValues(expectedValues, null, result);
     return result;
   }
 
-  /**
-   * Initialize header by reading block_size, num_mini_blocks, total_value_count, and first_value.
-   * <p>
-   * This method reads the DELTA_BINARY_PACKED header from the buffer, which contains:
-   * <ul>
-   *   <li>block_size: number of values in each block (multiple of 128)</li>
-   *   <li>num_mini_blocks: number of mini-blocks per block</li>
-   *   <li>total_value_count: total values in the stream</li>
-   *   <li>first_value: the first value (zigzag encoded)</li>
-   * </ul>
-   * It also calculates the values per mini-block and allocates storage for mini-block bit widths.
-   */
-  private void initializeHeader() {
-    int posBefore = buffer.position();
-    blockSize = readUnsignedVarInt();
-    numMiniBlocks = readUnsignedVarInt();
-    totalValueCount = readUnsignedVarInt();
-    firstValue = readZigzagVarLong();
-
-    // Calculate values per mini-block
-    valuesPerMiniBlock = blockSize / numMiniBlocks;
-
-    // Allocate array for mini-block bit widths
-    miniBlockBitWidths = new byte[numMiniBlocks];
+  private void validateRequested(int requested) {
+    if (requested < 0) throw new IllegalArgumentException("Negative requested DELTA value count");
+    if (requested > maxValues || requested > totalValueCount) {
+      throw new ParquetException("Requested DELTA value count " + requested
+          + " exceeds wire count " + totalValueCount + " or limit " + maxValues);
+    }
   }
 
-  /**
-   * Read block header: min_delta and bit widths for all mini-blocks.
-   * <p>
-   * This method reads the per-block header containing:
-   * <ul>
-   *   <li>min_delta: the minimum delta value in this block (zigzag encoded)</li>
-   *   <li>bit widths: one byte per mini-block indicating bits needed for deltas</li>
-   * </ul>
-   * It also computes the block end offset to properly handle trailing mini-blocks that
-   * may contain no actual values but still occupy space in the file format.
-   *
-   * @param valuesProcessed the number of values already processed from the stream
-   */
-  private void readBlockHeader(int valuesProcessed) {
-    // Read min delta
-    minDelta = readZigzagVarLong();
-
-    // Read bit widths for all mini-blocks
-    for (int i = 0; i < numMiniBlocks; i++) {
-      miniBlockBitWidths[i] = buffer.get();
-    }
-
-    // Compute the end offset of the current block
-    // This accounts for all miniblocks, even trailing ones with no values
-    int offset = buffer.position();
-    int remaining = totalValueCount - valuesProcessed;
-
-    for (int i = 0; i < numMiniBlocks; i++) {
-      int bitWidth = miniBlockBitWidths[i] & 0xFF;
-      if (remaining == 0) {
-        // Trailing miniblocks with no values - set bit width to 0
-        miniBlockBitWidths[i] = 0;
+  private void validatePayload(ByteBuffer input) {
+    int remaining = Math.max(0, totalValueCount - 1);
+    while (remaining > 0) {
+      validateSignedWidth(readZigzagVarLong(input));
+      int widths = readWidths(input);
+      int inBlock = Math.min(blockSize, remaining);
+      for (int mini = 0; inBlock > 0; mini++) {
+        int width = input.get(widths + mini) & 0xff;
+        int bytes = payloadBytes(input, width);
+        input.position(input.position() + bytes);
+        int count = Math.min(valuesPerMiniBlock, inBlock);
+        inBlock -= count;
+        remaining -= count;
       }
-      // Calculate how many values are actually in this miniblock
-      int valuesInMiniBlock = Math.min(valuesPerMiniBlock, remaining);
-      remaining = Math.max(0, remaining - valuesPerMiniBlock);
-
-      // Mini-blocks are atomic: file format stores FULL miniblocks (valuesPerMiniBlock values)
-      // Bit-packing reads in chunks of 8, so pad to 8-value boundary
-      if (bitWidth > 0 && valuesInMiniBlock > 0) {
-        int valuesWithPadding = ((valuesPerMiniBlock + 7) / 8) * 8;
-        offset += (bitWidth * valuesWithPadding) / 8;
-      }
+      // Unused width bytes may be arbitrary per the pinned Parquet specification;
+      // no corresponding payload exists and their values must not be validated.
     }
-    blockEndOffset = offset;
   }
 
-  /**
-   * Read bit-packed values from the buffer as signed int64.
-   * <p>
-   * This method unpacks bit-packed delta values from the buffer. Bit-packed data is read
-   * in chunks of 8 values, padding to 8-value boundaries as required by the Parquet format.
-   * Each value uses exactly {@code bitWidth} bits in the packed representation.
-   *
-   * @param bitWidth the number of bits used to encode each value
-   * @param numValues the number of values to unpack
-   * @return an array of unpacked long values
-   */
-  private long[] readBitPackedInt64Values(int bitWidth, int numValues) {
-    long[] result = new long[numValues];
-
-    // Bit-packed data is read in chunks of 8 values (BytePacker.unpack8Values)
-    // Pad to 8-value boundaries like parquet-java does
-    int valuesWithPadding = ((numValues + 7) / 8) * 8;
-    int totalBits = valuesWithPadding * bitWidth;
-    int numBytes = totalBits / 8;
-
-    // Read bytes
-    byte[] bytes = new byte[numBytes];
-    buffer.get(bytes);
-
-    // Unpack values
-    int bitOffset = 0;
-    for (int i = 0; i < numValues; i++) {
-      long value = 0;
-      int bitsRemaining = bitWidth;
-
-      while (bitsRemaining > 0) {
-        int byteIndex = bitOffset / 8;
-        int bitIndex = bitOffset % 8;
-
-        if (byteIndex >= bytes.length) {
-          break;
+  private void decodeValues(int requested, int[] intValues, long[] longValues) {
+    long last = firstValue;
+    if (intValues != null) intValues[0] = (int) last; else longValues[0] = last;
+    int written = 1;
+    int remaining = Math.max(0, totalValueCount - 1);
+    while (remaining > 0) {
+      long minDelta = readZigzagVarLong(buffer);
+      validateSignedWidth(minDelta);
+      int widths = readWidths(buffer);
+      int inBlock = Math.min(blockSize, remaining);
+      for (int mini = 0; inBlock > 0; mini++) {
+        int width = buffer.get(widths + mini) & 0xff;
+        int bytes = payloadBytes(buffer, width);
+        int start = buffer.position();
+        buffer.position(start + bytes); // consume the full padded miniblock
+        int count = Math.min(valuesPerMiniBlock, inBlock);
+        int wanted = Math.min(count, requested - written);
+        for (int i = 0; i < wanted; i++) {
+          last += minDelta + unpack(buffer, start, (long) i * width, width);
+          if (intValues != null) intValues[written++] = (int) last;
+          else longValues[written++] = last;
         }
-
-        int currentByte = bytes[byteIndex] & 0xFF;
-        int bitsAvailable = 8 - bitIndex;
-        int bitsToRead = Math.min(bitsRemaining, bitsAvailable);
-
-        int mask = (1 << bitsToRead) - 1;
-        long bits = (currentByte >> bitIndex) & mask;
-
-        value |= bits << (bitWidth - bitsRemaining);
-
-        bitOffset += bitsToRead;
-        bitsRemaining -= bitsToRead;
+        inBlock -= count;
+        remaining -= count;
       }
-
-      result[i] = value;
     }
-
-    return result;
   }
 
-  /**
-   * Read an unsigned variable-length integer using varint encoding.
-   * <p>
-   * Varint encoding uses the high bit of each byte as a continuation flag.
-   * If the high bit is set, more bytes follow. The remaining 7 bits of each
-   * byte contain the actual value, with least significant bits first.
-   *
-   * @return the decoded unsigned integer value
-   */
-  private int readUnsignedVarInt() {
-    int result = 0;
-    int shift = 0;
-    while (true) {
-      byte b = buffer.get();
-      result |= (b & 0x7F) << shift;
+  private int readWidths(ByteBuffer input) {
+    if (numMiniBlocks > input.remaining()) throw new ParquetException("Truncated DELTA miniblock width table");
+    int start = input.position();
+    input.position(start + numMiniBlocks);
+    return start;
+  }
+
+  private int payloadBytes(ByteBuffer input, int width) {
+    int maximum = is64Bit ? 64 : 32;
+    if (width > maximum) throw new ParquetException("DELTA miniblock bit width exceeds " + maximum + ": " + width);
+    long bytes = (long) valuesPerMiniBlock * width / 8;
+    if (bytes > input.remaining()) throw new ParquetException("Truncated DELTA miniblock payload");
+    return (int) bytes;
+  }
+
+  private void validateSignedWidth(long value) {
+    if (!is64Bit && (value < Integer.MIN_VALUE || value > Integer.MAX_VALUE)) {
+      throw new ParquetException("DELTA INT32 first value/minimum delta is out of range");
+    }
+  }
+
+  private static long unpack(ByteBuffer input, int start, long bitOffset, int width) {
+    long value = 0;
+    int written = 0;
+    while (written < width) {
+      int bit = (int) (bitOffset & 7);
+      int count = Math.min(width - written, 8 - bit);
+      int bits = (input.get(start + (int) (bitOffset >>> 3)) & 0xff) >>> bit;
+      value |= (long) (bits & ((1 << count) - 1)) << written;
+      written += count;
+      bitOffset += count;
+    }
+    return value;
+  }
+
+  private static int readUnsignedVarInt(ByteBuffer input, String field) {
+    long value = 0;
+    for (int index = 0; index < 5; index++) {
+      if (!input.hasRemaining()) throw new ParquetException("Truncated DELTA " + field + " varint");
+      int b = input.get() & 0xff;
+      if (index == 4 && (b & 0xf0) != 0) throw new ParquetException("Overflowed DELTA " + field + " varint");
+      value |= (long) (b & 0x7f) << (7 * index);
       if ((b & 0x80) == 0) {
-        break;
+        if (value > Integer.MAX_VALUE) throw new ParquetException("DELTA " + field + " exceeds supported integer range");
+        return (int) value;
       }
-      shift += 7;
     }
-    return result;
+    throw new ParquetException("Overflowed DELTA " + field + " varint");
   }
 
-  /**
-   * Read a zigzag-encoded variable-length long.
-   * <p>
-   * Zigzag encoding maps signed integers to unsigned integers so that numbers with
-   * small absolute values have small encoded values. The encoding is:
-   * <ul>
-   *   <li>0 encodes as 0</li>
-   *   <li>-1 encodes as 1</li>
-   *   <li>1 encodes as 2</li>
-   *   <li>-2 encodes as 3</li>
-   *   <li>etc.</li>
-   * </ul>
-   * The formula to decode is: (n >>> 1) ^ -(n & 1)
-   *
-   * @return the decoded signed long value
-   */
-  private long readZigzagVarLong() {
-    long encoded = 0;
-    int shift = 0;
-    while (true) {
-      byte b = buffer.get();
-      encoded |= (long) (b & 0x7F) << shift;
-      if ((b & 0x80) == 0) {
-        break;
-      }
-      shift += 7;
+  private static long readZigzagVarLong(ByteBuffer input) {
+    long value = 0;
+    for (int index = 0; index < 10; index++) {
+      if (!input.hasRemaining()) throw new ParquetException("Truncated DELTA signed varint");
+      int b = input.get() & 0xff;
+      if (index == 9 && (b & 0xfe) != 0) throw new ParquetException("Overflowed DELTA signed varint");
+      value |= (long) (b & 0x7f) << (7 * index);
+      if ((b & 0x80) == 0) return (value >>> 1) ^ -(value & 1);
     }
-    return (encoded >>> 1) ^ -(encoded & 1);
+    throw new ParquetException("Overflowed DELTA signed varint");
   }
 }

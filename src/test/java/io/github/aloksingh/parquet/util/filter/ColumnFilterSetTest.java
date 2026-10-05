@@ -1,23 +1,25 @@
 package io.github.aloksingh.parquet.util.filter;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static io.github.aloksingh.parquet.util.filter.FilterTestSupport.*;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.aloksingh.parquet.model.LogicalColumnDescriptor;
 import io.github.aloksingh.parquet.model.LogicalType;
 import java.util.Arrays;
 import java.util.List;
+import io.github.aloksingh.parquet.model.Type;
 import org.junit.jupiter.api.Test;
 
 public class ColumnFilterSetTest {
 
-  private static final LogicalColumnDescriptor PRIMITIVE_DESCRIPTOR =
-      new LogicalColumnDescriptor("col", LogicalType.PRIMITIVE, null, null);
 
   // ========== All (AND) Logic Tests ==========
 
   @Test
   public void testAllWithEmptyFilters() {
+    var PRIMITIVE_DESCRIPTOR = primitive("col", Type.INT32);
     ColumnFilterSet filterSet = new ColumnFilterSet(PRIMITIVE_DESCRIPTOR, FilterJoinType.All);
     // With All logic and no filters, should return true
     assertTrue(filterSet.apply("any value"));
@@ -25,6 +27,7 @@ public class ColumnFilterSetTest {
 
   @Test
   public void testAllWithSingleFilterMatching() {
+    var PRIMITIVE_DESCRIPTOR = primitive("col", Type.BYTE_ARRAY);
     ColumnFilter filter = new ColumnEqualFilter(PRIMITIVE_DESCRIPTOR, "test");
     ColumnFilterSet filterSet =
         new ColumnFilterSet(PRIMITIVE_DESCRIPTOR, FilterJoinType.All, filter);
@@ -34,6 +37,7 @@ public class ColumnFilterSetTest {
 
   @Test
   public void testAllWithSingleFilterNotMatching() {
+    var PRIMITIVE_DESCRIPTOR = primitive("col", Type.BYTE_ARRAY);
     ColumnFilter filter = new ColumnEqualFilter(PRIMITIVE_DESCRIPTOR, "test");
     ColumnFilterSet filterSet =
         new ColumnFilterSet(PRIMITIVE_DESCRIPTOR, FilterJoinType.All, filter);
@@ -43,6 +47,7 @@ public class ColumnFilterSetTest {
 
   @Test
   public void testAllWithMultipleFiltersAllMatch() {
+    var PRIMITIVE_DESCRIPTOR = primitive("col", Type.INT32);
     ColumnFilter filter1 = new ColumnGreaterThanFilter(PRIMITIVE_DESCRIPTOR, 10);
     ColumnFilter filter2 = new ColumnLessThanFilter(PRIMITIVE_DESCRIPTOR, 20);
     ColumnFilterSet filterSet =
@@ -54,6 +59,7 @@ public class ColumnFilterSetTest {
 
   @Test
   public void testAllWithMultipleFiltersOneDoesNotMatch() {
+    var PRIMITIVE_DESCRIPTOR = primitive("col", Type.INT32);
     ColumnFilter filter1 = new ColumnGreaterThanFilter(PRIMITIVE_DESCRIPTOR, 10);
     ColumnFilter filter2 = new ColumnLessThanFilter(PRIMITIVE_DESCRIPTOR, 20);
     ColumnFilterSet filterSet =
@@ -65,6 +71,7 @@ public class ColumnFilterSetTest {
 
   @Test
   public void testAllWithMultipleFiltersNoneMatch() {
+    var PRIMITIVE_DESCRIPTOR = primitive("col", Type.BYTE_ARRAY);
     ColumnFilter filter1 = new ColumnEqualFilter(PRIMITIVE_DESCRIPTOR, "foo");
     ColumnFilter filter2 = new ColumnEqualFilter(PRIMITIVE_DESCRIPTOR, "bar");
     ColumnFilterSet filterSet =
@@ -76,6 +83,7 @@ public class ColumnFilterSetTest {
 
   @Test
   public void testAllWithThreeFiltersAllMatch() {
+    var PRIMITIVE_DESCRIPTOR = primitive("col", Type.INT32);
     ColumnFilter filter1 = new ColumnGreaterThanFilter(PRIMITIVE_DESCRIPTOR, 10);
     ColumnFilter filter2 = new ColumnLessThanFilter(PRIMITIVE_DESCRIPTOR, 30);
     ColumnFilter filter3 = new ColumnNotEqualFilter(PRIMITIVE_DESCRIPTOR, 15);
@@ -88,6 +96,7 @@ public class ColumnFilterSetTest {
 
   @Test
   public void testAllWithThreeFiltersOneDoesNotMatch() {
+    var PRIMITIVE_DESCRIPTOR = primitive("col", Type.INT32);
     ColumnFilter filter1 = new ColumnGreaterThanFilter(PRIMITIVE_DESCRIPTOR, 10);
     ColumnFilter filter2 = new ColumnLessThanFilter(PRIMITIVE_DESCRIPTOR, 30);
     ColumnFilter filter3 = new ColumnNotEqualFilter(PRIMITIVE_DESCRIPTOR, 15);
@@ -102,6 +111,7 @@ public class ColumnFilterSetTest {
 
   @Test
   public void testAnyWithEmptyFilters() {
+    var PRIMITIVE_DESCRIPTOR = primitive("col", Type.INT32);
     ColumnFilterSet filterSet = new ColumnFilterSet(PRIMITIVE_DESCRIPTOR, FilterJoinType.Any);
     // With Any logic and no filters, should return false
     assertFalse(filterSet.apply("any value"));
@@ -109,6 +119,7 @@ public class ColumnFilterSetTest {
 
   @Test
   public void testAnyWithSingleFilterMatching() {
+    var PRIMITIVE_DESCRIPTOR = primitive("col", Type.BYTE_ARRAY);
     ColumnFilter filter = new ColumnEqualFilter(PRIMITIVE_DESCRIPTOR, "test");
     ColumnFilterSet filterSet =
         new ColumnFilterSet(PRIMITIVE_DESCRIPTOR, FilterJoinType.Any, filter);
@@ -118,6 +129,7 @@ public class ColumnFilterSetTest {
 
   @Test
   public void testAnyWithSingleFilterNotMatching() {
+    var PRIMITIVE_DESCRIPTOR = primitive("col", Type.BYTE_ARRAY);
     ColumnFilter filter = new ColumnEqualFilter(PRIMITIVE_DESCRIPTOR, "test");
     ColumnFilterSet filterSet =
         new ColumnFilterSet(PRIMITIVE_DESCRIPTOR, FilterJoinType.Any, filter);
@@ -127,6 +139,7 @@ public class ColumnFilterSetTest {
 
   @Test
   public void testAnyWithMultipleFiltersFirstMatches() {
+    var PRIMITIVE_DESCRIPTOR = primitive("col", Type.BYTE_ARRAY);
     ColumnFilter filter1 = new ColumnEqualFilter(PRIMITIVE_DESCRIPTOR, "test");
     ColumnFilter filter2 = new ColumnEqualFilter(PRIMITIVE_DESCRIPTOR, "foo");
     ColumnFilterSet filterSet =
@@ -138,6 +151,7 @@ public class ColumnFilterSetTest {
 
   @Test
   public void testAnyWithMultipleFiltersSecondMatches() {
+    var PRIMITIVE_DESCRIPTOR = primitive("col", Type.BYTE_ARRAY);
     ColumnFilter filter1 = new ColumnEqualFilter(PRIMITIVE_DESCRIPTOR, "test");
     ColumnFilter filter2 = new ColumnEqualFilter(PRIMITIVE_DESCRIPTOR, "foo");
     ColumnFilterSet filterSet =
@@ -149,6 +163,7 @@ public class ColumnFilterSetTest {
 
   @Test
   public void testAnyWithMultipleFiltersNoneMatch() {
+    var PRIMITIVE_DESCRIPTOR = primitive("col", Type.BYTE_ARRAY);
     ColumnFilter filter1 = new ColumnEqualFilter(PRIMITIVE_DESCRIPTOR, "test");
     ColumnFilter filter2 = new ColumnEqualFilter(PRIMITIVE_DESCRIPTOR, "foo");
     ColumnFilterSet filterSet =
@@ -160,6 +175,7 @@ public class ColumnFilterSetTest {
 
   @Test
   public void testAnyWithMultipleFiltersAllMatch() {
+    var PRIMITIVE_DESCRIPTOR = primitive("col", Type.INT32);
     ColumnFilter filter1 = new ColumnGreaterThanFilter(PRIMITIVE_DESCRIPTOR, 10);
     ColumnFilter filter2 = new ColumnLessThanFilter(PRIMITIVE_DESCRIPTOR, 20);
     ColumnFilterSet filterSet =
@@ -171,6 +187,7 @@ public class ColumnFilterSetTest {
 
   @Test
   public void testAnyWithThreeFiltersMiddleMatches() {
+    var PRIMITIVE_DESCRIPTOR = primitive("col", Type.BYTE_ARRAY);
     ColumnFilter filter1 = new ColumnEqualFilter(PRIMITIVE_DESCRIPTOR, "foo");
     ColumnFilter filter2 = new ColumnEqualFilter(PRIMITIVE_DESCRIPTOR, "bar");
     ColumnFilter filter3 = new ColumnEqualFilter(PRIMITIVE_DESCRIPTOR, "baz");
@@ -185,6 +202,7 @@ public class ColumnFilterSetTest {
 
   @Test
   public void testListConstructor() {
+    var PRIMITIVE_DESCRIPTOR = primitive("col", Type.INT32);
     List<ColumnFilter> filters = Arrays.asList(
         new ColumnGreaterThanFilter(PRIMITIVE_DESCRIPTOR, 10),
         new ColumnLessThanFilter(PRIMITIVE_DESCRIPTOR, 20)
@@ -198,6 +216,7 @@ public class ColumnFilterSetTest {
 
   @Test
   public void testVarargsConstructor() {
+    var PRIMITIVE_DESCRIPTOR = primitive("col", Type.BYTE_ARRAY);
     ColumnFilterSet filterSet = new ColumnFilterSet(PRIMITIVE_DESCRIPTOR,
         FilterJoinType.Any,
         new ColumnEqualFilter(PRIMITIVE_DESCRIPTOR, "foo"),
@@ -213,6 +232,7 @@ public class ColumnFilterSetTest {
 
   @Test
   public void testNestedFilterSetAllContainingAll() {
+    var PRIMITIVE_DESCRIPTOR = primitive("col", Type.INT32);
     // (A > 10 AND A < 20) AND (A != 12 AND A != 13)
     ColumnFilterSet inner1 = new ColumnFilterSet(PRIMITIVE_DESCRIPTOR,
         FilterJoinType.All,
@@ -234,6 +254,7 @@ public class ColumnFilterSetTest {
 
   @Test
   public void testNestedFilterSetAnyContainingAny() {
+    var PRIMITIVE_DESCRIPTOR = primitive("col", Type.BYTE_ARRAY);
     // (A == "foo" OR A == "bar") OR (A == "baz" OR A == "qux")
     ColumnFilterSet inner1 = new ColumnFilterSet(PRIMITIVE_DESCRIPTOR,
         FilterJoinType.Any,
@@ -257,6 +278,7 @@ public class ColumnFilterSetTest {
 
   @Test
   public void testNestedFilterSetComplexCombination() {
+    var PRIMITIVE_DESCRIPTOR = primitive("col", Type.INT32);
     // (A > 10 AND A < 20) OR (A > 50 AND A < 60)
     ColumnFilterSet range1 = new ColumnFilterSet(PRIMITIVE_DESCRIPTOR,
         FilterJoinType.All,
@@ -279,6 +301,7 @@ public class ColumnFilterSetTest {
 
   @Test
   public void testNestedFilterSetThreeLevelsDeep() {
+    var PRIMITIVE_DESCRIPTOR = primitive("col", Type.INT32);
     // ((A > 10 AND A < 15) OR (A > 20 AND A < 25)) AND A != 22
     ColumnFilterSet range1 = new ColumnFilterSet(PRIMITIVE_DESCRIPTOR,
         FilterJoinType.All,
@@ -308,6 +331,7 @@ public class ColumnFilterSetTest {
 
   @Test
   public void testWithStrings() {
+    var PRIMITIVE_DESCRIPTOR = primitive("col", Type.BYTE_ARRAY);
     ColumnFilterSet filterSet = new ColumnFilterSet(PRIMITIVE_DESCRIPTOR,
         FilterJoinType.All,
         new ColumnNotEqualFilter(PRIMITIVE_DESCRIPTOR, ""),
@@ -320,6 +344,7 @@ public class ColumnFilterSetTest {
 
   @Test
   public void testWithIntegers() {
+    var PRIMITIVE_DESCRIPTOR = primitive("col", Type.INT32);
     ColumnFilterSet filterSet = new ColumnFilterSet(PRIMITIVE_DESCRIPTOR,
         FilterJoinType.Any,
         new ColumnLessThanFilter(PRIMITIVE_DESCRIPTOR, 0),
@@ -333,6 +358,7 @@ public class ColumnFilterSetTest {
 
   @Test
   public void testWithDoubles() {
+    var PRIMITIVE_DESCRIPTOR = primitive("col", Type.DOUBLE);
     ColumnFilterSet filterSet = new ColumnFilterSet(PRIMITIVE_DESCRIPTOR,
         FilterJoinType.All,
         new ColumnGreaterThanFilter(PRIMITIVE_DESCRIPTOR, 0.0),
@@ -346,6 +372,7 @@ public class ColumnFilterSetTest {
 
   @Test
   public void testWithNullValues() {
+    var PRIMITIVE_DESCRIPTOR = primitive("col", Type.BYTE_ARRAY);
     ColumnFilterSet filterSet = new ColumnFilterSet(PRIMITIVE_DESCRIPTOR,
         FilterJoinType.Any,
         new ColumnEqualFilter(PRIMITIVE_DESCRIPTOR, "test"),
@@ -360,6 +387,7 @@ public class ColumnFilterSetTest {
 
   @Test
   public void testAllWithMixedMatchResults() {
+    var PRIMITIVE_DESCRIPTOR = primitive("col", Type.INT32);
     // Create a scenario where filters are evaluated in sequence
     ColumnFilter filter1 = new ColumnGreaterThanFilter(PRIMITIVE_DESCRIPTOR, 10);
     ColumnFilter filter2 = new ColumnEqualFilter(PRIMITIVE_DESCRIPTOR, 5); // Will fail
@@ -373,6 +401,7 @@ public class ColumnFilterSetTest {
 
   @Test
   public void testAnyShortCircuits() {
+    var PRIMITIVE_DESCRIPTOR = primitive("col", Type.BYTE_ARRAY);
     // Testing that Any returns true as soon as first match is found
     ColumnFilter filter1 = new ColumnEqualFilter(PRIMITIVE_DESCRIPTOR, "test");
     ColumnFilter filter2 = new ColumnEqualFilter(PRIMITIVE_DESCRIPTOR, "foo");
@@ -386,6 +415,7 @@ public class ColumnFilterSetTest {
 
   @Test
   public void testComplexRealWorldScenario() {
+    var PRIMITIVE_DESCRIPTOR = primitive("col", Type.INT32);
     // Simulate a filter like: (status == "active" OR status == "pending") AND (priority > 5)
     // For this test, we'll use a simplified version with integers
     // (value == 1 OR value == 2) AND (value < 3)
@@ -406,3 +436,4 @@ public class ColumnFilterSetTest {
     assertFalse(combinedFilter.apply(0)); // 0 == 1 OR 0 == 2 (false)
   }
 }
+

@@ -2,12 +2,13 @@ package io.github.aloksingh.parquet;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import io.github.aloksingh.parquet.model.ColumnDescriptor;
 import io.github.aloksingh.parquet.model.RowColumnGroup;
 import io.github.aloksingh.parquet.model.SchemaDescriptor;
 import java.io.IOException;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
@@ -19,113 +20,79 @@ public class MapTypeTest {
 
   @Test
   void testReadStringMap() throws IOException {
-    // NOTE: nested_maps.snappy.parquet contains nested maps: Map<String, Map<Int, Bool>>
-    // This is too complex for the current simple map reader implementation
-    // For now, we'll test reading the inner map (columns 1 and 2)
+    // nested_maps.snappy.parquet stores map<string, map<int32, boolean>> plus scalar
+    // columns; columns 0/1/2 are the outer key leaf and the inner map's key/value
+    // leaves (nested repetition level 2).
     String filePath = "src/test/data/nested_maps.snappy.parquet";
 
     try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
       ParquetFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
       SchemaDescriptor schema = reader.getSchema();
+      assertTrue(schema.getNumColumns() >= 3, "Expected nested map leaves in the schema");
 
-      System.out.println("=== Testing nested_maps.snappy.parquet ===");
-      System.out.println("Schema:");
-      for (int i = 0; i < schema.getNumColumns(); i++) {
-        ColumnDescriptor col = schema.getColumn(i);
-        System.out.printf("  Column %d: %s (maxDef=%d, maxRep=%d)%n",
-            i, col.getPathString(), col.maxDefinitionLevel(), col.maxRepetitionLevel());
-      }
-
-      // This file structure is: map<string, map<int32, bool>>
-      // Column 0: outer keys (string)
-      // Column 1: inner keys (int32)
-      // Column 2: inner values (bool)
-
-      // We can read the inner map (columns 1 and 2)
+      // Read the inner map: Map<Int32, Bool>
       NestedStructureReader nestedReader = new NestedStructureReader(rowGroup, schema);
+      List<Map<Integer, Boolean>> maps = nestedReader.readMap(1, 2,
+          obj -> {
+            if (obj instanceof Integer) {
+              return (Integer) obj;
+            } else if (obj instanceof Long) {
+              return ((Long) obj).intValue();
+            }
+            return Integer.parseInt(obj.toString());
+          },
+          obj -> {
+            if (obj == null) {
+              return null;
+            } else if (obj instanceof Boolean) {
+              return (Boolean) obj;
+            }
+            return Boolean.parseBoolean(obj.toString());
+          });
 
-      if (schema.getNumColumns() >= 3) {
-        // Read the inner map: Map<Int32, Bool>
-        List<Map<Integer, Boolean>> maps = nestedReader.readMap(1, 2,
-            obj -> {
-              if (obj instanceof Integer) {
-                return (Integer) obj;
-              } else if (obj instanceof Long) {
-                return ((Long) obj).intValue();
-              }
-              return Integer.parseInt(obj.toString());
-            },
-            obj -> {
-              if (obj == null) {
-                return null;
-              } else if (obj instanceof Boolean) {
-                return (Boolean) obj;
-              }
-              return Boolean.parseBoolean(obj.toString());
-            });
-
-        System.out.println("\nInner maps decoded: " + maps.size());
-        for (int i = 0; i < Math.min(maps.size(), 5); i++) {
-          System.out.println("  Map " + i + ": " + maps.get(i));
-        }
-
-        // Basic validation
-        assertNotNull(maps);
-        assertTrue(maps.size() > 0, "Should have at least one map");
-
-        System.out.println(
-            "\nNote: Nested maps (Map<K, Map<K2, V2>>) are not fully supported yet.");
-        System.out.println("This test only validates reading the inner map structure.");
-      }
+      // Exact inner maps per row (outer keys a..f), verified with PyArrow/arrow-rs:
+      // row 0 {"a": {1: true, 2: false}}, row 1 {"b": {1: true}}, row 2 {"c": null},
+      // row 3 {"d": {}}, row 4 {"e": {1: true}}, row 5 {"f": {3: true, 4: false, 5: true}}.
+      List<Map<Integer, Boolean>> expected = Arrays.asList(
+          Map.of(1, true, 2, false),
+          Map.of(1, true),
+          null,
+          Map.of(),
+          Map.of(1, true),
+          Map.of(3, true, 4, false, 5, true));
+      assertEquals(expected, maps);
     }
   }
 
   @Test
   void testReadMapWithNullValues() throws IOException {
+    // map_no_value.parquet (parquet-testing): a REQUIRED map whose entries all carry
+    // null values. my_map holds INT32 keys 1..9 in three rows of three entries and an
+    // optional INT32 value that is null for every entry.
     String filePath = "src/test/data/map_no_value.parquet";
 
     try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
       ParquetFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
       SchemaDescriptor schema = reader.getSchema();
+      assertTrue(schema.getNumColumns() >= 2, "Expected map key and value leaves");
 
-      System.out.println("\n=== Testing map_no_value.parquet ===");
-      System.out.println("Schema:");
-      for (int i = 0; i < schema.getNumColumns(); i++) {
-        ColumnDescriptor col = schema.getColumn(i);
-        System.out.printf("  Column %d: %s (maxDef=%d, maxRep=%d)%n",
-            i, col.getPathString(), col.maxDefinitionLevel(), col.maxRepetitionLevel());
-      }
+      NestedStructureReader nestedReader = new NestedStructureReader(rowGroup, schema);
+      List<Map<Integer, Integer>> maps = nestedReader.readMap(0, 1,
+          obj -> (Integer) obj,
+          obj -> (Integer) obj);
 
-      // This file has maps where values can be null
-      if (schema.getNumColumns() >= 2) {
-        NestedStructureReader nestedReader = new NestedStructureReader(rowGroup, schema);
-
-        List<Map<String, String>> maps = nestedReader.readMap(0, 1,
-            obj -> {
-              if (obj instanceof byte[]) {
-                return new String((byte[]) obj, java.nio.charset.StandardCharsets.UTF_8);
-              } else if (obj instanceof Integer) {
-                return obj.toString();
-              }
-              return obj != null ? obj.toString() : null;
-            },
-            obj -> {
-              if (obj == null) {
-                return null;
-              } else if (obj instanceof byte[]) {
-                return new String((byte[]) obj, java.nio.charset.StandardCharsets.UTF_8);
-              } else if (obj instanceof Integer) {
-                return obj.toString();
-              }
-              return obj.toString();
-            });
-
-        System.out.println("\nMaps decoded: " + maps.size());
-        for (int i = 0; i < maps.size(); i++) {
-          System.out.println("  Map " + i + ": " + maps.get(i));
+      // Exact maps per row: every entry keeps its key and a null value entry.
+      assertEquals(3, maps.size(), "Should have 3 rows");
+      int[][] keysPerRow = {{1, 2, 3}, {4, 5, 6}, {7, 8, 9}};
+      for (int row = 0; row < keysPerRow.length; row++) {
+        Map<Integer, Integer> map = maps.get(row);
+        assertNotNull(map, "Row " + row + " should hold a map");
+        assertEquals(keysPerRow[row].length, map.size(), "Row " + row + " entry count");
+        for (int key : keysPerRow[row]) {
+          assertTrue(map.containsKey(key), "Row " + row + " must keep key " + key);
+          assertNull(map.get(key),
+              "Row " + row + " value for key " + key + " must stay a null entry");
         }
-
-        assertNotNull(maps);
       }
     }
   }

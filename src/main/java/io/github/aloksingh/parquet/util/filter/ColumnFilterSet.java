@@ -4,7 +4,8 @@ import io.github.aloksingh.parquet.model.ColumnStatistics;
 import io.github.aloksingh.parquet.model.LogicalColumnDescriptor;
 import java.util.List;
 
-public class ColumnFilterSet implements ColumnFilter{
+/** Immutable AND/OR predicates over one logical column. */
+public class ColumnFilterSet implements ColumnFilter {
   private final LogicalColumnDescriptor columnDescriptor;
   private final FilterJoinType type;
   private final List<ColumnFilter> filters;
@@ -16,65 +17,69 @@ public class ColumnFilterSet implements ColumnFilter{
 
   public ColumnFilterSet(LogicalColumnDescriptor columnDescriptor, FilterJoinType type,
                          List<ColumnFilter> filters) {
+    if (type == null || filters == null || columnDescriptor == null && !filters.isEmpty()) {
+      throw new IllegalArgumentException("A join type and a target column for non-empty filters are required");
+    }
     this.columnDescriptor = columnDescriptor;
     this.type = type;
-    this.filters = filters;
+    this.filters = List.copyOf(filters);
+    for (ColumnFilter filter : this.filters) {
+      var target = filter.targetColumn();
+      if (target != null && (!target.getName().equals(columnDescriptor.getName())
+          || target.getLogicalType() != columnDescriptor.getLogicalType()
+          || target.isPrimitive() && target.getPhysicalType() != columnDescriptor.getPhysicalType())) {
+        throw new IllegalArgumentException("Filter for '" + target.getName()
+            + "' cannot be combined on column '" + columnDescriptor.getName() + "'");
+      }
+    }
   }
+
+  public List<ColumnFilter> getFilters() {
+    return filters;
+  }
+
+  @Override
+  public String expression() {
+    String joiner = type == FilterJoinType.All ? " AND " : " OR ";
+    StringBuilder text = new StringBuilder(columnDescriptor.getName()).append(": (");
+    for (int i = 0; i < filters.size(); i++) {
+      if (i > 0) text.append(joiner);
+      text.append(filters.get(i).expression());
+    }
+    return text.append(')').toString();
+  }
+
+  public FilterJoinType getJoinType() {
+    return type;
+  }
+
   @Override
   public boolean apply(Object colValue) {
     for (ColumnFilter filter : filters) {
       boolean matched = filter.apply(colValue);
-      switch (type){
-        case All -> {
-          if (!matched){
-            return false;
-          }
-        }
-        case Any -> {
-          if (matched){
-            return true;
-          }
-        }
-      }
+      if (type == FilterJoinType.All && !matched) return false;
+      if (type == FilterJoinType.Any && matched) return true;
     }
-    switch (type){
-      case All -> {
-        return true;//all must match. if there are 0 filters, then this is still true
-      }
-      case Any -> {
-        return false; //At least one must match. if there are 0 filters, then this will be false.
-      }
-    }
-    return false;
+    return type == FilterJoinType.All;
+  }
+
+  @Override
+  public LogicalColumnDescriptor targetColumn() {
+    return columnDescriptor;
   }
 
   @Override
   public boolean isApplicable(LogicalColumnDescriptor columnDescriptor) {
-    return this.columnDescriptor.equals(columnDescriptor);
+    return this.columnDescriptor != null && this.columnDescriptor.equals(columnDescriptor);
   }
 
   @Override
-  public boolean skip(ColumnStatistics statistics, Object colValue) {
-    // Combine skip logic from all filters based on join type
+  public boolean canDrop(ColumnStatistics statistics, long numValues) {
     for (ColumnFilter filter : filters) {
-      boolean shouldSkip = filter.skip(statistics, colValue);
-      switch (type) {
-        case All -> {
-          // For All join type, if any filter says don't skip, we don't skip
-          if (!shouldSkip) {
-            return false;
-          }
-        }
-        case Any -> {
-          // For Any join type, if any filter says skip, we skip
-          if (shouldSkip) {
-            return true;
-          }
-        }
-      }
+      boolean impossible = filter.canDrop(statistics, numValues);
+      if (type == FilterJoinType.All && impossible) return true;
+      if (type == FilterJoinType.Any && !impossible) return false;
     }
-    // If All: all filters say skip, so skip
-    // If Any: no filter says skip, so don't skip
-    return type == FilterJoinType.All;
+    return type == FilterJoinType.Any;
   }
 }

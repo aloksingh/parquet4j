@@ -3,11 +3,20 @@ package io.github.aloksingh.parquet;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.aloksingh.parquet.model.LogicalColumnDescriptor;
+import io.github.aloksingh.parquet.model.ColumnDescriptor;
+import io.github.aloksingh.parquet.model.CompressionCodec;
+import io.github.aloksingh.parquet.model.LogicalType;
+import io.github.aloksingh.parquet.model.ParquetException;
+import io.github.aloksingh.parquet.model.SchemaDescriptor;
+import io.github.aloksingh.parquet.model.SimpleRowColumnGroup;
+import io.github.aloksingh.parquet.model.PrimitiveLogicalType;
+import io.github.aloksingh.parquet.model.Type;
 import io.github.aloksingh.parquet.model.RowColumnGroup;
 import io.github.aloksingh.parquet.util.filter.ColumnEqualFilter;
 import io.github.aloksingh.parquet.util.filter.ColumnFilter;
@@ -24,6 +33,12 @@ import io.github.aloksingh.parquet.util.filter.ColumnPrefixFilter;
 import io.github.aloksingh.parquet.util.filter.FilterJoinType;
 import io.github.aloksingh.parquet.util.filter.FilterOperator;
 import java.io.IOException;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import org.junit.jupiter.api.io.TempDir;
 import java.util.NoSuchElementException;
 import org.junit.jupiter.api.Test;
 
@@ -32,6 +47,8 @@ import org.junit.jupiter.api.Test;
  * Tests filtering logic, iteration behavior, and various filter combinations.
  */
 class FilteringParquetRowIteratorTest {
+
+  @TempDir Path tempDir;
 
   private static final String TEST_DATA_DIR = "src/test/data/";
 
@@ -44,15 +61,17 @@ class FilteringParquetRowIteratorTest {
 
     try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
       // Use a simple equality filter for value 4 (from the first row we know id=4)
-      LogicalColumnDescriptor logicalColumn = reader.getSchema().getLogicalColumn(1);
+      LogicalColumnDescriptor logicalColumn = reader.getSchema().getLogicalColumn("id");
       ColumnFilter filter = new ColumnEqualFilter(logicalColumn, 4);
       ParquetRowIterator baseIterator = new ParquetRowIterator(reader, false);
       FilteringParquetRowIterator iterator =
           new FilteringParquetRowIterator(baseIterator, filter);
 
       int count = 0;
-      while (iterator.hasNext() && count < 10) {
+      var ids = new ArrayList<Integer>();
+      while (iterator.hasNext()) {
         RowColumnGroup row = iterator.next();
+          ids.add((Integer) row.getColumnValue("id"));
         assertNotNull(row);
 
         // Verify at least one column has the value 4
@@ -66,8 +85,8 @@ class FilteringParquetRowIteratorTest {
         assertTrue(hasValueFour, "Row should contain value 4 in at least one column");
         count++;
       }
-
-      System.out.println("Found " + count + " rows with value 4");
+        assertEquals(List.of(4), ids);
+        assertEquals(ids.size(), count);
     }
   }
 
@@ -80,7 +99,7 @@ class FilteringParquetRowIteratorTest {
 
     try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
       // Filter for id > 5 (or any reasonable threshold)
-      LogicalColumnDescriptor logicalColumn = reader.getSchema().getLogicalColumn(1);
+      LogicalColumnDescriptor logicalColumn = reader.getSchema().getLogicalColumn("id");
       ColumnFilter filter = new ColumnGreaterThanFilter(logicalColumn, 5);
       ParquetRowIterator baseIterator = new ParquetRowIterator(reader, false);
 
@@ -88,8 +107,10 @@ class FilteringParquetRowIteratorTest {
                new FilteringParquetRowIterator(baseIterator, filter)) {
 
         int count = 0;
+      var ids = new ArrayList<Integer>();
         while (iterator.hasNext()) {
           RowColumnGroup row = iterator.next();
+          ids.add((Integer) row.getColumnValue("id"));
           assertNotNull(row);
 
           // Verify at least one column has value > 5
@@ -109,7 +130,8 @@ class FilteringParquetRowIteratorTest {
         }
 
         // Should have found some rows (unless file has no values > 5)
-        System.out.println("Found " + count + " rows with values > 5");
+        assertEquals(List.of(6, 7), ids);
+        assertEquals(ids.size(), count);
       }
     }
   }
@@ -131,8 +153,10 @@ class FilteringParquetRowIteratorTest {
                new FilteringParquetRowIterator(baseIterator, filter)) {
 
         int count = 0;
+      var ids = new ArrayList<Integer>();
         while (iterator.hasNext()) {
           RowColumnGroup row = iterator.next();
+          ids.add((Integer) row.getColumnValue("id"));
           assertNotNull(row);
 
           // Verify the target column (column 0) has value < 3
@@ -142,7 +166,8 @@ class FilteringParquetRowIteratorTest {
           count++;
         }
         assertEquals(3, count, "Should find 3 rows (values 0, 1, 2)");
-        System.out.println("Found " + count + " rows with values < 3 in column 0");
+        assertEquals(List.of(2, 0, 1), ids);
+        assertEquals(ids.size(), count);
       }
     }
   }
@@ -156,22 +181,25 @@ class FilteringParquetRowIteratorTest {
 
     try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
       // Filter for values != null (simpler test)
-      LogicalColumnDescriptor logicalColumn = reader.getSchema().getLogicalColumn(1);
+      LogicalColumnDescriptor logicalColumn = reader.getSchema().getLogicalColumn("id");
       ColumnFilter filter = new ColumnNotEqualFilter(logicalColumn, Integer.MAX_VALUE);
       ParquetRowIterator baseIterator = new ParquetRowIterator(reader, false);
       FilteringParquetRowIterator iterator =
           new FilteringParquetRowIterator(baseIterator, filter);
 
       int count = 0;
-      while (iterator.hasNext() && count < 10) {
+      var ids = new ArrayList<Integer>();
+      while (iterator.hasNext()) {
         RowColumnGroup row = iterator.next();
+          ids.add((Integer) row.getColumnValue("id"));
         assertNotNull(row);
         count++;
       }
 
       // Should find some rows
-      System.out.println("Found " + count + " rows with values != MAX_VALUE");
-      // This test is informational - we just verify it doesn't crash
+        assertEquals(List.of(4, 5, 6, 7, 2, 3, 0, 1), ids);
+        assertEquals(ids.size(), count);
+      
     }
   }
 
@@ -183,7 +211,7 @@ class FilteringParquetRowIteratorTest {
     String filePath = TEST_DATA_DIR + "alltypes_plain.parquet";
 
     try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
-      LogicalColumnDescriptor logicalColumn = reader.getSchema().getLogicalColumn(1);
+      LogicalColumnDescriptor logicalColumn = reader.getSchema().getLogicalColumn("id");
       // Filter for values > 2 AND < 8
       ColumnFilter[] filters = new ColumnFilter[]{
           new ColumnGreaterThanFilter(logicalColumn, 2),
@@ -196,8 +224,10 @@ class FilteringParquetRowIteratorTest {
                    new ColumnFilterSet(logicalColumn, FilterJoinType.All, filters))) {
 
         int count = 0;
+      var ids = new ArrayList<Integer>();
         while (iterator.hasNext()) {
           RowColumnGroup row = iterator.next();
+          ids.add((Integer) row.getColumnValue("id"));
           assertNotNull(row);
 
           // Each row should have at least one column matching BOTH conditions
@@ -215,8 +245,8 @@ class FilteringParquetRowIteratorTest {
           assertTrue(hasMatchingValue, "Row should have a value in range (2, 8)");
           count++;
         }
-
-        System.out.println("Found " + count + " rows with values > 2 AND < 8");
+        assertEquals(List.of(4, 5, 6, 7, 3), ids);
+        assertEquals(ids.size(), count);
       }
     }
   }
@@ -230,7 +260,7 @@ class FilteringParquetRowIteratorTest {
 
     try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
       // Create a filter set: value >= 3 AND value <= 6
-      LogicalColumnDescriptor logicalColumn = reader.getSchema().getLogicalColumn(1);
+      LogicalColumnDescriptor logicalColumn = reader.getSchema().getLogicalColumn("id");
       ColumnFilterSet filterSet = new ColumnFilterSet(logicalColumn,
           FilterJoinType.All,
           new ColumnGreaterThanOrEqualFilter(logicalColumn, 3),
@@ -242,13 +272,15 @@ class FilteringParquetRowIteratorTest {
                new FilteringParquetRowIterator(baseIterator, filterSet)) {
 
         int count = 0;
+      var ids = new ArrayList<Integer>();
         while (iterator.hasNext()) {
           RowColumnGroup row = iterator.next();
+          ids.add((Integer) row.getColumnValue("id"));
           assertNotNull(row);
           count++;
         }
-
-        System.out.println("Found " + count + " rows with values in range [3, 6]");
+        assertEquals(List.of(4, 5, 6, 3), ids);
+        assertEquals(ids.size(), count);
       }
     }
   }
@@ -262,7 +294,7 @@ class FilteringParquetRowIteratorTest {
 
     try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
       // Create a filter set: value == 0 OR value == 7
-      LogicalColumnDescriptor logicalColumn = reader.getSchema().getLogicalColumn(1);
+      LogicalColumnDescriptor logicalColumn = reader.getSchema().getLogicalColumn("id");
       ColumnFilterSet filterSet = new ColumnFilterSet(logicalColumn,
           FilterJoinType.Any,
           new ColumnEqualFilter(logicalColumn, 0),
@@ -274,8 +306,10 @@ class FilteringParquetRowIteratorTest {
                new FilteringParquetRowIterator(baseIterator, filterSet)) {
 
         int count = 0;
+      var ids = new ArrayList<Integer>();
         while (iterator.hasNext()) {
           RowColumnGroup row = iterator.next();
+          ids.add((Integer) row.getColumnValue("id"));
           assertNotNull(row);
 
           // Verify the row has either 0 or 7 in at least one column
@@ -290,47 +324,66 @@ class FilteringParquetRowIteratorTest {
           assertTrue(hasMatchingValue, "Row should have value 0 or 7");
           count++;
         }
-
-        System.out.println("Found " + count + " rows with value 0 or 7");
+        assertEquals(List.of(7, 0), ids);
+        assertEquals(ids.size(), count);
       }
     }
   }
 
   /**
-   * Test string filtering with prefix filter.
+   * Test string filtering with prefix filter: prefix semantics are defined for
+   * STRING-annotated text. An unannotated BYTE_ARRAY column is raw binary and its row values
+   * are byte[]; a String prefix predicate on it is rejected explicitly instead of being
+   * applied lossily as UTF-8 text.
    */
   @Test
   void testStringPrefixFilter() throws IOException {
     String filePath = TEST_DATA_DIR + "binary.parquet";
+    char prefix = 1;
 
-    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
-      // Filter for strings starting with a common prefix
+    // A STRING-annotated column round-trips as text and supports prefix filtering.
+    var stringColumn = new LogicalColumnDescriptor(
+        "foo", LogicalType.PRIMITIVE, Type.BYTE_ARRAY,
+        new ColumnDescriptor(Type.BYTE_ARRAY, new String[] {"foo"}, 0, 0, 0,
+            io.github.aloksingh.parquet.model.PrimitiveLogicalType.string()));
+    var schema = SchemaDescriptor.fromLogicalColumns("strings", List.of(stringColumn));
+    Path file = tempDir.resolve("prefix_strings.parquet");
+    try (var writer = new ParquetFileWriter(file, schema)) {
+      writer.addRow(new SimpleRowColumnGroup(schema, new Object[] {prefix + "abc"}));
+      writer.addRow(new SimpleRowColumnGroup(schema, new Object[] {prefix + "xyz"}));
+      writer.addRow(new SimpleRowColumnGroup(schema, new Object[] {"other"}));
+    }
+    try (ParquetFileReader reader = new ParquetFileReader(file)) {
       LogicalColumnDescriptor logicalColumn = reader.getSchema().getLogicalColumn(0);
-      ColumnFilter filter = new ColumnPrefixFilter(logicalColumn, "a");
+      ColumnFilter filter = new ColumnPrefixFilter(logicalColumn, String.valueOf(prefix));
       ParquetRowIterator baseIterator = new ParquetRowIterator(reader, false);
 
       try (FilteringParquetRowIterator iterator =
                new FilteringParquetRowIterator(baseIterator, filter)) {
-
-        int count = 0;
+        List<Object> matched = new ArrayList<>();
         while (iterator.hasNext()) {
           RowColumnGroup row = iterator.next();
           assertNotNull(row);
-
-          // Verify at least one string column starts with "a"
-          boolean hasMatchingString = false;
-          for (int i = 0; i < row.getColumnCount(); i++) {
-            Object value = row.getColumnValue(i);
-            if (value instanceof String && ((String) value).startsWith("a")) {
-              hasMatchingString = true;
-              break;
-            }
-          }
-          assertTrue(hasMatchingString, "Row should have a string starting with 'a'");
-          count++;
+          matched.add(row.getColumnValue("foo"));
         }
+        assertEquals(List.of(prefix + "abc", prefix + "xyz"), matched);
+      }
+    }
 
-        System.out.println("Found " + count + " rows with strings starting with 'a'");
+    // The raw binary fixture: the row API yields raw bytes and a String prefix predicate
+    // must be rejected rather than matching lossy text.
+    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
+      LogicalColumnDescriptor logicalColumn = reader.getSchema().getLogicalColumn(0);
+      ColumnFilter filter = new ColumnPrefixFilter(logicalColumn, String.valueOf(prefix));
+      ParquetRowIterator baseIterator = new ParquetRowIterator(reader, false);
+      try (FilteringParquetRowIterator iterator =
+               new FilteringParquetRowIterator(baseIterator, filter)) {
+        ParquetException failure = assertThrows(ParquetException.class, iterator::hasNext,
+            "String prefix predicates must not match raw binary row values");
+        assertInstanceOf(IllegalArgumentException.class, failure.getCause(),
+            "the raw binary rejection stays the cause");
+        assertTrue(failure.getMessage().contains("prefix"),
+            "context must name the predicate expression but was: " + failure.getMessage());
       }
     }
   }
@@ -344,7 +397,7 @@ class FilteringParquetRowIteratorTest {
 
     try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
       // Filter for impossibly large value
-      LogicalColumnDescriptor logicalColumn = reader.getSchema().getLogicalColumn(1);
+      LogicalColumnDescriptor logicalColumn = reader.getSchema().getLogicalColumn("id");
       ColumnFilter filter = new ColumnGreaterThanFilter(logicalColumn, Integer.MAX_VALUE);
       ParquetRowIterator baseIterator = new ParquetRowIterator(reader, false);
 
@@ -379,19 +432,11 @@ class FilteringParquetRowIteratorTest {
           RowColumnGroup row = iterator.next();
           assertNotNull(row);
 
-          // Verify at least one column is null
-          boolean hasNullValue = false;
-          for (int i = 0; i < row.getColumnCount(); i++) {
-            if (row.getColumnValue(i) == null) {
-              hasNullValue = true;
-              break;
-            }
-          }
-          assertTrue(hasNullValue, "Row should have at least one null value");
+          assertEquals(null, row.getColumnValue(0));
           count++;
         }
 
-        System.out.println("Found " + count + " rows with null values");
+        assertEquals(8, count);
       }
     }
   }
@@ -404,15 +449,17 @@ class FilteringParquetRowIteratorTest {
     String filePath = TEST_DATA_DIR + "alltypes_plain.parquet";
 
     try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
-      LogicalColumnDescriptor logicalColumn = reader.getSchema().getLogicalColumn(1);
+      LogicalColumnDescriptor logicalColumn = reader.getSchema().getLogicalColumn("id");
       ColumnFilter filter = new ColumnIsNotNullFilter(logicalColumn);
       ParquetRowIterator baseIterator = new ParquetRowIterator(reader, false);
       FilteringParquetRowIterator iterator =
           new FilteringParquetRowIterator(baseIterator, filter);
 
       int count = 0;
-      while (iterator.hasNext() && count < 10) {
+      var ids = new ArrayList<Integer>();
+      while (iterator.hasNext()) {
         RowColumnGroup row = iterator.next();
+          ids.add((Integer) row.getColumnValue("id"));
         assertNotNull(row);
 
         // Verify at least one column is not null
@@ -426,9 +473,9 @@ class FilteringParquetRowIteratorTest {
         assertTrue(hasNonNullValue, "Row should have at least one non-null value");
         count++;
       }
-
-      System.out.println("Found " + count + " rows with non-null values");
-      // Test is informational - verify it works without crashing
+        assertEquals(List.of(4, 5, 6, 7, 2, 3, 0, 1), ids);
+        assertEquals(ids.size(), count);
+      
     }
   }
 
@@ -440,14 +487,15 @@ class FilteringParquetRowIteratorTest {
     String filePath = TEST_DATA_DIR + "alltypes_plain.parquet";
 
     try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
-      LogicalColumnDescriptor logicalColumn = reader.getSchema().getLogicalColumn(1);
+      LogicalColumnDescriptor logicalColumn = reader.getSchema().getLogicalColumn("id");
       ColumnFilter filter = new ColumnGreaterThanFilter(logicalColumn, 0);
       ParquetRowIterator baseIterator = new ParquetRowIterator(reader, false);
 
       try (FilteringParquetRowIterator iterator =
                new FilteringParquetRowIterator(baseIterator, filter)) {
 
-        if (iterator.hasNext()) {
+        assertTrue(iterator.hasNext());
+        {
           // Call hasNext multiple times
           assertTrue(iterator.hasNext());
           assertTrue(iterator.hasNext());
@@ -455,7 +503,7 @@ class FilteringParquetRowIteratorTest {
 
           // next() should still work correctly
           RowColumnGroup row = iterator.next();
-          assertNotNull(row);
+          assertEquals(4, row.getColumnValue("id"));
         }
       }
     }
@@ -484,7 +532,7 @@ class FilteringParquetRowIteratorTest {
     int filteredRows = 0;
     try (ParquetFileReader reader = new ParquetFileReader(filePath);
          ParquetRowIterator baseIterator = new ParquetRowIterator(reader, false)) {
-      LogicalColumnDescriptor logicalColumn = reader.getSchema().getLogicalColumn(1);
+      LogicalColumnDescriptor logicalColumn = reader.getSchema().getLogicalColumn("id");
       ColumnFilter filter = new ColumnIsNotNullFilter(logicalColumn);
       FilteringParquetRowIterator iterator =
           new FilteringParquetRowIterator(baseIterator, filter);
@@ -495,12 +543,13 @@ class FilteringParquetRowIteratorTest {
       }
     }
 
-    System.out.println("Total rows: " + totalRows + ", Filtered rows: " + filteredRows);
+    assertEquals(8, totalRows);
+    assertEquals(8, filteredRows);
 
     // After iteration, hasNext should return false
     try (ParquetFileReader reader = new ParquetFileReader(filePath);
          ParquetRowIterator baseIterator = new ParquetRowIterator(reader, false)) {
-      LogicalColumnDescriptor logicalColumn = reader.getSchema().getLogicalColumn(1);
+      LogicalColumnDescriptor logicalColumn = reader.getSchema().getLogicalColumn("id");
       ColumnFilter filter = new ColumnIsNotNullFilter(logicalColumn);
       FilteringParquetRowIterator iterator =
           new FilteringParquetRowIterator(baseIterator, filter);
@@ -528,14 +577,16 @@ class FilteringParquetRowIteratorTest {
               new ColumnFilterSet(null, FilterJoinType.All, emptyFilters));
 
       int count = 0;
-      while (iterator.hasNext() && count < 10) {
+      var ids = new ArrayList<Integer>();
+      while (iterator.hasNext()) {
         RowColumnGroup row = iterator.next();
+          ids.add((Integer) row.getColumnValue("id"));
         assertNotNull(row);
         count++;
       }
-
-      System.out.println("Read " + count + " rows with empty filter");
-      // Test is to verify empty filters work without crashing
+        assertEquals(List.of(4, 5, 6, 7, 2, 3, 0, 1), ids);
+        assertEquals(ids.size(), count);
+      
     }
   }
 
@@ -543,32 +594,15 @@ class FilteringParquetRowIteratorTest {
    * Test filtering with map columns (if available).
    */
   @Test
-  void testMapColumnFiltering() throws IOException {
-    String filePath = TEST_DATA_DIR + "nonnullable.impala.parquet";
-
-    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
-      // Create a generic filter
-      LogicalColumnDescriptor logicalColumn = reader.getSchema().getLogicalColumn(1);
-      ColumnFilter filter = new ColumnIsNotNullFilter(logicalColumn);
-      ParquetRowIterator baseIterator = new ParquetRowIterator(reader, false);
-
-      try (FilteringParquetRowIterator iterator =
-               new FilteringParquetRowIterator(baseIterator, filter)) {
-
-        int count = 0;
-        while (iterator.hasNext()) {
-          RowColumnGroup row = iterator.next();
-          assertNotNull(row);
-          count++;
-
-          if (count > 10) break; // Just test a few rows
-        }
-
-        System.out.println("Processed " + count + " rows from file with complex types");
-      }
-    } catch (Exception e) {
-      // Some files might not exist, that's okay
-      System.out.println("Skipping map column test: " + e.getMessage());
+  void testScalarFilteringInComplexSchemaFixture() throws IOException {
+    // This external file has complex physical leaves; assert a real filter on its scalar ID.
+    // The generated MAP fixture below verifies keyed MAP binding and null selection.
+    try (var reader = new ParquetFileReader(TEST_DATA_DIR + "nonnullable.impala.parquet");
+         var iterator = new FilteringParquetRowIterator(new ParquetRowIterator(reader, false),
+             new ColumnIsNotNullFilter(reader.getSchema().getLogicalColumn("ID")))) {
+      assertTrue(iterator.hasNext());
+      assertEquals(8L, iterator.next().getColumnValue("ID"));
+      assertFalse(iterator.hasNext());
     }
   }
 
@@ -577,31 +611,21 @@ class FilteringParquetRowIteratorTest {
    */
   @Test
   void testMultipleRowGroups() throws IOException {
-    // This file has multiple row groups
-    String filePath = TEST_DATA_DIR + "alltypes_tiny_pages.parquet";
-
-    try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
-      System.out.println("File has " + reader.getNumRowGroups() + " row groups");
-      LogicalColumnDescriptor logicalColumn = reader.getSchema().getLogicalColumn(1);
-      ColumnFilter filter = new ColumnGreaterThanFilter(logicalColumn, 5);
-      ParquetRowIterator baseIterator = new ParquetRowIterator(reader, false);
-
-      try (FilteringParquetRowIterator iterator =
-               new FilteringParquetRowIterator(baseIterator, filter)) {
-
-        int count = 0;
-        while (iterator.hasNext()) {
-          RowColumnGroup row = iterator.next();
-          assertNotNull(row);
-          count++;
-
-          if (count > 100) break; // Don't process too many rows
-        }
-
-        System.out.println("Found " + count + " matching rows across row groups");
-      }
-    } catch (Exception e) {
-      System.out.println("Skipping multi-row-group test: " + e.getMessage());
+    var id = new LogicalColumnDescriptor("id", LogicalType.PRIMITIVE, Type.INT32,
+        new ColumnDescriptor(Type.INT32, new String[] {"id"}, 0, 0, 0));
+    var schema = SchemaDescriptor.fromLogicalColumns("groups", List.of(id));
+    Path file = tempDir.resolve("groups.parquet");
+    try (var writer = new ParquetFileWriter(file, schema, CompressionCodec.UNCOMPRESSED, 1024, 128)) {
+      for (int value = 0; value < 1003; value++) writer.addRow(new SimpleRowColumnGroup(schema, new Object[] {value}));
+    }
+    try (var reader = new ParquetFileReader(file);
+         var iterator = new FilteringParquetRowIterator(new ParquetRowIterator(reader, false),
+             new ColumnGreaterThanOrEqualFilter(reader.getSchema().getLogicalColumn("id"), 997))) {
+      assertTrue(reader.getNumRowGroups() > 1, "fixture must genuinely span groups");
+      var ids = new ArrayList<Integer>();
+      while (iterator.hasNext()) ids.add((Integer) iterator.next().getColumnValue("id"));
+      assertEquals(List.of(997, 998, 999, 1000, 1001, 1002), ids);
+      assertEquals(1003, iterator.getTotalRowCount());
     }
   }
 
@@ -613,7 +637,7 @@ class FilteringParquetRowIteratorTest {
     String filePath = TEST_DATA_DIR + "alltypes_plain.parquet";
 
     try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
-      LogicalColumnDescriptor logicalColumn = reader.getSchema().getLogicalColumn(1);
+      LogicalColumnDescriptor logicalColumn = reader.getSchema().getLogicalColumn("id");
       ColumnFilter filter = new ColumnIsNotNullFilter(logicalColumn);
       ParquetRowIterator baseIterator = new ParquetRowIterator(reader, false);
 
@@ -634,7 +658,7 @@ class FilteringParquetRowIteratorTest {
     String filePath = TEST_DATA_DIR + "alltypes_plain.parquet";
 
     try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
-      LogicalColumnDescriptor logicalColumn = reader.getSchema().getLogicalColumn(1);
+      LogicalColumnDescriptor logicalColumn = reader.getSchema().getLogicalColumn("id");
       ColumnFilter filter = new ColumnIsNotNullFilter(logicalColumn);
       ParquetRowIterator baseIterator = new ParquetRowIterator(reader, false);
 
@@ -642,7 +666,7 @@ class FilteringParquetRowIteratorTest {
                new FilteringParquetRowIterator(baseIterator, filter)) {
 
         long totalRowCount = iterator.getTotalRowCount();
-        assertTrue(totalRowCount > 0, "Total row count should be positive");
+        assertEquals(8, totalRowCount);
         System.out.println("Total row count: " + totalRowCount);
       }
     }
@@ -655,14 +679,15 @@ class FilteringParquetRowIteratorTest {
   void testClose() throws IOException {
     String filePath = TEST_DATA_DIR + "alltypes_plain.parquet";
     ParquetFileReader reader = new ParquetFileReader(filePath);
-    LogicalColumnDescriptor logicalColumn = reader.getSchema().getLogicalColumn(1);
+    LogicalColumnDescriptor logicalColumn = reader.getSchema().getLogicalColumn("id");
     ColumnFilter filter = new ColumnIsNotNullFilter(logicalColumn);
     ParquetRowIterator baseIterator = new ParquetRowIterator(reader, true);
     FilteringParquetRowIterator iterator =
         new FilteringParquetRowIterator(baseIterator, filter);
 
     // Read one row
-    if (iterator.hasNext()) {
+    assertTrue(iterator.hasNext());
+    {
       iterator.next();
     }
 
@@ -689,12 +714,48 @@ class FilteringParquetRowIteratorTest {
                new FilteringParquetRowIterator(baseIterator, filter)) {
 
         int count = 0;
+      var ids = new ArrayList<Integer>();
         while (iterator.hasNext()) {
-          iterator.next();
+          ids.add((Integer) iterator.next().getColumnValue("id"));
           count++;
         }
+        assertEquals(List.of(4, 5, 6, 7), ids);
+        assertEquals(ids.size(), count);
+      }
+    }
+  }
 
-        System.out.println("Found " + count + " rows using factory-created filter");
+  @Test
+  void testTypedMapConstantsAndKeyedNullSelectionReturnExactIds() throws IOException {
+    var id = new LogicalColumnDescriptor("id", LogicalType.PRIMITIVE, Type.INT32,
+        new ColumnDescriptor(Type.INT32, new String[] {"id"}, 0, 0, 0));
+    // String keys (annotated UTF8) with INT64 values: keyed predicates match map keys as text.
+    var map = SchemaDescriptor.createMapColumn("attributes",
+        new ColumnDescriptor(Type.BYTE_ARRAY, new String[] {"attributes", "key_value", "key"},
+            2, 1, 0, PrimitiveLogicalType.string()),
+        new ColumnDescriptor(Type.INT64, new String[] {"attributes", "key_value", "value"},
+            2, 1, 0),
+        true, false);
+    var schema = SchemaDescriptor.fromLogicalColumns("maps", List.of(id, map));
+    Path file = tempDir.resolve("maps.parquet");
+    Object[] maps = {null, Map.of(), Map.of("key", 11L), Map.of("key", 12L),
+        Map.of("other", 12L), Map.of("key", 13L)};
+    try (var writer = new ParquetFileWriter(file, schema)) {
+      for (int i = 0; i < maps.length; i++) writer.addRow(new SimpleRowColumnGroup(schema, new Object[] {i, maps[i]}));
+    }
+    var operators = List.of(FilterOperator.eq, FilterOperator.neq, FilterOperator.isNull, FilterOperator.isNotNull);
+    var expected = List.of(List.of(3), List.of(2, 5), List.of(0, 1, 4), List.of(2, 3, 5));
+    for (int i = 0; i < operators.size(); i++) {
+      try (var reader = new ParquetFileReader(file)) {
+        var filter = new ColumnFilters().createFilter(reader.getSchema().getLogicalColumn("attributes"),
+            operators.get(i), operators.get(i) == FilterOperator.eq || operators.get(i) == FilterOperator.neq ? "12" : null,
+            Optional.of("key"));
+        try (var iterator = new FilteringParquetRowIterator(new ParquetRowIterator(reader, false), filter)) {
+          var ids = new ArrayList<Integer>();
+          while (iterator.hasNext()) ids.add((Integer) iterator.next().getColumnValue("id"));
+          assertEquals(expected.get(i), ids, operators.get(i).toString());
+          assertEquals(6, iterator.getTotalRowCount());
+        }
       }
     }
   }

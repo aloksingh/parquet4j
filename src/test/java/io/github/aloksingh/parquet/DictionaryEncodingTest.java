@@ -1,8 +1,7 @@
 package io.github.aloksingh.parquet;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 
 import io.github.aloksingh.parquet.model.ColumnDescriptor;
@@ -13,7 +12,10 @@ import java.util.List;
 import org.junit.jupiter.api.Test;
 
 /**
- * Tests for dictionary encoding support
+ * Tests for dictionary encoding support.
+ *
+ * <p>All assertions compare against exact golden values (pyarrow exports of
+ * alltypes_dictionary.parquet). Unexpected decode failures fail the test.
  */
 class DictionaryEncodingTest {
 
@@ -24,59 +26,57 @@ class DictionaryEncodingTest {
     String filePath = TEST_DATA_DIR + "alltypes_dictionary.parquet";
 
     try (ParquetFileReader reader = new ParquetFileReader(filePath)) {
-      System.out.println("\n=== Testing Dictionary-Encoded File ===");
-      reader.printMetadata();
-
       ParquetFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
       SchemaDescriptor schema = reader.getSchema();
+      assertEquals(11, schema.getNumColumns());
+      assertEquals(2, reader.getMetadata().fileMetadata().numRows());
 
-      // Try reading each column
       for (int i = 0; i < schema.getNumColumns(); i++) {
         ColumnDescriptor col = schema.getColumn(i);
-        System.out.println(
-            "\nColumn " + i + ": " + col.getPathString() + " (" + col.physicalType() + ")");
-
         try {
           ColumnValues values = rowGroup.readColumn(i);
-
           switch (col.physicalType()) {
-            case BOOLEAN -> {
-              List<Boolean> bools = values.decodeAsBoolean();
-              System.out.println("  Read " + bools.size() + " boolean values");
-              System.out.println("  Sample: " + bools.subList(0, Math.min(3, bools.size())));
+            case BOOLEAN -> assertEquals(
+                List.of(true, false), values.decodeAsBoolean(), col.getPathString());
+            case INT32 -> assertEquals(
+                List.of(0, 1), values.decodeAsInt32(), col.getPathString());
+            case INT64 -> assertEquals(
+                List.of(0L, 10L), values.decodeAsInt64(), col.getPathString());
+            case FLOAT -> assertEquals(
+                List.of(0.0f, 1.1f), values.decodeAsFloat(), col.getPathString());
+            case DOUBLE -> assertEquals(
+                List.of(0.0, 10.1), values.decodeAsDouble(), col.getPathString());
+            case BYTE_ARRAY -> assertEquals(
+                switch (col.getPathString()) {
+                  case "date_string_col" -> List.of("01/01/09", "01/01/09");
+                  case "string_col" -> List.of("0", "1");
+                  default -> fail("unexpected BYTE_ARRAY column " + col.getPathString());
+                }, values.decodeAsString(), col.getPathString());
+            case INT96 -> {
+              // timestamp_col: 2009-01-01 00:00:00 and 00:01:00. INT96 is
+              // little-endian nanos-of-day (8 bytes) + little-endian Julian day
+              // (4 bytes); 2009-01-01 is Julian day 2454833.
+              List<byte[]> timestamps = values.decodeAsInt96();
+              assertEquals(2, timestamps.size());
+              byte[] julian2454833 = {49, 117, 37, 0};
+              byte[] expected0 = new byte[12];
+              byte[] expected1 = new byte[12];
+              // 60 seconds in nanos, little-endian
+              long nanosOfDay = 60L * 1_000_000_000L;
+              for (int b = 0; b < 8; b++) {
+                expected1[b] = (byte) (nanosOfDay >>> (8 * b));
+              }
+              System.arraycopy(julian2454833, 0, expected0, 8, 4);
+              System.arraycopy(julian2454833, 0, expected1, 8, 4);
+              assertArrayEquals(expected0, timestamps.get(0), "timestamp_col row 0");
+              assertArrayEquals(expected1, timestamps.get(1), "timestamp_col row 1");
             }
-            case INT32 -> {
-              List<Integer> ints = values.decodeAsInt32();
-              System.out.println("  Read " + ints.size() + " int32 values");
-              System.out.println("  Sample: " + ints.subList(0, Math.min(3, ints.size())));
-              assertNotNull(ints);
-              assertTrue(ints.size() > 0);
-            }
-            case INT64 -> {
-              List<Long> longs = values.decodeAsInt64();
-              System.out.println("  Read " + longs.size() + " int64 values");
-              System.out.println("  Sample: " + longs.subList(0, Math.min(3, longs.size())));
-            }
-            case FLOAT -> {
-              List<Float> floats = values.decodeAsFloat();
-              System.out.println("  Read " + floats.size() + " float values");
-              System.out.println("  Sample: " + floats.subList(0, Math.min(3, floats.size())));
-            }
-            case DOUBLE -> {
-              List<Double> doubles = values.decodeAsDouble();
-              System.out.println("  Read " + doubles.size() + " double values");
-              System.out.println("  Sample: " + doubles.subList(0, Math.min(3, doubles.size())));
-            }
-            case BYTE_ARRAY -> {
-              List<String> strings = values.decodeAsString();
-              System.out.println("  Read " + strings.size() + " string values");
-              System.out.println("  Sample: " + strings.subList(0, Math.min(3, strings.size())));
-            }
-            default -> System.out.println("  [Skipped - type not supported]");
+            default -> fail("Unhandled physical type " + col.physicalType()
+                + " for column " + col.getPathString());
           }
         } catch (Exception e) {
-          fail("Unable to parse " + "Column " + i + ": " + col.getPathString() + " (" +
-              col.physicalType() + ")", e);
+          fail("Unable to parse Column " + i + ": " + col.getPathString() + " ("
+              + col.physicalType() + ")", e);
         }
       }
     }
@@ -89,7 +89,6 @@ class DictionaryEncodingTest {
         0x02,  // RLE run: header = 2 (LSB=0, length = 2>>1 = 1)
         0x05   // Value = 5
     };
-
     java.nio.ByteBuffer buffer = java.nio.ByteBuffer.wrap(data);
     RleDecoder decoder = new RleDecoder(buffer, 8, 1);
 
@@ -100,19 +99,19 @@ class DictionaryEncodingTest {
 
   @Test
   void testRleDecoderBitPacked() {
-    // Test bit-packed run
-    // Header with LSB=1, then bit-packed values
+    // Bit-packed run per the parquet RLE/bit-packed hybrid format:
+    // header = 3 (LSB=1, num_groups = 3>>1 = 1 group of 8 values), then 3 bytes
+    // for bit width 3. Values are packed least-significant bit first:
+    // bits of 0x01,0x02,0x03 = 10000000 01000000 11000000 (LSB-first per byte)
+    // -> 3-bit values [1, 0, 0, 1, 0, 6, 0, 0]
     byte[] data = new byte[] {
         0x03,  // Bit-packed run: header = 3 (LSB=1, num_groups = 3>>1 = 1)
         0x01, 0x02, 0x03  // 3 bytes for bit width 3 (8 values)
     };
-
     java.nio.ByteBuffer buffer = java.nio.ByteBuffer.wrap(data);
     RleDecoder decoder = new RleDecoder(buffer, 3, 8);
 
     int[] values = decoder.readAll();
-    assertEquals(8, values.length);
-    System.out.println("Bit-packed values: " + java.util.Arrays.toString(values));
+    assertArrayEquals(new int[] {1, 0, 0, 1, 0, 6, 0, 0}, values);
   }
-
 }

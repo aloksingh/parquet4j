@@ -137,23 +137,14 @@ public class ParquetMetadataReader {
   private static ParquetMetadata convertFromThrift(FileMetaData thriftMetadata) {
     // Convert schema
     SchemaElement rootSchema = thriftMetadata.getSchema().get(0);
-    List<ColumnDescriptor> columns = new ArrayList<>();
 
-    // Build columns from schema
-    // Note: Start with empty path array - we don't want the root schema name in column paths
-    // The root schema element is a group with N children (all the top-level columns)
+    // Build the annotated schema tree; physical leaf descriptors (with their
+    // PrimitiveLogicalType annotation) and logical columns derive from it centrally.
     List<SchemaElement> schemaElements = thriftMetadata.getSchema();
-    int numRootChildren = rootSchema.getNum_children();
-    int nextIndex = 1; // Start after the root element
-    for (int i = 0; i < numRootChildren; i++) {
-      nextIndex = buildColumns(schemaElements, nextIndex, new String[] {},
-          0, 0, columns);
-    }
-
-    // Build logical columns from physical columns (detect MAPs, etc.)
-    List<LogicalColumnDescriptor> logicalColumns = buildLogicalColumns(columns, schemaElements);
-
-    SchemaDescriptor schema = new SchemaDescriptor(rootSchema.getName(), columns, logicalColumns);
+    SchemaDescriptor schema = SchemaDescriptor.fromSchemaElements(
+        rootSchema.getName(), schemaElements);
+    List<ColumnDescriptor> columns = schema.columns();
+    List<LogicalColumnDescriptor> logicalColumns = schema.logicalColumns();
 
     // Convert key-value metadata
     Map<String, String> kvMetadata = new HashMap<>();
@@ -254,10 +245,9 @@ public class ParquetMetadataReader {
   /**
    * Recursively builds column descriptors from schema elements.
    *
-   * <p>Traverses the schema tree depth-first, computing definition and repetition levels
-   * based on field repetition types (OPTIONAL, REQUIRED, REPEATED). Primitive columns
-   * are added to the columns list, while groups are recursively processed.
-   *
+   * @deprecated leaf descriptors and their logical annotations are derived centrally from the
+   * reconstructed schema tree by {@link SchemaDescriptor#fromSchemaElements}; this method is
+   * retained for source compatibility and delegates to the same tree.
    * @param schemaElements the list of all schema elements from the file
    * @param index the current index in schemaElements to process
    * @param currentPath the path from the root to the current element
@@ -270,150 +260,33 @@ public class ParquetMetadataReader {
                                   String[] currentPath, int currentDefLevel,
                                   int currentRepLevel,
                                   List<ColumnDescriptor> columns) {
-    if (index >= schemaElements.size()) {
-      return index;
-    }
-
-    SchemaElement element = schemaElements.get(index);
-
-    // Calculate definition and repetition levels
-    int defLevel = currentDefLevel;
-    int repLevel = currentRepLevel;
-
-    if (element.getRepetition_type() == FieldRepetitionType.OPTIONAL) {
-      defLevel++;
-    } else if (element.getRepetition_type() == FieldRepetitionType.REPEATED) {
-      defLevel++;
-      repLevel++;
-    }
-
-    // Check if this is a leaf (primitive type)
-    if (element.isSetType()) {
-      // This is a primitive column
-      String[] path = appendToPath(currentPath, element.getName());
-      Type type = Type.fromValue(element.getType().getValue());
-      int typeLength = element.isSetType_length() ? element.getType_length() : 0;
-
-      columns.add(new ColumnDescriptor(
-          type, path, defLevel, repLevel, typeLength
-      ));
-
-      return index + 1;
-    } else {
-      // This is a group - process children
-      int numChildren = element.getNum_children();
-      String[] newPath = appendToPath(currentPath, element.getName());
-      int nextIndex = index + 1;
-
-      for (int i = 0; i < numChildren; i++) {
-        nextIndex = buildColumns(schemaElements, nextIndex, newPath,
-            defLevel, repLevel, columns);
-      }
-
-      return nextIndex;
-    }
+    // Delegate to the central tree so annotations are applied consistently.
+    SchemaDescriptor schema = SchemaDescriptor.fromSchemaElements(
+        schemaElements.get(0).getName(), schemaElements);
+    columns.clear();
+    columns.addAll(schema.columns());
+    return schemaElements.size();
   }
 
   /**
-   * Appends a name to the current path array.
+   * Builds logical columns from physical columns by reconstructing the annotated schema tree.
    *
-   * @param currentPath the existing path array
-   * @param name the name to append
-   * @return a new array with the name appended
-   */
-  private static String[] appendToPath(String[] currentPath, String name) {
-    String[] newPath = new String[currentPath.length + 1];
-    System.arraycopy(currentPath, 0, newPath, 0, currentPath.length);
-    newPath[currentPath.length] = name;
-    return newPath;
-  }
-
-  /**
-   * Builds logical columns from physical columns by detecting complex types.
-   *
-   * <p>This method scans physical columns to identify logical structures such as MAPs.
-   * MAP columns follow the pattern: {@code mapName.key_value.{key, value}}.
-   * Physical columns that are part of a MAP are combined into a single LogicalColumnDescriptor,
-   * while standalone columns become PRIMITIVE logical columns.
+   * <p>Classification is annotation-first (LIST per the 3-level standard plus legacy
+   * variants, MAP per the 3-level standard with a required key, STRUCT as the unannotated
+   * default); the {@code key_value} name pattern is only a last-resort legacy heuristic, so
+   * unannotated structures with MAP-like child names are never classified as MAP. Physical
+   * columns supplied by the caller are matched back by full path.
    *
    * @param physicalColumns the list of physical ColumnDescriptors
-   * @param schemaElements the schema elements (currently unused but available for future extensions)
+   * @param schemaElements the schema elements of the file schema
    * @return a list of LogicalColumnDescriptors representing the logical schema
    */
   public static List<LogicalColumnDescriptor> buildLogicalColumns(
       List<ColumnDescriptor> physicalColumns,
       List<SchemaElement> schemaElements) {
-
-    List<LogicalColumnDescriptor> logicalColumns = new ArrayList<>();
-    boolean[] usedColumns = new boolean[physicalColumns.size()];
-
-    // Build a map of schema elements by name for easy lookup
-    Map<String, SchemaElement> schemaMap = new HashMap<>();
-    for (SchemaElement element : schemaElements) {
-      schemaMap.put(element.getName(), element);
-    }
-
-    // Scan for MAP structures
-    // Maps have the pattern: mapName.key_value.{key, value}
-    for (int i = 0; i < physicalColumns.size(); i++) {
-      if (usedColumns[i]) {
-        continue;
-      }
-
-      ColumnDescriptor col = physicalColumns.get(i);
-      String[] path = col.path();
-
-      // Check if this looks like a map key column
-      // Path should be: [mapName, "key_value", "key"]
-      if (path.length == 3 && path[1].equals("key_value") && path[2].equals("key")) {
-        String mapName = path[0];
-
-        // Look for the corresponding value column
-        int valueColIndex = -1;
-        for (int j = i + 1; j < physicalColumns.size(); j++) {
-          String[] valuePath = physicalColumns.get(j).path();
-          if (valuePath.length == 3 &&
-              valuePath[0].equals(mapName) &&
-              valuePath[1].equals("key_value") &&
-              valuePath[2].equals("value")) {
-            valueColIndex = j;
-            break;
-          }
-        }
-
-        if (valueColIndex != -1) {
-          // Found a map! Create logical column descriptor
-          ColumnDescriptor valueCol = physicalColumns.get(valueColIndex);
-
-          MapMetadata mapMetadata = new MapMetadata(
-              i, valueColIndex,
-              col.physicalType(),
-              valueCol.physicalType(),
-              col,
-              valueCol
-          );
-
-          logicalColumns.add(
-              new LogicalColumnDescriptor(mapName, LogicalType.MAP,
-                  mapMetadata));
-
-          usedColumns[i] = true;
-          usedColumns[valueColIndex] = true;
-          continue;
-        }
-      }
-
-      // Not part of a map - add as primitive column
-      logicalColumns.add(new LogicalColumnDescriptor(
-          col.getPathString(),
-          LogicalType.PRIMITIVE,
-          col.physicalType(),
-          col
-      ));
-      usedColumns[i] = true;
-    }
-
-    return logicalColumns;
+    SchemaDescriptor schema = SchemaDescriptor.fromSchemaElements(
+        schemaElements.get(0).getName(), schemaElements);
+    return schema.logicalColumns();
   }
 
 

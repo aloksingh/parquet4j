@@ -9,6 +9,12 @@ import io.github.aloksingh.parquet.model.RowColumnGroup;
 import io.github.aloksingh.parquet.model.SchemaDescriptor;
 import io.github.aloksingh.parquet.model.Type;
 import io.github.aloksingh.parquet.util.ByteUtils;
+import io.github.aloksingh.parquet.writer.WriterValues;
+import io.github.aloksingh.parquet.writer.WriterSchema;
+import io.github.aloksingh.parquet.writer.WriterStatistics;
+import io.github.aloksingh.parquet.writer.WriterColumnBuffer;
+import io.github.aloksingh.parquet.writer.WriterColumnBuilder;
+import io.github.aloksingh.parquet.writer.WriterPage;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
@@ -17,6 +23,7 @@ import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -26,8 +33,9 @@ import java.util.Map;
 import java.util.Set;
 import org.apache.parquet.format.ColumnChunk;
 import org.apache.parquet.format.ColumnMetaData;
+import org.apache.parquet.format.ColumnOrder;
 import org.apache.parquet.format.ConvertedType;
-import org.apache.parquet.format.DataPageHeader;
+import org.apache.parquet.format.DataPageHeaderV2;
 import org.apache.parquet.format.FieldRepetitionType;
 import org.apache.parquet.format.FileMetaData;
 import org.apache.parquet.format.PageHeader;
@@ -35,6 +43,7 @@ import org.apache.parquet.format.PageType;
 import org.apache.parquet.format.RowGroup;
 import org.apache.parquet.format.SchemaElement;
 import org.apache.parquet.format.Statistics;
+import org.apache.parquet.format.TypeDefinedOrder;
 import shaded.parquet.org.apache.thrift.TException;
 import shaded.parquet.org.apache.thrift.protocol.TCompactProtocol;
 import shaded.parquet.org.apache.thrift.transport.TIOStreamTransport;
@@ -85,11 +94,15 @@ public class ParquetFileWriter implements ParquetWriter {
   private final int rowGroupSize;
 
   private OutputStream outputStream;
+  private Path temporaryPath;
   private long currentPosition;
   private final List<RowGroup> rowGroups;
-  private final List<RowColumnGroup> currentRowGroupRows;
-  private int totalRowCount;
-  private boolean closed;
+  private final WriterColumnBuilder[] columns;
+  private final WriterColumnBuffer[] stagedRow;
+  private long pendingRowCount;
+  private long totalRowCount;
+  private enum State { NEW, OPEN, FAILED, CLOSED }
+  private State state;
   private final Compressor compressor;
   private final double minCompressionRatio;
 
@@ -137,17 +150,32 @@ public class ParquetFileWriter implements ParquetWriter {
   public ParquetFileWriter(Path filePath, SchemaDescriptor schema,
                            CompressionCodec compressionCodec, int pageSize,
                            int rowGroupSize, double minCompressionRatio) {
+    WriterSchema.validate(schema);
+    if (filePath == null) throw new IllegalArgumentException("Output path must not be null");
+    if (compressionCodec == null) throw new IllegalArgumentException("Compression codec must not be null");
+    if (pageSize <= 0 || rowGroupSize <= 0) throw new IllegalArgumentException("Byte targets must be positive");
+    if (!Double.isFinite(minCompressionRatio) || minCompressionRatio < 0 || minCompressionRatio > 1) {
+      throw new IllegalArgumentException("Compression ratio must be finite and within [0, 1]");
+    }
     this.filePath = filePath;
     this.schema = schema;
     this.compressionCodec = compressionCodec;
     this.pageSize = pageSize;
     this.rowGroupSize = rowGroupSize;
     this.rowGroups = new ArrayList<>();
-    this.currentRowGroupRows = new ArrayList<>();
+    this.columns = new WriterColumnBuilder[schema.getNumColumns()];
+    this.stagedRow = new WriterColumnBuffer[schema.getNumColumns()];
+    int byteLimit = pageBodyLimit();
+    int valueLimit = pageValueLimit();
+    for (int i = 0; i < schema.getNumColumns(); i++) {
+      columns[i] = new WriterColumnBuilder(schema.getColumn(i), pageSize, byteLimit, valueLimit);
+      stagedRow[i] = new WriterColumnBuffer(schema.getColumn(i), byteLimit, valueLimit);
+    }
     this.currentPosition = 0;
     this.totalRowCount = 0;
-    this.closed = false;
-    this.compressor = Compressor.create(compressionCodec);
+    this.state = State.NEW;
+    this.compressor = compressionCodec == CompressionCodec.UNCOMPRESSED || minCompressionRatio == 0.0
+        ? null : Compressor.create(compressionCodec);
     this.minCompressionRatio = minCompressionRatio;
   }
 
@@ -157,23 +185,63 @@ public class ParquetFileWriter implements ParquetWriter {
    * @throws IOException if file cannot be created or header cannot be written
    */
   public void start() throws IOException {
-    if (outputStream != null) {
-      throw new IllegalStateException("Writer already started");
+    if (state != State.NEW) {
+      throw new IllegalStateException("Writer cannot start in state " + state);
     }
 
-    outputStream = Files.newOutputStream(filePath,
-        StandardOpenOption.CREATE,
-        StandardOpenOption.TRUNCATE_EXISTING,
-        StandardOpenOption.WRITE);
+    try {
+      temporaryPath = Files.createTempFile(filePath.toAbsolutePath().getParent(),
+          ".parquet4j-", ".tmp");
+      outputStream = openSink(temporaryPath);
+      outputStream.write(PARQUET_MAGIC);
+      currentPosition += PARQUET_MAGIC.length;
+      state = State.OPEN;
+    } catch (IOException | RuntimeException | Error failure) {
+      fail(failure);
+      throw failure;
+    }
+  }
 
-    // Write magic number at the beginning
-    outputStream.write(PARQUET_MAGIC);
-    currentPosition += PARQUET_MAGIC.length;
+  // Package-private format-limit seams allow deterministic boundary tests without huge allocations.
+  int pageBodyLimit() { return WriterColumnBuilder.MAX_PAGE_BODY_SIZE; }
+  int pageValueLimit() { return Integer.MAX_VALUE; }
+
+  // Package-private seam for deterministic sink failure tests.
+  OutputStream openSink(Path path) throws IOException {
+    return Files.newOutputStream(path, StandardOpenOption.WRITE);
+  }
+
+  private void fail(Throwable failure) {
+    state = State.FAILED;
+    OutputStream failedSink = outputStream;
+    outputStream = null;
+    if (failedSink != null) {
+      try {
+        failedSink.close();
+      } catch (IOException | RuntimeException | Error cleanupFailure) {
+        if (cleanupFailure != failure) failure.addSuppressed(cleanupFailure);
+      }
+    }
+    if (temporaryPath != null) {
+      try {
+        Files.deleteIfExists(temporaryPath);
+      } catch (IOException | RuntimeException | Error cleanupFailure) {
+        if (cleanupFailure != failure) failure.addSuppressed(cleanupFailure);
+      }
+      temporaryPath = null;
+    }
+    for (WriterColumnBuilder column : columns) column.clear();
+    for (WriterColumnBuffer column : stagedRow) column.clear();
+    pendingRowCount = 0;
   }
 
   /**
-   * Add a row to the Parquet file. Rows are buffered and written when the row group reaches
-   * a threshold size (currently 1000 rows).
+   * Add a row to the Parquet file. Rows are buffered into the current row group, which is
+   * flushed when adding another row would push the row group's projected encoded size past
+   * the {@code rowGroupSize} byte target (and on {@link #close()} for any remainder).
+   * Within a row group, each column is split into data pages whenever the next row would
+   * push the current page past the {@code pageSize} byte target; flushing is byte-target
+   * based, not row-count based.
    *
    * @param row Row data to add to the file
    * @throws IllegalStateException if writer is closed
@@ -182,516 +250,102 @@ public class ParquetFileWriter implements ParquetWriter {
    */
   @Override
   public void addRow(RowColumnGroup row) {
-    if (closed) {
-      throw new IllegalStateException("Writer is closed");
+    if (state == State.CLOSED || state == State.FAILED) {
+      throw new IllegalStateException("Writer cannot add rows in state " + state);
     }
-
-    if (outputStream == null) {
-      try {
-        start();
-      } catch (IOException e) {
-        throw new ParquetException("Failed to start writer", e);
-      }
-    }
-
-    // Validate schema matches
-    if (!row.getSchema().name().equals(schema.name())) {
-      throw new IllegalArgumentException("Row schema does not match writer schema");
-    }
-
-    currentRowGroupRows.add(row);
-
-    // Check if we should flush the row group (simple size check based on row count)
-    // In a production implementation, this should track actual byte size
-    if (currentRowGroupRows.size() >= 1000) {
-      try {
-        flushRowGroup();
-      } catch (IOException e) {
-        throw new ParquetException("Failed to flush row group", e);
-      }
-    }
-  }
-
-  /**
-   * Flush the current row group to disk.
-   *
-   * @throws IOException if writing the row group fails
-   */
-  private void flushRowGroup() throws IOException {
-    if (currentRowGroupRows.isEmpty()) {
-      return;
-    }
-
-    RowGroup rowGroup = new RowGroup();
-    List<ColumnChunk> columnChunks = new ArrayList<>();
-
-    long rowGroupStartPos = currentPosition;
-
-    // Check if we have logical columns (for maps, structs, etc.)
-    if (schema.hasLogicalColumns()) {
-      // Write logical columns, which may map to multiple physical columns
-      for (int logicalIndex = 0; logicalIndex < schema.getNumLogicalColumns(); logicalIndex++) {
-        LogicalColumnDescriptor logicalCol = schema.getLogicalColumn(logicalIndex);
-
-        if (logicalCol.isPrimitive()) {
-          // Write primitive column normally
-          ColumnDescriptor physicalCol = logicalCol.getPhysicalDescriptor();
-          int physicalIndex = schema.columns().indexOf(physicalCol);
-          ColumnChunk columnChunk =
-              writeColumnChunk(physicalCol, physicalIndex, currentRowGroupRows);
-          columnChunks.add(columnChunk);
-        } else if (logicalCol.isMap()) {
-          // Write map columns (produces 2 physical column chunks)
-          List<ColumnChunk> mapChunks = writeMapColumnChunks(logicalCol, currentRowGroupRows);
-          columnChunks.addAll(mapChunks);
-        }
-      }
-    } else {
-      // Write each physical column chunk (legacy path for simple schemas)
-      for (int colIndex = 0; colIndex < schema.getNumColumns(); colIndex++) {
-        ColumnDescriptor columnDesc = schema.getColumn(colIndex);
-        ColumnChunk columnChunk = writeColumnChunk(columnDesc, colIndex, currentRowGroupRows);
-        columnChunks.add(columnChunk);
-      }
-    }
-
-    rowGroup.setColumns(columnChunks);
-    rowGroup.setTotal_byte_size(currentPosition - rowGroupStartPos);
-    rowGroup.setNum_rows(currentRowGroupRows.size());
-
-    rowGroups.add(rowGroup);
-    totalRowCount += currentRowGroupRows.size();
-    currentRowGroupRows.clear();
-  }
-
-  /**
-   * Write a single column chunk for a row group.
-   *
-   * @param columnDesc Column descriptor for the column to write
-   * @param columnIndex Index of the column in the schema
-   * @param rows List of rows to extract column values from
-   * @return ColumnChunk metadata for the written column
-   * @throws IOException if writing fails
-   */
-  private ColumnChunk writeColumnChunk(ColumnDescriptor columnDesc,
-                                       int columnIndex,
-                                       List<RowColumnGroup> rows) throws IOException {
-    long columnChunkStartPos = currentPosition;
-
-    // Collect all values for this column
-    List<Object> values = new ArrayList<>();
-    List<Integer> definitionLevels = new ArrayList<>();
-    List<Integer> repetitionLevels = new ArrayList<>();
-
-    for (RowColumnGroup row : rows) {
-      Object value = null;
-
-      // Find the value for this physical column
-      if (columnIndex < row.getColumnCount()) {
-        // Try to get by index first (for simple schemas)
-        try {
-          value = row.getColumnValue(columnIndex);
-        } catch (Exception e) {
-          // Fallback to finding by path
-          value = findValueByPath(row, columnDesc.path());
-        }
-      }
-
-      values.add(value);
-
-      // Definition levels: 0 for null, max for non-null
-      definitionLevels.add(value == null ? 0 : columnDesc.maxDefinitionLevel());
-
-      // Repetition levels: 0 for non-repeated
-      repetitionLevels.add(0);
-    }
-
-    // Calculate statistics
-    ColumnStatistics stats = calculateStatistics(values, columnDesc.physicalType());
-
-    // Write the data page
-    PageInfo pageInfo = writeDataPage(
-        columnDesc,
-        values,
-        definitionLevels,
-        repetitionLevels
-    );
-
-    // Create column metadata
-    ColumnMetaData columnMetaData = new ColumnMetaData();
-    columnMetaData.setType(convertType(columnDesc.physicalType()));
-    columnMetaData.setEncodings(Arrays.asList(
-        org.apache.parquet.format.Encoding.RLE,  // For levels
-        org.apache.parquet.format.Encoding.PLAIN  // For values
-    ));
-    columnMetaData.setPath_in_schema(Arrays.asList(columnDesc.path()));
-    columnMetaData.setCodec(convertCompressionCodec(pageInfo.effectiveCodec));
-    columnMetaData.setNum_values(values.size());
-    // Total sizes MUST include page headers + page data
-    columnMetaData.setTotal_uncompressed_size(pageInfo.total_uncompressed_size);
-    columnMetaData.setTotal_compressed_size(pageInfo.total_compressed_size);
-    columnMetaData.setData_page_offset(columnChunkStartPos);
-
-    // Add statistics
-    Statistics parquetStats = toParquetStatistics(stats, columnDesc.physicalType());
-    if (parquetStats != null) {
-      columnMetaData.setStatistics(parquetStats);
-    }
-
-    // Create column chunk
-    ColumnChunk columnChunk = new ColumnChunk();
-    columnChunk.setFile_offset(columnChunkStartPos);
-    columnChunk.setMeta_data(columnMetaData);
-
-    return columnChunk;
-  }
-
-  /**
-   * Write map column chunks (key and value columns) for a logical MAP column.
-   *
-   * @param logicalCol Logical column descriptor for the MAP column
-   * @param rows List of rows to extract map values from
-   * @return List of column chunks (key chunk and value chunk)
-   * @throws IOException if writing fails
-   */
-  private List<ColumnChunk> writeMapColumnChunks(LogicalColumnDescriptor logicalCol,
-                                                 List<RowColumnGroup> rows) throws IOException {
-    MapMetadata mapMeta = logicalCol.getMapMetadata();
-    MapColumnWriter mapWriter = new MapColumnWriter(
-        mapMeta.keyType(),
-        mapMeta.valueType(),
-        mapMeta.keyDescriptor().maxDefinitionLevel(),
-        mapMeta.valueDescriptor().maxDefinitionLevel()
-    );
-
-    // Extract map values from rows
-    List<Map<?, ?>> maps = new ArrayList<>();
-    for (RowColumnGroup row : rows) {
-      Object value = null;
-      try {
-        value = row.getColumnValue(logicalCol.getName());
-      } catch (Exception e) {
-        // Column not found or error, treat as null
-      }
-
-      if (value instanceof Map) {
-        maps.add((Map<?, ?>) value);
-      } else {
-        maps.add(null);  // NULL map
-      }
-    }
-
-    // Extract keys, values, and levels using MapColumnWriter
-    List<Object> keys = mapWriter.extractKeys(maps);
-    List<Object> values = mapWriter.extractValues(maps);
-    List<Integer> repLevels = mapWriter.calculateRepetitionLevels(maps);
-    List<Integer> keyDefLevels = mapWriter.calculateKeyDefinitionLevels(maps);
-    List<Integer> valueDefLevels = mapWriter.calculateValueDefinitionLevels(maps);
-
-    // Number of values for each column is the total entry count
-    int numValues = mapWriter.countTotalEntries(maps);
-
-    List<ColumnChunk> chunks = new ArrayList<>();
-
-    // Write key column chunk
-    chunks.add(writeColumnChunkWithLevels(
-        mapMeta.keyDescriptor(),
-        keys,
-        keyDefLevels,
-        repLevels,
-        numValues
-    ));
-
-    // Write value column chunk
-    chunks.add(writeColumnChunkWithLevels(
-        mapMeta.valueDescriptor(),
-        values,
-        valueDefLevels,
-        repLevels,
-        numValues
-    ));
-
-    return chunks;
-  }
-
-  /**
-   * Write a column chunk with pre-calculated definition and repetition levels.
-   * This is used for map columns where levels are calculated by MapColumnWriter.
-   */
-  private ColumnChunk writeColumnChunkWithLevels(
-      ColumnDescriptor columnDesc,
-      List<Object> values,
-      List<Integer> definitionLevels,
-      List<Integer> repetitionLevels,
-      int numValues) throws IOException {
-
-    long columnChunkStartPos = currentPosition;
-
-    // Calculate statistics
-    ColumnStatistics stats = calculateStatistics(values, columnDesc.physicalType());
-
-    // Write the data page with provided levels
-    PageInfo pageInfo = writeDataPageWithLevels(
-        columnDesc,
-        values,
-        definitionLevels,
-        repetitionLevels,
-        numValues
-    );
-
-    // Create column metadata
-    ColumnMetaData columnMetaData = new ColumnMetaData();
-    columnMetaData.setType(convertType(columnDesc.physicalType()));
-    columnMetaData.setEncodings(Arrays.asList(
-        org.apache.parquet.format.Encoding.RLE,  // For levels
-        org.apache.parquet.format.Encoding.PLAIN  // For values
-    ));
-    columnMetaData.setPath_in_schema(Arrays.asList(columnDesc.path()));
-    columnMetaData.setCodec(convertCompressionCodec(pageInfo.effectiveCodec));
-    columnMetaData.setNum_values(numValues);
-    // Total sizes MUST include page headers + page data
-    columnMetaData.setTotal_uncompressed_size(pageInfo.total_uncompressed_size);
-    columnMetaData.setTotal_compressed_size(pageInfo.total_compressed_size);
-    columnMetaData.setData_page_offset(columnChunkStartPos);
-
-    // Add statistics
-    Statistics parquetStats = toParquetStatistics(stats, columnDesc.physicalType());
-    if (parquetStats != null) {
-      columnMetaData.setStatistics(parquetStats);
-    }
-
-    // Create column chunk
-    ColumnChunk columnChunk = new ColumnChunk();
-    columnChunk.setFile_offset(columnChunkStartPos);
-    columnChunk.setMeta_data(columnMetaData);
-
-    return columnChunk;
-  }
-
-  /**
-   * Find a value by column path in a row.
-   *
-   * @param row Row to search in
-   * @param path Column path as array of path components
-   * @return Column value or null if not found
-   */
-  private Object findValueByPath(RowColumnGroup row, String[] path) {
-    String pathString = String.join(".", path);
     try {
-      return row.getColumnValue(pathString);
-    } catch (Exception e) {
-      return null;
-    }
-  }
-
-  /**
-   * Calculate statistics for a list of values.
-   *
-   * @param values List of column values
-   * @param type Physical type of the values
-   * @return Column statistics including min, max, null count, and distinct count
-   */
-  private ColumnStatistics calculateStatistics(List<Object> values, Type type) {
-    ColumnStatistics stats = new ColumnStatistics();
-    Set<Object> distinctValues = new HashSet<>();
-
-    for (Object value : values) {
-      if (value == null) {
-        stats.nullCount++;
-        continue;
-      }
-
-      distinctValues.add(value);
-
-      // Update min/max based on type
-      if (stats.min == null) {
-        stats.min = value;
-        stats.max = value;
+      WriterSchema.validateRow(schema, row);
+      for (WriterColumnBuffer column : stagedRow) column.clear();
+      if (schema.hasLogicalColumns()) {
+        int physical = 0;
+        for (int logical = 0; logical < schema.getNumLogicalColumns(); logical++) {
+          LogicalColumnDescriptor column = schema.getLogicalColumn(logical);
+          Object value = row.getColumnValue(logical);
+          if (column.isPrimitive()) {
+            stagePrimitive(stagedRow[physical++], value);
+          } else {
+            MapColumnWriter.appendRow(value, column.getMapMetadata(),
+                stagedRow[physical], stagedRow[physical + 1]);
+            physical += 2;
+          }
+        }
       } else {
-        stats.min = minValue(stats.min, value, type);
-        stats.max = maxValue(stats.max, value, type);
+        for (int i = 0; i < stagedRow.length; i++) stagePrimitive(stagedRow[i], row.getColumnValue(i));
       }
-    }
+      // Only a fully validated, detached, encoded row can reach the transaction/group buffers.
+      long projectedGroupSize = 0;
+      for (int i = 0; i < columns.length; i++) {
+        projectedGroupSize = Math.addExact(projectedGroupSize, columns[i].projectedPayloadSize(stagedRow[i]));
+      }
+      if (pendingRowCount > 0 && projectedGroupSize > rowGroupSize) flushRowGroup();
+      if (state == State.NEW) start();
+      for (int i = 0; i < columns.length; i++) columns[i].appendRow(stagedRow[i]);
+      pendingRowCount = Math.addExact(pendingRowCount, 1);
+      for (WriterColumnBuffer column : stagedRow) column.clear();
 
-    stats.distinctCount = distinctValues.size();
-    return stats;
+    } catch (IOException failure) {
+      fail(failure);
+      throw new ParquetException("Failed to write row group", failure);
+    } catch (RuntimeException | Error failure) {
+      fail(failure);
+      throw failure;
+    }
   }
 
-  /**
-   * Compare two values and return the minimum based on type.
-   *
-   * @param a First value
-   * @param b Second value
-   * @param type Physical type of the values
-   * @return Minimum value
-   */
-  @SuppressWarnings("unchecked")
-  private Object minValue(Object a, Object b, Type type) {
-    if (a == null) return b;
-    if (b == null) return a;
-
-    return switch (type) {
-      case BOOLEAN -> ((Boolean) a && !(Boolean) b) ? a : b;
-      case INT32 -> ((Number) a).intValue() < ((Number) b).intValue() ? a : b;
-      case INT64 -> ((Number) a).longValue() < ((Number) b).longValue() ? a : b;
-      case FLOAT -> ((Number) a).floatValue() < ((Number) b).floatValue() ? a : b;
-      case DOUBLE -> ((Number) a).doubleValue() < ((Number) b).doubleValue() ? a : b;
-      case BYTE_ARRAY -> {
-        byte[] bytesA = getByteArray(a);
-        byte[] bytesB = getByteArray(b);
-        yield compareByteArrays(bytesA, bytesB) < 0 ? a : b;
-      }
-      case FIXED_LEN_BYTE_ARRAY -> {
-        byte[] bytesA = getByteArray(a);
-        byte[] bytesB = getByteArray(b);
-        yield compareByteArrays(bytesA, bytesB) < 0 ? a : b;
-      }
-      default -> a;
-    };
+  private void stagePrimitive(WriterColumnBuffer column, Object value) {
+    int maximum = column.descriptor().maxDefinitionLevel();
+    column.add(value, value == null ? 0 : maximum, 0, maximum > 0);
   }
 
-  /**
-   * Compare two values and return the maximum based on type.
-   *
-   * @param a First value
-   * @param b Second value
-   * @param type Physical type of the values
-   * @return Maximum value
-   */
-  @SuppressWarnings("unchecked")
-  private Object maxValue(Object a, Object b, Type type) {
-    if (a == null) return b;
-    if (b == null) return a;
-
-    return switch (type) {
-      case BOOLEAN -> ((Boolean) a || (Boolean) b) ? a : b;
-      case INT32 -> ((Number) a).intValue() > ((Number) b).intValue() ? a : b;
-      case INT64 -> ((Number) a).longValue() > ((Number) b).longValue() ? a : b;
-      case FLOAT -> ((Number) a).floatValue() > ((Number) b).floatValue() ? a : b;
-      case DOUBLE -> ((Number) a).doubleValue() > ((Number) b).doubleValue() ? a : b;
-      case BYTE_ARRAY -> {
-        byte[] bytesA = getByteArray(a);
-        byte[] bytesB = getByteArray(b);
-        yield compareByteArrays(bytesA, bytesB) > 0 ? a : b;
-      }
-      case FIXED_LEN_BYTE_ARRAY -> {
-        byte[] bytesA = getByteArray(a);
-        byte[] bytesB = getByteArray(b);
-        yield compareByteArrays(bytesA, bytesB) > 0 ? a : b;
-      }
-      default -> a;
-    };
+  private void flushRowGroup() throws IOException {
+    if (pendingRowCount == 0) return;
+    List<ColumnChunk> chunks = new ArrayList<>(columns.length);
+    long uncompressed = 0;
+    long compressed = 0;
+    for (WriterColumnBuilder column : columns) {
+      ColumnChunk chunk = writeColumnChunk(column);
+      chunks.add(chunk);
+      uncompressed = Math.addExact(uncompressed, chunk.getMeta_data().getTotal_uncompressed_size());
+      compressed = Math.addExact(compressed, chunk.getMeta_data().getTotal_compressed_size());
+    }
+    RowGroup group = new RowGroup();
+    group.setColumns(chunks);
+    group.setTotal_byte_size(uncompressed);
+    group.setTotal_compressed_size(compressed);
+    group.setNum_rows(pendingRowCount);
+    rowGroups.add(group);
+    totalRowCount = Math.addExact(totalRowCount, pendingRowCount);
+    pendingRowCount = 0;
+    for (WriterColumnBuilder column : columns) column.clear();
   }
 
-  /**
-   * Compare two byte arrays lexicographically.
-   *
-   * @param a First byte array
-   * @param b Second byte array
-   * @return Negative if a < b, positive if a > b, zero if equal
-   */
-  private int compareByteArrays(byte[] a, byte[] b) {
-    int minLength = Math.min(a.length, b.length);
-    for (int i = 0; i < minLength; i++) {
-      int cmp = Byte.compareUnsigned(a[i], b[i]);
-      if (cmp != 0) {
-        return cmp;
-      }
+  private ColumnChunk writeColumnChunk(WriterColumnBuilder column) throws IOException {
+    long start = currentPosition;
+    long uncompressed = 0;
+    long compressed = 0;
+    boolean retainedCompression = false;
+    for (WriterPage data : column.finishAndGetPages()) {
+      PageInfo page = writeDataPage(data);
+      uncompressed = Math.addExact(uncompressed, page.total_uncompressed_size);
+      compressed = Math.addExact(compressed, page.total_compressed_size);
+      retainedCompression |= page.effectiveCodec != CompressionCodec.UNCOMPRESSED;
     }
-    return Integer.compare(a.length, b.length);
-  }
-
-  /**
-   * Convert column statistics to Parquet Statistics format.
-   *
-   * @param stats Internal column statistics
-   * @param type Physical type of the column
-   * @return Parquet Statistics object or null if no statistics available
-   * @throws IOException if encoding statistics fails
-   */
-  private Statistics toParquetStatistics(ColumnStatistics stats, Type type)
-      throws IOException {
-    if (stats.min == null && stats.max == null) {
-      return null;
-    }
-
-    Statistics parquetStats = new Statistics();
-    parquetStats.setNull_count(stats.nullCount);
-    parquetStats.setDistinct_count(stats.distinctCount);
-
-    if (stats.min != null) {
-      parquetStats.setMin(encodeStatValue(stats.min, type));
-      parquetStats.setMin_value(encodeStatValue(stats.min, type));
-    }
-
-    if (stats.max != null) {
-      parquetStats.setMax(encodeStatValue(stats.max, type));
-      parquetStats.setMax_value(encodeStatValue(stats.max, type));
-    }
-
-    return parquetStats;
-  }
-
-  /**
-   * Encode a statistic value to byte array for Parquet format.
-   *
-   * @param value Statistic value to encode
-   * @param type Physical type of the value
-   * @return Encoded byte array
-   * @throws IOException if encoding fails
-   */
-  private byte[] encodeStatValue(Object value, Type type) throws IOException {
-    ByteArrayOutputStream buffer = new ByteArrayOutputStream();
-
-    switch (type) {
-      case BOOLEAN:
-        buffer.write(((Boolean) value) ? 1 : 0);
-        break;
-
-      case INT32:
-        writeInt32(buffer, ((Number) value).intValue());
-        break;
-
-      case INT64:
-        writeInt64(buffer, ((Number) value).longValue());
-        break;
-
-      case FLOAT:
-        writeFloat(buffer, ((Number) value).floatValue());
-        break;
-
-      case DOUBLE:
-        writeDouble(buffer, ((Number) value).doubleValue());
-        break;
-
-      case BYTE_ARRAY:
-      case FIXED_LEN_BYTE_ARRAY:
-        return getByteArray(value);
-
-      default:
-        throw new UnsupportedOperationException("Unsupported type for statistics: " + type);
-    }
-
-    return buffer.toByteArray();
-  }
-
-  /**
-   * Helper class to track column statistics during writing.
-   */
-  private static class ColumnStatistics {
-    /** Minimum value in the column */
-    Object min;
-    /** Maximum value in the column */
-    Object max;
-    /** Number of null values in the column */
-    long nullCount;
-    /** Number of distinct values in the column */
-    long distinctCount;
-
-    ColumnStatistics() {
-      this.nullCount = 0;
-      this.distinctCount = 0;
-    }
+    ColumnDescriptor descriptor = column.descriptor();
+    ColumnMetaData metadata = new ColumnMetaData();
+    metadata.setType(convertType(descriptor.physicalType()));
+    metadata.setEncodings(Arrays.asList(org.apache.parquet.format.Encoding.RLE,
+        org.apache.parquet.format.Encoding.PLAIN));
+    metadata.setPath_in_schema(Arrays.asList(descriptor.path()));
+    metadata.setCodec(convertCompressionCodec(retainedCompression ? compressionCodec : CompressionCodec.UNCOMPRESSED));
+    metadata.setNum_values(column.numValues());
+    metadata.setTotal_uncompressed_size(uncompressed);
+    metadata.setTotal_compressed_size(compressed);
+    metadata.setData_page_offset(start);
+    metadata.setStatistics(column.statistics().toParquet());
+    ColumnChunk chunk = new ColumnChunk();
+    chunk.setFile_offset(start);
+    chunk.setMeta_data(metadata);
+    return chunk;
   }
 
   /**
@@ -701,8 +355,8 @@ public class ParquetFileWriter implements ParquetWriter {
     final int uncompressed_page_size;
     final int compressed_page_size;
     final int header_size;
-    final int total_compressed_size;
-    final int total_uncompressed_size;
+    final long total_compressed_size;
+    final long total_uncompressed_size;
     final CompressionCodec effectiveCodec;
 
     PageInfo(int uncompressed_page_size, int compressed_page_size, int header_size,
@@ -710,290 +364,54 @@ public class ParquetFileWriter implements ParquetWriter {
       this.uncompressed_page_size = uncompressed_page_size;
       this.compressed_page_size = compressed_page_size;
       this.header_size = header_size;
-      this.total_compressed_size = header_size + compressed_page_size;
-      this.total_uncompressed_size = header_size + uncompressed_page_size;
+      this.total_compressed_size = (long) header_size + compressed_page_size;
+      this.total_uncompressed_size = (long) header_size + uncompressed_page_size;
       this.effectiveCodec = effectiveCodec;
     }
   }
 
-  /**
-   * Write a data page and return its size information.
-   *
-   * @param columnDesc Column descriptor for the column being written
-   * @param values List of column values to write
-   * @param definitionLevels Definition levels for null handling
-   * @param repetitionLevels Repetition levels for repeated fields
-   * @return PageInfo containing size information about the written page
-   * @throws IOException if writing fails
-   */
-  private PageInfo writeDataPage(ColumnDescriptor columnDesc,
-                                 List<Object> values,
-                                 List<Integer> definitionLevels,
-                                 List<Integer> repetitionLevels) throws IOException {
-    return writeDataPageWithLevels(columnDesc, values, definitionLevels, repetitionLevels,
-        values.size());
-  }
-
-  /**
-   * Write a data page with explicit numValues (for map columns where numValues != values.size()).
-   *
-   * @param columnDesc Column descriptor for the column being written
-   * @param values List of column values to write
-   * @param definitionLevels Definition levels for null handling
-   * @param repetitionLevels Repetition levels for repeated fields
-   * @param numValues Explicit count of values (may differ from values.size() for maps)
-   * @return PageInfo containing size information about the written page
-   * @throws IOException if writing fails
-   */
-  private PageInfo writeDataPageWithLevels(ColumnDescriptor columnDesc,
-                                           List<Object> values,
-                                           List<Integer> definitionLevels,
-                                           List<Integer> repetitionLevels,
-                                           int numValues) throws IOException {
-
-    ByteArrayOutputStream pageBuffer = new ByteArrayOutputStream();
-
-    // Write repetition levels (if needed)
-    if (columnDesc.maxRepetitionLevel() > 0) {
-      byte[] repetitionLevelData = encodeRLE(repetitionLevels, columnDesc.maxRepetitionLevel());
-      pageBuffer.write(repetitionLevelData);
-    }
-
-    // Write definition levels (if needed)
-    if (columnDesc.maxDefinitionLevel() > 0) {
-      byte[] definitionLevelData = encodeRLE(definitionLevels, columnDesc.maxDefinitionLevel());
-      pageBuffer.write(definitionLevelData);
-    }
-
-    // Write values using PLAIN encoding
-    byte[] valueData = encodeValuesPlain(values, columnDesc.physicalType());
-    pageBuffer.write(valueData);
-
-    byte[] uncompressedPageData = pageBuffer.toByteArray();
-    byte[] compressedPageData;
-    CompressionCodec effectiveCodec;
-
-    if (compressionCodec == CompressionCodec.UNCOMPRESSED
-        || uncompressedPageData.length == 0) {
-      compressedPageData = uncompressedPageData;
-      effectiveCodec = CompressionCodec.UNCOMPRESSED;
-    } else {
-      byte[] candidate = compress(uncompressedPageData);
-      double ratio = (double) candidate.length / (double) uncompressedPageData.length;
-      if (ratio < minCompressionRatio) {
-        compressedPageData = candidate;
-        effectiveCodec = compressionCodec;
-      } else {
-        compressedPageData = uncompressedPageData;
-        effectiveCodec = CompressionCodec.UNCOMPRESSED;
+  private PageInfo writeDataPage(WriterPage page) throws IOException {
+    byte[] values = page.values();
+    byte[] stored = values;
+    CompressionCodec effective = CompressionCodec.UNCOMPRESSED;
+    if (compressionCodec != CompressionCodec.UNCOMPRESSED && minCompressionRatio > 0
+        && values.length != 0) {
+      byte[] candidate = compressor.compress(values);
+      if ((double) candidate.length / values.length < minCompressionRatio) {
+        stored = candidate;
+        effective = compressionCodec;
       }
     }
-
-    // Create data page header
-    DataPageHeader dataPageHeader = new DataPageHeader();
-    dataPageHeader.setNum_values(numValues);
-    dataPageHeader.setEncoding(org.apache.parquet.format.Encoding.PLAIN);
-    dataPageHeader.setDefinition_level_encoding(org.apache.parquet.format.Encoding.RLE);
-    dataPageHeader.setRepetition_level_encoding(org.apache.parquet.format.Encoding.RLE);
-
-    // Write page header
-    PageHeader pageHeader = new PageHeader();
-    pageHeader.setType(PageType.DATA_PAGE);
-    pageHeader.setUncompressed_page_size(uncompressedPageData.length);
-    pageHeader.setCompressed_page_size(compressedPageData.length);
-    pageHeader.setData_page_header(dataPageHeader);
-
-    // Serialize page header using Thrift
-    ByteArrayOutputStream headerBuffer = new ByteArrayOutputStream();
+    int levelBytes = Math.toIntExact((long) page.repetitions().length + page.definitions().length);
+    int uncompressedSize = Math.toIntExact((long) levelBytes + values.length);
+    int compressedSize = Math.toIntExact((long) levelBytes + stored.length);
+    DataPageHeaderV2 data = new DataPageHeaderV2();
+    data.setNum_values(page.numValues());
+    data.setNum_nulls(page.numNulls());
+    data.setNum_rows(page.numRows());
+    data.setEncoding(org.apache.parquet.format.Encoding.PLAIN);
+    data.setDefinition_levels_byte_length(page.definitions().length);
+    data.setRepetition_levels_byte_length(page.repetitions().length);
+    data.setIs_compressed(effective != CompressionCodec.UNCOMPRESSED);
+    data.setStatistics(page.statistics());
+    PageHeader header = new PageHeader();
+    header.setType(PageType.DATA_PAGE_V2);
+    header.setUncompressed_page_size(uncompressedSize);
+    header.setCompressed_page_size(compressedSize);
+    header.setData_page_header_v2(data);
+    ByteArrayOutputStream encodedHeader = new ByteArrayOutputStream();
     try {
-      pageHeader.write(new TCompactProtocol(new TIOStreamTransport(headerBuffer)));
-    } catch (TException e) {
-      throw new IOException("Failed to write page header", e);
+      header.write(new TCompactProtocol(new TIOStreamTransport(encodedHeader)));
+    } catch (TException failure) {
+      throw new IOException("Failed to write page header", failure);
     }
-
-    byte[] headerBytes = headerBuffer.toByteArray();
-
-    // Write to output stream
+    byte[] headerBytes = encodedHeader.toByteArray();
     outputStream.write(headerBytes);
-    outputStream.write(compressedPageData);
-
-    int totalBytesWritten = headerBytes.length + compressedPageData.length;
-    currentPosition += totalBytesWritten;
-
-    return new PageInfo(uncompressedPageData.length, compressedPageData.length, headerBytes.length,
-        effectiveCodec);
-  }
-
-  /**
-   * Encode definition/repetition levels using proper RLE/Bit-Packing Hybrid encoding.
-   *
-   * @param levels List of level values to encode
-   * @param maxLevel Maximum level value (determines bit width)
-   * @return Encoded byte array in RLE/Bit-Packing Hybrid format
-   * @throws IOException if encoding fails
-   */
-  private byte[] encodeRLE(List<Integer> levels, int maxLevel) throws IOException {
-    // Calculate bit width needed for the max level value
-    int bitWidth = RleEncoder.bitWidth(maxLevel);
-
-    // Use the RleEncoder for proper encoding
-    RleEncoder encoder = new RleEncoder(bitWidth);
-    return encoder.encode(levels);
-  }
-
-  /**
-   * Encode values using PLAIN encoding.
-   *
-   * @param values List of values to encode
-   * @param type Physical type of the values
-   * @return Encoded byte array in PLAIN format
-   * @throws IOException if encoding fails
-   */
-  private byte[] encodeValuesPlain(List<Object> values, Type type)
-      throws IOException {
-    ByteArrayOutputStream buffer = new ByteArrayOutputStream();
-
-    for (Object value : values) {
-      if (value == null) {
-        // Nulls are handled by definition levels, skip writing value
-        continue;
-      }
-
-      switch (type) {
-        case BOOLEAN:
-          // Booleans are bit-packed, but for simplicity we'll write bytes
-          buffer.write(((Boolean) value) ? 1 : 0);
-          break;
-
-        case INT32:
-          writeInt32(buffer, ((Number) value).intValue());
-          break;
-
-        case INT64:
-          writeInt64(buffer, ((Number) value).longValue());
-          break;
-
-        case FLOAT:
-          writeFloat(buffer, ((Number) value).floatValue());
-          break;
-
-        case DOUBLE:
-          writeDouble(buffer, ((Number) value).doubleValue());
-          break;
-
-        case BYTE_ARRAY:
-          writeByteArray(buffer, getByteArray(value));
-          break;
-
-        case FIXED_LEN_BYTE_ARRAY:
-          writeFixedByteArray(buffer, getByteArray(value));
-          break;
-
-        default:
-          throw new UnsupportedOperationException("Unsupported type: " + type);
-      }
-    }
-
-    return buffer.toByteArray();
-  }
-
-  /**
-   * Convert various object types to byte arrays for encoding.
-   *
-   * @param value Object to convert (byte[], String, ByteBuffer, or other)
-   * @return Byte array representation of the value
-   */
-  private byte[] getByteArray(Object value) {
-    if (value instanceof byte[]) {
-      return (byte[]) value;
-    } else if (value instanceof String) {
-      return ((String) value).getBytes(StandardCharsets.UTF_8);
-    } else if (value instanceof ByteBuffer bb) {
-      byte[] result = new byte[bb.remaining()];
-      bb.duplicate().get(result);
-      return result;
-    } else {
-      return value.toString().getBytes(StandardCharsets.UTF_8);
-    }
-  }
-
-  /**
-   * Write a 32-bit integer in little-endian format.
-   *
-   * @param buffer Output buffer to write to
-   * @param value Integer value to write
-   */
-  private void writeInt32(ByteArrayOutputStream buffer, int value) {
-    byte[] encodedArray = ByteUtils.intToBytes(value);
-    buffer.write(encodedArray, 0, 4);
-  }
-
-  /**
-   * Write a 64-bit integer in little-endian format.
-   *
-   * @param buffer Output buffer to write to
-   * @param value Long value to write
-   */
-  private void writeInt64(ByteArrayOutputStream buffer, long value) {
-    byte[] encodedArray = ByteUtils.longToBytes(value);
-    buffer.write(encodedArray, 0, 8);
-  }
-
-  /**
-   * Write a 32-bit float in little-endian format.
-   *
-   * @param buffer Output buffer to write to
-   * @param value Float value to write
-   */
-  private void writeFloat(ByteArrayOutputStream buffer, float value) {
-    byte[] encodedArray = ByteUtils.floatToBytes(value);
-    buffer.write(encodedArray, 0, 4);
-  }
-
-  /**
-   * Write a 64-bit double in little-endian format.
-   *
-   * @param buffer Output buffer to write to
-   * @param value Double value to write
-   */
-  private void writeDouble(ByteArrayOutputStream buffer, double value) {
-    byte[] encodedArray = ByteUtils.doubleToBytes(value);
-    buffer.write(encodedArray, 0, 8);
-  }
-
-  /**
-   * Write a variable-length byte array with 4-byte length prefix.
-   *
-   * @param buffer Output buffer to write to
-   * @param value Byte array to write
-   * @throws IOException if writing fails
-   */
-  private void writeByteArray(ByteArrayOutputStream buffer, byte[] value) throws IOException {
-    // Write length as 4-byte little-endian integer
-    writeInt32(buffer, value.length);
-    buffer.write(value);
-  }
-
-  /**
-   * Write a fixed-length byte array without length prefix.
-   *
-   * @param buffer Output buffer to write to
-   * @param value Byte array to write
-   * @throws IOException if writing fails
-   */
-  private void writeFixedByteArray(ByteArrayOutputStream buffer, byte[] value) throws IOException {
-    buffer.write(value);
-  }
-
-  /**
-   * Compress data using the configured compression codec.
-   *
-   * @param data Uncompressed data
-   * @return Compressed data
-   * @throws IOException if compression fails
-   */
-  private byte[] compress(byte[] data) throws IOException {
-    return compressor.compress(data);
+    outputStream.write(page.repetitions());
+    outputStream.write(page.definitions());
+    outputStream.write(stored);
+    currentPosition = Math.addExact(currentPosition, (long) headerBytes.length + compressedSize);
+    return new PageInfo(uncompressedSize, compressedSize, headerBytes.length, effective);
   }
 
   /**
@@ -1112,6 +530,9 @@ public class ParquetFileWriter implements ParquetWriter {
       element.setType_length(col.typeLength());
     }
 
+    // Emit the descriptor's logical annotation (LogicalType + legacy ConvertedType).
+    io.github.aloksingh.parquet.writer.WriterSchema.emitAnnotations(element, col);
+
     return element;
   }
 
@@ -1134,7 +555,8 @@ public class ParquetFileWriter implements ParquetWriter {
             ? FieldRepetitionType.OPTIONAL
             : FieldRepetitionType.REQUIRED
     );
-    mapGroup.setConverted_type(ConvertedType.MAP);
+    // Emit the MAP annotation (modern LogicalType + legacy ConvertedType).
+    io.github.aloksingh.parquet.writer.WriterSchema.emitMapAnnotations(mapGroup);
     mapGroup.setNum_children(1);  // Contains key_value group
     elements.add(mapGroup);
 
@@ -1150,15 +572,21 @@ public class ParquetFileWriter implements ParquetWriter {
     keyElement.setName("key");
     keyElement.setType(convertType(mapMeta.keyType()));
     keyElement.setRepetition_type(FieldRepetitionType.REQUIRED);
-    if (mapMeta.keyType() == Type.BYTE_ARRAY) {
-      keyElement.setConverted_type(ConvertedType.UTF8);
+    if (mapMeta.keyType() == Type.FIXED_LEN_BYTE_ARRAY) {
+      keyElement.setType_length(mapMeta.keyDescriptor().typeLength());
     }
+    // Emit the key's own logical annotation (no blanket UTF8 for unannotated binaries).
+    io.github.aloksingh.parquet.writer.WriterSchema.emitAnnotations(keyElement,
+        mapMeta.keyDescriptor());
     elements.add(keyElement);
 
     // 4. Value element (optional/required <type> value)
     SchemaElement valueElement = new SchemaElement();
     valueElement.setName("value");
     valueElement.setType(convertType(mapMeta.valueType()));
+    if (mapMeta.valueType() == Type.FIXED_LEN_BYTE_ARRAY) {
+      valueElement.setType_length(mapMeta.valueDescriptor().typeLength());
+    }
 
     // Value is optional if maxDefLevel indicates it can be null
     int valueMaxDef = mapMeta.valueDescriptor().maxDefinitionLevel();
@@ -1168,9 +596,9 @@ public class ParquetFileWriter implements ParquetWriter {
     valueElement.setRepetition_type(
         valueOptional ? FieldRepetitionType.OPTIONAL : FieldRepetitionType.REQUIRED
     );
-    if (mapMeta.valueType() == Type.BYTE_ARRAY) {
-      valueElement.setConverted_type(ConvertedType.UTF8);
-    }
+    // Emit the value's own logical annotation (no blanket UTF8 for unannotated binaries).
+    io.github.aloksingh.parquet.writer.WriterSchema.emitAnnotations(valueElement,
+        mapMeta.valueDescriptor());
     elements.add(valueElement);
 
     return elements;
@@ -1181,7 +609,7 @@ public class ParquetFileWriter implements ParquetWriter {
    */
   @Override
   public void close() throws IOException {
-    if (closed) {
+    if (state == State.CLOSED || state == State.FAILED) {
       return;
     }
 
@@ -1206,6 +634,11 @@ public class ParquetFileWriter implements ParquetWriter {
       fileMetaData.setSchema(schema);
 
       fileMetaData.setRow_groups(rowGroups);
+      List<ColumnOrder> orders = new ArrayList<>(this.schema.getNumColumns());
+      for (int i = 0; i < this.schema.getNumColumns(); i++) {
+        orders.add(ColumnOrder.TYPE_ORDER(new TypeDefinedOrder()));
+      }
+      fileMetaData.setColumn_orders(orders);
       fileMetaData.setCreated_by("java-parquet-rs ParquetFileWriter");
 
       // Serialize metadata using Thrift
@@ -1229,11 +662,17 @@ public class ParquetFileWriter implements ParquetWriter {
       // Write magic number at the end
       outputStream.write(PARQUET_MAGIC);
 
-    } finally {
-      if (outputStream != null) {
-        outputStream.close();
-      }
-      closed = true;
+      // A footer is not a commit until the sink has closed successfully.
+      OutputStream completedSink = outputStream;
+      outputStream = null; // Close is attempted exactly once, even if it fails.
+      completedSink.close();
+      Files.move(temporaryPath, filePath, StandardCopyOption.ATOMIC_MOVE,
+          StandardCopyOption.REPLACE_EXISTING);
+      temporaryPath = null;
+      state = State.CLOSED;
+    } catch (IOException | RuntimeException | Error failure) {
+      fail(failure);
+      throw failure;
     }
   }
 }

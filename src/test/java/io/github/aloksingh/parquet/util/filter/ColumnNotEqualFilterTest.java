@@ -1,6 +1,8 @@
 package io.github.aloksingh.parquet.util.filter;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static io.github.aloksingh.parquet.util.filter.FilterTestSupport.*;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.aloksingh.parquet.model.ListMetadata;
@@ -12,13 +14,14 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import io.github.aloksingh.parquet.model.Type;
 import org.junit.jupiter.api.Test;
 
 public class ColumnNotEqualFilterTest {
 
   @Test
   public void testPrimitiveStringNotEqual() {
-    LogicalColumnDescriptor descriptor = new LogicalColumnDescriptor("col", LogicalType.PRIMITIVE, null, null);
+    LogicalColumnDescriptor descriptor = primitive("col", Type.BYTE_ARRAY);
     ColumnNotEqualFilter filter = new ColumnNotEqualFilter(descriptor, "test");
 
     assertFalse(filter.apply("test"));
@@ -27,7 +30,7 @@ public class ColumnNotEqualFilterTest {
 
   @Test
   public void testPrimitiveIntegerNotEqual() {
-    LogicalColumnDescriptor descriptor = new LogicalColumnDescriptor("col", LogicalType.PRIMITIVE, null, null);
+    LogicalColumnDescriptor descriptor = primitive("col", Type.INT32);
     ColumnNotEqualFilter filter = new ColumnNotEqualFilter(descriptor, 42);
 
     assertFalse(filter.apply(42));
@@ -36,15 +39,15 @@ public class ColumnNotEqualFilterTest {
 
   @Test
   public void testPrimitiveNullValueWithNonNullMatch() {
-    LogicalColumnDescriptor descriptor = new LogicalColumnDescriptor("col", LogicalType.PRIMITIVE, null, null);
+    LogicalColumnDescriptor descriptor = primitive("col", Type.BYTE_ARRAY);
     ColumnNotEqualFilter filter = new ColumnNotEqualFilter(descriptor, "test");
 
-    assertTrue(filter.apply(null));
+    assertFalse(filter.apply(null));
   }
 
   @Test
   public void testPrimitiveNullValueWithNullMatch() {
-    LogicalColumnDescriptor descriptor = new LogicalColumnDescriptor("col", LogicalType.PRIMITIVE, null, null);
+    LogicalColumnDescriptor descriptor = primitive("col", Type.INT32);
     ColumnNotEqualFilter filter = new ColumnNotEqualFilter(descriptor, null);
 
     assertFalse(filter.apply(null));
@@ -53,7 +56,7 @@ public class ColumnNotEqualFilterTest {
   @Test
   public void testListNotEqual() {
     List<String> matchList = Arrays.asList("a", "b", "c");
-    LogicalColumnDescriptor descriptor = new LogicalColumnDescriptor("col", LogicalType.LIST, (ListMetadata) null);
+    LogicalColumnDescriptor descriptor = list(Type.BYTE_ARRAY);
     ColumnNotEqualFilter filter = new ColumnNotEqualFilter(descriptor, matchList);
 
     List<String> valueList = Arrays.asList("a", "b", "c");
@@ -66,7 +69,7 @@ public class ColumnNotEqualFilterTest {
   @Test
   public void testListDifferentSize() {
     List<String> matchList = Arrays.asList("a", "b");
-    LogicalColumnDescriptor descriptor = new LogicalColumnDescriptor("col", LogicalType.LIST, (ListMetadata) null);
+    LogicalColumnDescriptor descriptor = list(Type.BYTE_ARRAY);
     ColumnNotEqualFilter filter = new ColumnNotEqualFilter(descriptor, matchList);
 
     List<String> valueList = Arrays.asList("a", "b", "c");
@@ -79,7 +82,7 @@ public class ColumnNotEqualFilterTest {
     matchMap.put("key1", 1);
     matchMap.put("key2", 2);
 
-    LogicalColumnDescriptor descriptor = new LogicalColumnDescriptor("col", LogicalType.MAP, (MapMetadata) null);
+    LogicalColumnDescriptor descriptor = map(Type.INT32);
     ColumnNotEqualFilter filter = new ColumnNotEqualFilter(descriptor, matchMap);
 
     Map<String, Integer> valueMap = new HashMap<>();
@@ -100,7 +103,7 @@ public class ColumnNotEqualFilterTest {
     Map<String, Integer> matchMap = new HashMap<>();
     matchMap.put("key1", 1);
 
-    LogicalColumnDescriptor descriptor = new LogicalColumnDescriptor("col", LogicalType.MAP, (MapMetadata) null);
+    LogicalColumnDescriptor descriptor = map(Type.INT32);
     ColumnNotEqualFilter filter = new ColumnNotEqualFilter(descriptor, matchMap);
 
     Map<String, Integer> valueMap = new HashMap<>();
@@ -115,7 +118,7 @@ public class ColumnNotEqualFilterTest {
   @Test
   public void testMapKeyValueNotEqual() {
     LogicalColumnDescriptor descriptor =
-        new LogicalColumnDescriptor("col", LogicalType.MAP, (MapMetadata) null);
+        map(Type.INT32);
     ColumnNotEqualFilter filter =
         new ColumnNotEqualFilter(descriptor, 10, Optional.of("key1"));
 
@@ -129,7 +132,7 @@ public class ColumnNotEqualFilterTest {
   @Test
   public void testMapKeyValueEqual() {
     LogicalColumnDescriptor descriptor =
-        new LogicalColumnDescriptor("col", LogicalType.MAP, (MapMetadata) null);
+        map(Type.INT32);
     ColumnNotEqualFilter filter =
         new ColumnNotEqualFilter(descriptor, 10, Optional.of("key1"));
 
@@ -143,7 +146,7 @@ public class ColumnNotEqualFilterTest {
   @Test
   public void testMapKeyValueNullNotEqualToValue() {
     LogicalColumnDescriptor descriptor =
-        new LogicalColumnDescriptor("col", LogicalType.MAP, (MapMetadata) null);
+        map(Type.INT32);
     ColumnNotEqualFilter filter =
         new ColumnNotEqualFilter(descriptor, 10, Optional.of("key1"));
 
@@ -151,13 +154,13 @@ public class ColumnNotEqualFilterTest {
     colValue.put("key1", null);
     colValue.put("key2", 20);
 
-    assertTrue(filter.apply(colValue));
+    assertFalse(filter.apply(colValue));
   }
 
   @Test
   public void testMapKeyValueNullEqualToNull() {
     LogicalColumnDescriptor descriptor =
-        new LogicalColumnDescriptor("col", LogicalType.MAP, (MapMetadata) null);
+        map(Type.INT32);
     ColumnNotEqualFilter filter =
         new ColumnNotEqualFilter(descriptor, null, Optional.of("key1"));
 
@@ -171,7 +174,7 @@ public class ColumnNotEqualFilterTest {
   @Test
   public void testMapKeyMissingNotEqual() {
     LogicalColumnDescriptor descriptor =
-        new LogicalColumnDescriptor("col", LogicalType.MAP, (MapMetadata) null);
+        map(Type.INT32);
     ColumnNotEqualFilter filter =
         new ColumnNotEqualFilter(descriptor, 10, Optional.of("key3"));
 
@@ -179,13 +182,13 @@ public class ColumnNotEqualFilterTest {
     colValue.put("key1", 15);
     colValue.put("key2", 20);
 
-    assertTrue(filter.apply(colValue));
+    assertFalse(filter.apply(colValue));
   }
 
   @Test
   public void testMapKeyValueWithStringNotEqual() {
     LogicalColumnDescriptor descriptor =
-        new LogicalColumnDescriptor("col", LogicalType.MAP, (MapMetadata) null);
+        map(Type.BYTE_ARRAY);
     ColumnNotEqualFilter filter =
         new ColumnNotEqualFilter(descriptor, "John", Optional.of("name"));
 
@@ -199,7 +202,7 @@ public class ColumnNotEqualFilterTest {
   @Test
   public void testMapKeyValueWithStringEqual() {
     LogicalColumnDescriptor descriptor =
-        new LogicalColumnDescriptor("col", LogicalType.MAP, (MapMetadata) null);
+        map(Type.BYTE_ARRAY);
     ColumnNotEqualFilter filter =
         new ColumnNotEqualFilter(descriptor, "John", Optional.of("name"));
 
@@ -213,7 +216,7 @@ public class ColumnNotEqualFilterTest {
   @Test
   public void testMapKeyValueWithDoubleNotEqual() {
     LogicalColumnDescriptor descriptor =
-        new LogicalColumnDescriptor("col", LogicalType.MAP, (MapMetadata) null);
+        map(Type.DOUBLE);
     ColumnNotEqualFilter filter =
         new ColumnNotEqualFilter(descriptor, 10.5, Optional.of("score"));
 
@@ -227,7 +230,7 @@ public class ColumnNotEqualFilterTest {
   @Test
   public void testMapKeyValueWithDoubleEqual() {
     LogicalColumnDescriptor descriptor =
-        new LogicalColumnDescriptor("col", LogicalType.MAP, (MapMetadata) null);
+        map(Type.DOUBLE);
     ColumnNotEqualFilter filter =
         new ColumnNotEqualFilter(descriptor, 10.5, Optional.of("score"));
 
@@ -241,7 +244,7 @@ public class ColumnNotEqualFilterTest {
   @Test
   public void testMapKeyValueWithLongNotEqual() {
     LogicalColumnDescriptor descriptor =
-        new LogicalColumnDescriptor("col", LogicalType.MAP, (MapMetadata) null);
+        map(Type.INT64);
     ColumnNotEqualFilter filter =
         new ColumnNotEqualFilter(descriptor, 1000L, Optional.of("timestamp"));
 
@@ -255,7 +258,7 @@ public class ColumnNotEqualFilterTest {
   @Test
   public void testMapKeyValueWithLongEqual() {
     LogicalColumnDescriptor descriptor =
-        new LogicalColumnDescriptor("col", LogicalType.MAP, (MapMetadata) null);
+        map(Type.INT64);
     ColumnNotEqualFilter filter =
         new ColumnNotEqualFilter(descriptor, 1000L, Optional.of("timestamp"));
 
@@ -269,7 +272,7 @@ public class ColumnNotEqualFilterTest {
   @Test
   public void testMapKeyValueWithZeroNotEqualToNull() {
     LogicalColumnDescriptor descriptor =
-        new LogicalColumnDescriptor("col", LogicalType.MAP, (MapMetadata) null);
+        map(Type.INT32);
     ColumnNotEqualFilter filter =
         new ColumnNotEqualFilter(descriptor, null, Optional.of("count"));
 
@@ -283,7 +286,7 @@ public class ColumnNotEqualFilterTest {
   @Test
   public void testMapKeyValueWithEmptyStringNotEqualToNull() {
     LogicalColumnDescriptor descriptor =
-        new LogicalColumnDescriptor("col", LogicalType.MAP, (MapMetadata) null);
+        map(Type.BYTE_ARRAY);
     ColumnNotEqualFilter filter =
         new ColumnNotEqualFilter(descriptor, null, Optional.of("name"));
 
@@ -294,3 +297,4 @@ public class ColumnNotEqualFilterTest {
     assertTrue(filter.apply(colValue));
   }
 }
+

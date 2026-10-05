@@ -1,6 +1,5 @@
 package io.github.aloksingh.parquet;
 
-import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
@@ -33,6 +32,7 @@ public class PageReader {
   private final ParquetMetadata.ColumnChunkMetadata columnMeta;
   private final Decompressor decompressor;
   private final ColumnDescriptor columnDescriptor;
+  private final PageReadOptions options;
   private long currentOffset;
   private final long endOffset;
 
@@ -46,14 +46,56 @@ public class PageReader {
   public PageReader(ChunkReader chunkReader,
                     ParquetMetadata.ColumnChunkMetadata columnMeta,
                     ColumnDescriptor columnDescriptor) {
-    this.chunkReader = chunkReader;
-    this.columnMeta = columnMeta;
-    this.columnDescriptor = columnDescriptor;
-    this.decompressor = Decompressor.create(columnMeta.codec());
+    this(chunkReader, columnMeta, columnDescriptor, PageReadOptions.DEFAULT);
+  }
 
-    // Start reading from the first page offset
-    this.currentOffset = columnMeta.getFirstDataPageOffset();
-    this.endOffset = currentOffset + columnMeta.totalCompressedSize();
+  /**
+   * Creates a page reader with explicit resource limits and checksum policy.
+   * @param chunkReader the source of positional reads
+   * @param columnMeta column chunk metadata
+   * @param columnDescriptor the column's schema descriptor
+   * @param options resource limits and checksum policy
+   */
+  public PageReader(ChunkReader chunkReader,
+                    ParquetMetadata.ColumnChunkMetadata columnMeta,
+                    ColumnDescriptor columnDescriptor,
+                    PageReadOptions options) {
+    this.chunkReader = java.util.Objects.requireNonNull(chunkReader, "chunkReader");
+    this.columnMeta = java.util.Objects.requireNonNull(columnMeta, "columnMeta");
+    this.columnDescriptor = java.util.Objects.requireNonNull(columnDescriptor, "columnDescriptor");
+    this.options = java.util.Objects.requireNonNull(options, "options");
+    long dataOffset = columnMeta.dataPageOffset();
+    long dictionaryOffset = columnMeta.dictionaryPageOffset();
+    long size = columnMeta.totalCompressedSize();
+    // The existing metadata adapter uses -1 for an absent dictionary offset.
+    // It is not a file address; all offsets that will actually be read are nonnegative.
+    if (dataOffset < 0 || dictionaryOffset < -1 || size < 0
+        || columnMeta.totalUncompressedSize() < 0 || columnMeta.numValues() < 0) {
+      throw new ParquetException("Negative column chunk offset, size, or value count");
+    }
+    // Empty dictionary-only chunks have no data page and may use a zero data offset.
+    boolean hasDataOffset = columnMeta.numValues() != 0 || dataOffset != 0;
+    if (hasDataOffset && dictionaryOffset > 0 && dictionaryOffset > dataOffset) {
+      throw new ParquetException("Dictionary page offset follows the first data page");
+    }
+    long start = columnMeta.getFirstDataPageOffset();
+    long fileLength;
+    try {
+      fileLength = chunkReader.length();
+    } catch (IOException e) {
+      throw new ParquetException("Failed to determine column chunk source length", e);
+    }
+    // Subtraction validates both EOF and addition overflow without wrapping offsets.
+    if (fileLength < 0 || start > fileLength || size > fileLength - start) {
+      throw new ParquetException("Column chunk range exceeds source length: offset=" + start
+          + ", size=" + size + ", sourceLength=" + fileLength);
+    }
+    this.currentOffset = start;
+    this.endOffset = start + size;
+    if (dataOffset > endOffset) {
+      throw new ParquetException("First data page offset lies outside the column chunk");
+    }
+    this.decompressor = Decompressor.create(columnMeta.codec(), options);
   }
 
   /**
@@ -105,23 +147,16 @@ public class PageReader {
       return null;
     }
 
+    long pageOffset = currentOffset;
     try {
-      // Read page header (we don't know the size, so read a reasonable amount)
-      // Page headers are typically small (< 100 bytes)
-      ByteBuffer headerBuffer = chunkReader.readBytes(currentOffset, 256);
-      byte[] headerBytes = new byte[headerBuffer.remaining()];
-      headerBuffer.get(headerBytes);
-
-      // Parse page header
-      ByteArrayInputStream bais = new ByteArrayInputStream(headerBytes);
-      TIOStreamTransport transport = new TIOStreamTransport(bais);
-      TCompactProtocol protocol = new TCompactProtocol(transport);
-
+      int headerLimit = (int) Math.min((long) options.maxHeaderBytes(), endOffset - currentOffset);
+      PageHeaderInputStream input = new PageHeaderInputStream(chunkReader, currentOffset, headerLimit);
+      var configuration = new shaded.parquet.org.apache.thrift.TConfiguration(headerLimit, headerLimit, 100);
+      TIOStreamTransport transport = new TIOStreamTransport(configuration, input);
+      TCompactProtocol protocol = new TCompactProtocol(transport, headerLimit, headerLimit);
       PageHeader pageHeader = new PageHeader();
       pageHeader.read(protocol);
-
-      // Calculate header size by tracking how much was consumed from the input stream
-      int headerSize = headerBytes.length - bais.available();
+      int headerSize = input.bytesConsumed();
 
       // Move offset past header
       currentOffset += headerSize;
@@ -129,39 +164,34 @@ public class PageReader {
       // Read compressed page data
       int compressedSize = pageHeader.getCompressed_page_size();
       int uncompressedSize = pageHeader.getUncompressed_page_size();
+      validateSize("compressed page size", compressedSize, options.maxCompressedPageBytes());
+      validateSize("uncompressed page size", uncompressedSize, options.maxUncompressedPageBytes());
+      if (compressedSize > endOffset - currentOffset) {
+        throw new ParquetException("Page body exceeds column chunk boundary");
+      }
+      validatePageCounts(pageHeader);
 
       // Create appropriate page type based on page type
       // NOTE: For DATA_PAGE_V2, we must NOT decompress here because the levels are uncompressed
       if (pageHeader.getType() == PageType.DATA_PAGE_V2) {
         // Handle DATA_PAGE_V2 separately - levels are uncompressed, data may be compressed
-        ByteBuffer allPageData = chunkReader.readBytes(currentOffset, compressedSize);
+        ByteBuffer allPageData = readPageBody(compressedSize);
+        verifyChecksum(pageHeader, allPageData);
         currentOffset += compressedSize;
 
         var dataPageV2Header = pageHeader.getData_page_header_v2();
 
         int defLevelsByteLen = dataPageV2Header.getDefinition_levels_byte_length();
         int repLevelsByteLen = dataPageV2Header.getRepetition_levels_byte_length();
-        boolean isCompressed = dataPageV2Header.isIs_compressed();
+        // The pinned Parquet Thrift definition makes an omitted flag true.
+        boolean isCompressed = !dataPageV2Header.isSetIs_compressed() || dataPageV2Header.isIs_compressed();
 
-        // Extract repetition levels (uncompressed)
-        ByteBuffer repetitionLevels = ByteBuffer.allocate(repLevelsByteLen);
-        for (int i = 0; i < repLevelsByteLen; i++) {
-          repetitionLevels.put(allPageData.get());
-        }
-        repetitionLevels.flip();
-
-        // Extract definition levels (uncompressed)
-        ByteBuffer definitionLevels = ByteBuffer.allocate(defLevelsByteLen);
-        for (int i = 0; i < defLevelsByteLen; i++) {
-          definitionLevels.put(allPageData.get());
-        }
-        definitionLevels.flip();
-
-        // Extract data (may be compressed)
-        int dataSize = compressedSize - repLevelsByteLen - defLevelsByteLen;
-        byte[] compressedDataBytes = new byte[dataSize];
-        allPageData.get(compressedDataBytes);
-        ByteBuffer compressedDataBuf = ByteBuffer.wrap(compressedDataBytes);
+        // Validated level and data ranges share the stored body, without per-byte copies.
+        ByteBuffer repetitionLevels = allPageData.slice(0, repLevelsByteLen).asReadOnlyBuffer();
+        ByteBuffer definitionLevels = allPageData.slice(repLevelsByteLen, defLevelsByteLen).asReadOnlyBuffer();
+        int levelBytes = repLevelsByteLen + defLevelsByteLen;
+        int dataSize = compressedSize - levelBytes;
+        ByteBuffer compressedDataBuf = allPageData.slice(levelBytes, dataSize).asReadOnlyBuffer();
 
         // Decompress data if needed
         ByteBuffer decompressedData;
@@ -187,7 +217,8 @@ public class PageReader {
       }
 
       // For other page types, read and decompress the whole page
-      ByteBuffer compressedData = chunkReader.readBytes(currentOffset, compressedSize);
+      ByteBuffer compressedData = readPageBody(compressedSize);
+      verifyChecksum(pageHeader, compressedData);
       currentOffset += compressedSize;
 
       // Decompress if needed
@@ -206,49 +237,13 @@ public class PageReader {
         Encoding encoding = Encoding.fromValue(
             pageHeader.getData_page_header().getEncoding().getValue());
 
-        // For Data Page V1, definition and repetition levels are stored at the beginning
-        // of the page data. Each section starts with a 4-byte length field (little-endian)
-        // indicating the number of bytes of RLE-encoded level data.
-        //
-        // Format: [def_level_length][def_level_data][values]
-        // OR:     [rep_level_length][rep_level_data][def_level_length][def_level_data][values]
-        //
-        // Note: If max_repetition_level = 0, repetition levels are omitted entirely
-        // If max_definition_level = 0, definition levels are omitted entirely
-        //
-        // TODO: Properly determine if levels exist by checking max levels from schema
-        // For now, we use a heuristic: try to read the length, and if it seems valid, use it
-
-        int repLevelLen = 0;
-        int defLevelLen = 0;
-
+        // V1 RLE level sections include a little-endian byte-length prefix.
+        // Keep the prefixes in data for ColumnValues, without advancing its position.
         pageData.order(java.nio.ByteOrder.LITTLE_ENDIAN);
-
-        int offset = 0;  // Track total bytes consumed by levels
-
-        // Check if we need to read repetition levels
-        // Repetition levels exist when max_repetition_level > 0
-        if (columnDescriptor.maxRepetitionLevel() > 0) {
-          if (pageData.remaining() >= 4) {
-            int savedPos = pageData.position();
-            int repLevelDataLen = pageData.getInt();
-            repLevelLen = 4 + repLevelDataLen;
-            pageData.position(savedPos);  // Reset position for ColumnValues to read
-            offset += repLevelLen;
-          }
-        }
-
-        // Check if we need to read definition levels
-        // Definition levels exist when max_definition_level > 0
-        if (columnDescriptor.maxDefinitionLevel() > 0) {
-          if (pageData.remaining() >= offset + 4) {
-            int savedPos = pageData.position();
-            pageData.position(savedPos + offset);  // Skip past rep levels
-            int defLevelDataLen = pageData.getInt();
-            defLevelLen = 4 + defLevelDataLen;
-            pageData.position(savedPos);  // Reset position for ColumnValues to read
-          }
-        }
+        int repLevelLen = columnDescriptor.maxRepetitionLevel() > 0
+            ? v1LevelLength(pageData, 0, "repetition levels") : 0;
+        int defLevelLen = columnDescriptor.maxDefinitionLevel() > 0
+            ? v1LevelLength(pageData, repLevelLen, "definition levels") : 0;
 
         return new Page.DataPage(
             pageData,
@@ -262,7 +257,81 @@ public class PageReader {
       }
 
     } catch (TException e) {
-      throw new ParquetException("Failed to parse page header", e);
+      currentOffset = pageOffset;
+      throw new ParquetException("Failed to parse page header at " + pageOffset, e);
+    } catch (IOException | RuntimeException e) {
+      currentOffset = pageOffset;
+      throw e;
     }
+  }
+
+  private void verifyChecksum(PageHeader header, ByteBuffer body) {
+    if (options.verifyChecksums() && header.isSetCrc()) {
+      var crc = new java.util.zip.CRC32();
+      crc.update(body.duplicate());
+      if ((int) crc.getValue() != header.getCrc()) {
+        throw new ParquetException("Page CRC32 mismatch at body offset " + currentOffset);
+      }
+    }
+  }
+
+  private static int v1LevelLength(ByteBuffer data, int offset, String field) {
+    int available = data.remaining() - offset;
+    if (available < Integer.BYTES) {
+      throw new ParquetException("Missing length prefix for " + field);
+    }
+    int length = data.getInt(data.position() + offset);
+    if (length < 0 || length > available - Integer.BYTES) {
+      throw new ParquetException("Invalid byte length for " + field + ": " + length);
+    }
+    return Integer.BYTES + length;
+  }
+
+  private void validatePageCounts(PageHeader header) {
+    switch (header.getType()) {
+      case DATA_PAGE -> {
+        var data = header.getData_page_header();
+        if (data == null) throw new ParquetException("Missing DATA_PAGE header");
+        validateSize("page value count", data.getNum_values(), options.maxValuesPerPage());
+      }
+      case DICTIONARY_PAGE -> {
+        var dictionary = header.getDictionary_page_header();
+        if (dictionary == null) throw new ParquetException("Missing DICTIONARY_PAGE header");
+        validateSize("dictionary value count", dictionary.getNum_values(), options.maxValuesPerPage());
+      }
+      case DATA_PAGE_V2 -> {
+        var data = header.getData_page_header_v2();
+        if (data == null) throw new ParquetException("Missing DATA_PAGE_V2 header");
+        validateSize("page value count", data.getNum_values(), options.maxValuesPerPage());
+        validateSize("page null count", data.getNum_nulls(), data.getNum_values());
+        validateSize("page row count", data.getNum_rows(), data.getNum_values());
+        int storedSize = header.getCompressed_page_size();
+        int decodedSize = header.getUncompressed_page_size();
+        int repetition = data.getRepetition_levels_byte_length();
+        int definition = data.getDefinition_levels_byte_length();
+        validateSize("V2 repetition level byte length", repetition, Math.min(storedSize, decodedSize));
+        validateSize("V2 definition level byte length", definition, Math.min(storedSize, decodedSize));
+        long levelBytes = (long) repetition + definition;
+        if (levelBytes > storedSize || levelBytes > decodedSize) {
+          throw new ParquetException("V2 level byte lengths exceed the stored or decoded page size");
+        }
+        if (data.isSetIs_compressed() && !data.isIs_compressed() && storedSize != decodedSize) {
+          throw new ParquetException("Uncompressed V2 page size mismatch");
+        }
+      }
+      default -> throw new ParquetException("Unsupported page type: " + header.getType());
+    }
+  }
+
+  private static void validateSize(String field, int value, int limit) {
+    if (value < 0 || value > limit) {
+      throw new ParquetException("Invalid " + field + ": " + value + " (limit " + limit + ")");
+    }
+  }
+
+  private ByteBuffer readPageBody(int size) throws IOException {
+    ByteBuffer body = ByteBuffer.allocate(size);
+    chunkReader.readInto(currentOffset, body);
+    return body.flip();
   }
 }

@@ -5,18 +5,35 @@ import io.github.aloksingh.parquet.model.SchemaDescriptor;
 import java.util.List;
 import java.util.Optional;
 
+/**
+ * Creates eagerly bound, typed predicates. Unknown or case-ambiguous names and incompatible
+ * constants/operators are errors. Ordinary comparisons exclude null values; eq(null) aliases
+ * isNull and neq(null) aliases isNotNull. Keyed MAP nulls include null maps and absent keys.
+ * Floating comparisons use exact IEEE values (NaN unordered; signed zeros equal), binary
+ * comparisons use content/unsigned byte order, and strings use Java String order. Binary
+ * statistics are never pruned without known logical ordering.
+ */
 public class ColumnFilters {
 
   public ColumnFilter createFilter(SchemaDescriptor schemaDescriptor,
                                    ColumnFilterDescriptor descriptor) {
-    List<LogicalColumnDescriptor> logicalColumnDescriptors = schemaDescriptor.logicalColumns();
-    for (LogicalColumnDescriptor logicalColumnDescriptor : logicalColumnDescriptors) {
-      if (logicalColumnDescriptor.getName().equalsIgnoreCase(descriptor.columnName())) {
-        return createFilter(logicalColumnDescriptor, descriptor.filterOperator(),
-            descriptor.matchValue(), descriptor.mapKey());
-      }
+    if (schemaDescriptor == null || descriptor == null || descriptor.columnName() == null
+        || descriptor.columnName().isEmpty()) {
+      throw new IllegalArgumentException("Schema and a non-empty column name are required");
     }
-    return null;
+    List<LogicalColumnDescriptor> matches = schemaDescriptor.logicalColumns().stream()
+        .filter(c -> c.getName().equalsIgnoreCase(descriptor.columnName())).toList();
+    if (matches.isEmpty()) {
+      throw new IllegalArgumentException("Unknown column '" + descriptor.columnName()
+          + "'; available columns: " + schemaDescriptor.logicalColumns().stream()
+          .map(LogicalColumnDescriptor::getName).toList());
+    }
+    if (matches.size() != 1) {
+      throw new IllegalArgumentException("Ambiguous column '" + descriptor.columnName()
+          + "': " + matches.stream().map(LogicalColumnDescriptor::getName).toList());
+    }
+    return createFilter(matches.get(0), descriptor.filterOperator(), descriptor.matchValue(),
+        descriptor.mapKey());
   }
 
   public ColumnFilter createFilter(LogicalColumnDescriptor columnDescriptor,
@@ -27,32 +44,22 @@ public class ColumnFilters {
   public ColumnFilter createFilter(LogicalColumnDescriptor columnDescriptor,
                                    FilterOperator operator, Object matchValue,
                                    Optional<String> mapKey) {
+    if (operator == null) {
+      throw new IllegalArgumentException("Filter operator must not be null");
+    }
     switch (operator) {
       case eq:
         return new ColumnEqualFilter(columnDescriptor, matchValue, mapKey);
       case neq:
         return new ColumnNotEqualFilter(columnDescriptor, matchValue, mapKey);
       case lt:
-        if (!(matchValue instanceof Comparable)) {
-          throw new IllegalArgumentException("matchValue must be Comparable for lt operator");
-        }
-        return new ColumnLessThanFilter(columnDescriptor, (Comparable) matchValue, mapKey);
+        return new ColumnLessThanFilter(columnDescriptor, matchValue, mapKey);
       case lte:
-        if (!(matchValue instanceof Comparable)) {
-          throw new IllegalArgumentException("matchValue must be Comparable for lte operator");
-        }
-        return new ColumnLessThanOrEqualFilter(columnDescriptor, (Comparable) matchValue, mapKey);
+        return new ColumnLessThanOrEqualFilter(columnDescriptor, matchValue, mapKey);
       case gt:
-        if (!(matchValue instanceof Comparable)) {
-          throw new IllegalArgumentException("matchValue must be Comparable for gt operator");
-        }
-        return new ColumnGreaterThanFilter(columnDescriptor, (Comparable) matchValue, mapKey);
+        return new ColumnGreaterThanFilter(columnDescriptor, matchValue, mapKey);
       case gte:
-        if (!(matchValue instanceof Comparable)) {
-          throw new IllegalArgumentException("matchValue must be Comparable for gte operator");
-        }
-        return new ColumnGreaterThanOrEqualFilter(columnDescriptor, (Comparable) matchValue,
-            mapKey);
+        return new ColumnGreaterThanOrEqualFilter(columnDescriptor, matchValue, mapKey);
       case contains:
         return new ColumnContainsFilter(columnDescriptor, matchValue, mapKey);
       case prefix:

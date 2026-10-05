@@ -18,7 +18,43 @@ package io.github.aloksingh.parquet.model;
  */
 public record ColumnDescriptor(Type physicalType, String[] path, int maxDefinitionLevel,
                                int maxRepetitionLevel,
-                               int typeLength) {
+                               int typeLength, PrimitiveLogicalType annotation) {
+
+  /** Compatibility constructor: no logical annotation is inferred from a physical type. */
+  public ColumnDescriptor(Type physicalType, String[] path, int maxDefinitionLevel,
+                          int maxRepetitionLevel, int typeLength) {
+    this(physicalType, path, maxDefinitionLevel, maxRepetitionLevel, typeLength,
+        PrimitiveLogicalType.none());
+  }
+
+  public ColumnDescriptor {
+    path = path.clone();
+    annotation = java.util.Objects.requireNonNull(annotation, "annotation")
+        .withPhysicalType(physicalType, typeLength);
+  }
+
+  @Override
+  public String[] path() {
+    return path.clone();
+  }
+
+  @Override
+  public boolean equals(Object other) {
+    return other instanceof ColumnDescriptor that
+        && physicalType == that.physicalType
+        && java.util.Arrays.equals(path, that.path)
+        && maxDefinitionLevel == that.maxDefinitionLevel
+        && maxRepetitionLevel == that.maxRepetitionLevel
+        && typeLength == that.typeLength
+        && annotation.equals(that.annotation);
+  }
+
+  @Override
+  public int hashCode() {
+    int result = java.util.Objects.hash(physicalType, maxDefinitionLevel, maxRepetitionLevel,
+        typeLength, annotation);
+    return 31 * result + java.util.Arrays.hashCode(path);
+  }
 
   /**
    * Returns the column path as a dot-separated string.

@@ -1,5 +1,6 @@
 package io.github.aloksingh.parquet.batch;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -39,7 +40,11 @@ public class RowColumnGroupIteratorTest {
       // v11: double with values [42.0, 7.7, 42.125, 7.7]
 
       long[] expectedC0 = {1593604800L, 1593604800L, 1593604801L, 1593604801L};
-      String[] expectedC1 = {"abc", "def", "abc", "def"};
+      // c1 is unannotated BYTE_ARRAY: raw binary, surfaced as exact bytes (not lossy text)
+      byte[][] expectedC1 = {"abc".getBytes(java.nio.charset.StandardCharsets.UTF_8),
+          "def".getBytes(java.nio.charset.StandardCharsets.UTF_8),
+          "abc".getBytes(java.nio.charset.StandardCharsets.UTF_8),
+          "def".getBytes(java.nio.charset.StandardCharsets.UTF_8)};
       double[] expectedV11 = {42.0, 7.7, 42.125, 7.7};
 
       List<RowColumnGroup> rows = new ArrayList<>();
@@ -69,7 +74,7 @@ public class RowColumnGroupIteratorTest {
         assertEquals(expectedC0[rowCount], row.getColumnValue(0),
             "Row " + rowCount + " column c0 mismatch");
 
-        assertEquals(expectedC1[rowCount], row.getColumnValue(1),
+        assertArrayEquals(expectedC1[rowCount], (byte[]) row.getColumnValue(1),
             "Row " + rowCount + " column c1 mismatch");
 
         // For doubles, use delta comparison
@@ -78,7 +83,7 @@ public class RowColumnGroupIteratorTest {
 
         // Test access by column name
         assertEquals(expectedC0[rowCount], row.getColumnValue("c0"));
-        assertEquals(expectedC1[rowCount], row.getColumnValue("c1"));
+        assertArrayEquals(expectedC1[rowCount], (byte[]) row.getColumnValue("c1"));
 
         rowCount++;
       }
@@ -104,15 +109,16 @@ public class RowColumnGroupIteratorTest {
       RowColumnGroup firstRow = iterator.next();
 
       // Test typed access
-      ColumnDescriptor c0Descriptor = firstRow.getColumns().get(0);
-      ColumnDescriptor c1Descriptor = firstRow.getColumns().get(1);
-      ColumnDescriptor v11Descriptor = firstRow.getColumns().get(2);
+      ColumnDescriptor c0Descriptor = firstRow.getPhysicalColumns().get(0);
+      ColumnDescriptor c1Descriptor = firstRow.getPhysicalColumns().get(1);
+      ColumnDescriptor v11Descriptor = firstRow.getPhysicalColumns().get(2);
 
       Long c0Value = firstRow.getColumnValue(c0Descriptor, Long.class);
       assertEquals(1593604800L, c0Value);
 
-      String c1Value = firstRow.getColumnValue(c1Descriptor, String.class);
-      assertEquals("abc", c1Value);
+      // Unannotated BYTE_ARRAY stays raw binary: exact bytes, not text
+      byte[] c1Value = firstRow.getColumnValue(c1Descriptor, byte[].class);
+      assertArrayEquals("abc".getBytes(java.nio.charset.StandardCharsets.UTF_8), c1Value);
 
       Double v11Value = firstRow.getColumnValue(v11Descriptor, Double.class);
       assertEquals(42.0, v11Value, 0.001);
@@ -151,7 +157,8 @@ public class RowColumnGroupIteratorTest {
       String rowString = firstRow.toString();
       assertNotNull(rowString);
       assertTrue(rowString.contains("c0=1593604800"));
-      assertTrue(rowString.contains("c1=abc"));
+      // raw binary renders as its exact bytes
+      assertTrue(rowString.contains("c1=[97, 98, 99]"), "unexpected rendering: " + rowString);
       assertTrue(rowString.contains("v11=42.0"));
     }
   }
@@ -192,7 +199,7 @@ public class RowColumnGroupIteratorTest {
       assertTrue(iterator.hasNext());
       RowColumnGroup row = iterator.next();
 
-      ColumnDescriptor c0Descriptor = row.getColumns().get(0);
+      ColumnDescriptor c0Descriptor = row.getPhysicalColumns().get(0);
 
       // Try to get a Long column as String - should throw ClassCastException
       assertThrows(ClassCastException.class, () -> {

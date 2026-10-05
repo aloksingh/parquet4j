@@ -42,6 +42,10 @@ public class BitPackedReader {
    * @throws ParquetException if the buffer does not contain enough data to read all requested values
    */
   public static boolean[] readBooleans(ByteBuffer buffer, int numValues) {
+    int bytes = bytesForBits(numValues);
+    if (bytes > buffer.remaining()) {
+      throw new ParquetException("Buffer underflow while reading bit-packed booleans");
+    }
     boolean[] result = new boolean[numValues];
 
     int currentByte = 0;
@@ -85,6 +89,44 @@ public class BitPackedReader {
    * @return the number of bytes needed to store the bits
    */
   public static int bytesForBits(int numBits) {
-    return (numBits + 7) / 8;
+    if (numBits < 0) throw new IllegalArgumentException("Bit count must be nonnegative");
+    return (int) ((numBits + 7L) / 8);
+  }
+
+  /** Word-at-a-time hybrid unpacking; byte tails are checked rather than zero-filled. */
+  static final class IntReader {
+    private final ByteBuffer data;
+    private final int width;
+    private final long mask;
+    private long word;
+    private int availableBits;
+
+    IntReader(ByteBuffer data, int width) {
+      this.data = data.duplicate().order(java.nio.ByteOrder.LITTLE_ENDIAN);
+      this.width = width;
+      this.mask = (1L << width) - 1;
+    }
+
+    int read() {
+      if (width == 0) return 0;
+      while (availableBits < width) {
+        if (data.remaining() >= Integer.BYTES) {
+          word |= (data.getInt() & 0xffffffffL) << availableBits;
+          availableBits += Integer.SIZE;
+        } else {
+          if (!data.hasRemaining()) throw new ParquetException("Truncated bit-packed value");
+          word |= (data.get() & 0xffL) << availableBits;
+          availableBits += Byte.SIZE;
+        }
+      }
+      int value = (int) (word & mask);
+      word >>>= width;
+      availableBits -= width;
+      return value;
+    }
+
+    void readInto(int[] result, int offset, int length) {
+      for (int i = 0; i < length; i++) result[offset + i] = read();
+    }
   }
 }

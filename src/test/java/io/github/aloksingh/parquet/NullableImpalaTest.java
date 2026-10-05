@@ -8,6 +8,7 @@ import io.github.aloksingh.parquet.model.ColumnDescriptor;
 import io.github.aloksingh.parquet.model.ColumnValues;
 import io.github.aloksingh.parquet.model.SchemaDescriptor;
 import java.io.IOException;
+import java.util.Arrays;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
@@ -369,7 +370,11 @@ public class NullableImpalaTest {
         System.out.println("\nFound nested_struct.b at column " + bColumnIndex);
         ColumnValues bValues = rowGroup.readColumn(bColumnIndex);
 
-        List<List<Integer>> bLists = bValues.decodeAsList(obj -> {
+        // nested_struct.b.list.element: nested_struct (optional, definition 1),
+        // b (optional LIST, definition 2), list (repeated, definition 3), element
+        // (optional, definition 4). The LIST layer needs explicit structural
+        // thresholds (listDefinition=2, elementDefinition=3).
+        List<List<Integer>> bLists = bValues.decodeAsList(2, 3, obj -> {
           if (obj instanceof Integer) {
             return (Integer) obj;
           } else if (obj instanceof Long) {
@@ -378,49 +383,16 @@ public class NullableImpalaTest {
           return null;
         });
 
-        System.out.println("nested_struct.b lists:");
-        for (int i = 0; i < bLists.size(); i++) {
-          System.out.println("  Row " + i + ": " + bLists.get(i));
-        }
-
-        // Verify data from PyArrow:
-        // Row 0: b=[1]
-        // Row 1: b=[None]
-        // Row 2: b=None
-        // Row 3: b=None
-        // Row 4: b=None
-        // Row 5: None (entire struct is null)
-        // Row 6: b=[2, 3, None]
+        // Exact values verified with PyArrow and pinned by DecodingFixtureTest:
+        // Row 0: [1]; Row 1: [None]; Rows 2-4: None (the LIST itself is absent);
+        // Row 5: None (the whole struct is null); Row 6: [2, 3, None].
         assertEquals(7, bLists.size(), "Should have 7 rows");
-
-        // Row 0: [1]
-        assertNotNull(bLists.get(0));
-        assertEquals(1, bLists.get(0).size());
-        assertEquals(Integer.valueOf(1), bLists.get(0).get(0));
-
-        // Row 1: [None]
-        assertNotNull(bLists.get(1));
-        assertEquals(1, bLists.get(1).size());
-        assertNull(bLists.get(1).get(0));
-
-        // Rows 2-4: empty lists (Java reader decodes these as empty rather than null)
-        // PyArrow shows these as None, but the Java implementation decodes them as []
-        assertNotNull(bLists.get(2));
-        assertEquals(0, bLists.get(2).size());
-        assertNotNull(bLists.get(3));
-        assertEquals(0, bLists.get(3).size());
-        assertNotNull(bLists.get(4));
-        assertEquals(0, bLists.get(4).size());
-
-        // Row 5: null (entire struct is null)
-        assertNull(bLists.get(5));
-
-        // Row 6: [2, 3, None]
-        assertNotNull(bLists.get(6));
-        assertEquals(3, bLists.get(6).size());
-        assertEquals(Integer.valueOf(2), bLists.get(6).get(0));
-        assertEquals(Integer.valueOf(3), bLists.get(6).get(1));
-        assertNull(bLists.get(6).get(2));
+        assertEquals(Arrays.asList(
+            List.of(1),
+            Arrays.asList((Integer) null),
+            null, null, null, null,
+            Arrays.asList(2, 3, null)),
+            bLists);
       }
     }
   }

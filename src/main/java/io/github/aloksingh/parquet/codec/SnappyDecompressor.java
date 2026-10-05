@@ -13,26 +13,35 @@ import org.xerial.snappy.Snappy;
  * to decompress data compressed with Snappy.
  * </p>
  */
-public class SnappyDecompressor implements Decompressor {
+public class SnappyDecompressor extends BoundedDecompressor {
 
   /**
    * Constructs a new Snappy decompressor.
    */
   public SnappyDecompressor() {
   }
+
+  /** Constructs a decompressor with explicit page byte limits.
+   * @param options the input and output allocation limits
+   */
+  public SnappyDecompressor(io.github.aloksingh.parquet.PageReadOptions options) {
+    super(options);
+  }
   @Override
-  public ByteBuffer decompress(ByteBuffer compressed, int uncompressedSize) throws IOException {
+  protected ByteBuffer decompressBounded(ByteBuffer compressed, int uncompressedSize) throws IOException {
     byte[] compressedBytes = new byte[compressed.remaining()];
     compressed.get(compressedBytes);
 
+    int encodedSize = Snappy.uncompressedLength(compressedBytes, 0, compressedBytes.length);
+    if (encodedSize != uncompressedSize) {
+      throw new IOException("Snappy size mismatch: expected " + uncompressedSize + ", got " + encodedSize);
+    }
     byte[] uncompressed = new byte[uncompressedSize];
     int actualSize = Snappy.uncompress(compressedBytes, 0, compressedBytes.length,
         uncompressed, 0);
 
     if (actualSize != uncompressedSize) {
-      throw new ParquetException(String.format(
-          "Decompressed size mismatch: expected %d, got %d",
-          uncompressedSize, actualSize));
+      throw new IOException("Snappy size mismatch: expected " + uncompressedSize + ", got " + actualSize);
     }
 
     return ByteBuffer.wrap(uncompressed);

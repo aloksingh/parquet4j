@@ -1,110 +1,96 @@
 package io.github.aloksingh.parquet;
 
+import io.github.aloksingh.parquet.model.ParquetException;
 import java.nio.ByteBuffer;
-import java.nio.ByteOrder;
+import java.util.Objects;
 
 /**
- * Decoder for BYTE_STREAM_SPLIT encoding.
- * <p>
- * BYTE_STREAM_SPLIT is an encoding specifically for floating-point types (FLOAT and DOUBLE).
- * It splits the bytes of each value and groups them together by byte position.
- * <p>
- * For example, if you have float values [v0, v1, v2], each float is 4 bytes.
- * Instead of storing: [v0_b0, v0_b1, v0_b2, v0_b3, v1_b0, v1_b1, v1_b2, v1_b3, ...]
- * BYTE_STREAM_SPLIT stores: [v0_b0, v1_b0, v2_b0, ..., v0_b1, v1_b1, v2_b1, ..., ...]
- * <p>
- * This encoding is efficient for compression because bytes at the same position often
- * have similar values in floating-point data.
+ * BYTE_STREAM_SPLIT decoding for FLOAT and DOUBLE. Byte planes are reassembled
+ * directly into primitive bit patterns: decoding allocates only its output array,
+ * not a byte array or ByteBuffer wrapper per value. Caller buffer order is ignored
+ * and preserved; its position advances by exactly the consumed encoded bytes.
  */
 public class ByteStreamSplitDecoder {
   private final ByteBuffer buffer;
   private final int numValues;
   private final int bytesPerValue;
+  private final int dataBytes;
 
   /**
-   * Creates a decoder for BYTE_STREAM_SPLIT encoded data.
-   *
-   * @param buffer        the buffer containing encoded data positioned at the start of the encoded stream
-   * @param numValues     the number of values to decode
-   * @param bytesPerValue the number of bytes per value (4 for FLOAT, 8 for DOUBLE)
+   * @param buffer encoded data at the start of its byte planes
+   * @param numValues nonnegative number of values
+   * @param bytesPerValue 4 for FLOAT or 8 for DOUBLE
+   * @throws IllegalArgumentException if the width or count is invalid
+   * @throws ParquetException if the complete payload is unavailable
    */
   public ByteStreamSplitDecoder(ByteBuffer buffer, int numValues, int bytesPerValue) {
-    this.buffer = buffer;
+    if (numValues < 0 || (bytesPerValue != 4 && bytesPerValue != 8)) {
+      throw new IllegalArgumentException("BYTE_STREAM_SPLIT requires a nonnegative count and width 4 or 8");
+    }
+    this.buffer = Objects.requireNonNull(buffer, "buffer");
     this.numValues = numValues;
     this.bytesPerValue = bytesPerValue;
+    long bytes = (long) numValues * bytesPerValue;
+    if (bytes > buffer.remaining()) {
+      throw new ParquetException("Truncated BYTE_STREAM_SPLIT payload: need " + bytes
+          + " bytes, have " + buffer.remaining());
+    }
+    this.dataBytes = (int) bytes;
   }
 
   /**
-   * Decodes BYTE_STREAM_SPLIT encoded data into float values.
-   * <p>
-   * This method reconstructs float values by reading bytes from separate byte streams
-   * and reassembling them in little-endian order. The buffer position is advanced
-   * by {@code 4 * numValues} bytes after decoding.
-   *
-   * @return an array of decoded float values
-   * @throws IllegalArgumentException if bytesPerValue is not 4
+   * @return decoded float values, including their original NaN payload/signed-zero bits
+   * @throws IllegalArgumentException if configured for DOUBLE
+   * @throws ParquetException if the caller changed the buffer to truncate the payload
    */
   public float[] decodeFloat() {
     if (bytesPerValue != 4) {
-      throw new IllegalArgumentException(
-          "Expected 4 bytes per value for FLOAT, got: " + bytesPerValue);
+      throw new IllegalArgumentException("Expected 4 bytes per FLOAT value, got " + bytesPerValue);
     }
-
+    checkPayload();
     float[] result = new float[numValues];
-    int startPos = buffer.position();
-
-    for (int valueIdx = 0; valueIdx < numValues; valueIdx++) {
-      // Collect bytes for this value from each stream
-      byte[] valueBytes = new byte[4];
-      for (int byteIdx = 0; byteIdx < 4; byteIdx++) {
-        valueBytes[byteIdx] = buffer.get(startPos + byteIdx * numValues + valueIdx);
-      }
-      // Convert bytes to float (little-endian)
-      ByteBuffer bb = ByteBuffer.wrap(valueBytes);
-      bb.order(ByteOrder.LITTLE_ENDIAN);
-      result[valueIdx] = bb.getFloat();
+    int start = buffer.position();
+    for (int i = 0; i < numValues; i++) {
+      int bits = (buffer.get(start + i) & 0xff)
+          | ((buffer.get(start + numValues + i) & 0xff) << 8)
+          | ((buffer.get(start + 2 * numValues + i) & 0xff) << 16)
+          | ((buffer.get(start + 3 * numValues + i) & 0xff) << 24);
+      result[i] = Float.intBitsToFloat(bits);
     }
-
-    // Advance buffer position past all consumed data
-    buffer.position(startPos + 4 * numValues);
-
+    buffer.position(start + dataBytes);
     return result;
   }
 
   /**
-   * Decodes BYTE_STREAM_SPLIT encoded data into double values.
-   * <p>
-   * This method reconstructs double values by reading bytes from separate byte streams
-   * and reassembling them in little-endian order. The buffer position is advanced
-   * by {@code 8 * numValues} bytes after decoding.
-   *
-   * @return an array of decoded double values
-   * @throws IllegalArgumentException if bytesPerValue is not 8
+   * @return decoded double values, including their original NaN payload/signed-zero bits
+   * @throws IllegalArgumentException if configured for FLOAT
+   * @throws ParquetException if the caller changed the buffer to truncate the payload
    */
   public double[] decodeDouble() {
     if (bytesPerValue != 8) {
-      throw new IllegalArgumentException(
-          "Expected 8 bytes per value for DOUBLE, got: " + bytesPerValue);
+      throw new IllegalArgumentException("Expected 8 bytes per DOUBLE value, got " + bytesPerValue);
     }
-
+    checkPayload();
     double[] result = new double[numValues];
-    int startPos = buffer.position();
-
-    for (int valueIdx = 0; valueIdx < numValues; valueIdx++) {
-      // Collect bytes for this value from each stream
-      byte[] valueBytes = new byte[8];
-      for (int byteIdx = 0; byteIdx < 8; byteIdx++) {
-        valueBytes[byteIdx] = buffer.get(startPos + byteIdx * numValues + valueIdx);
-      }
-      // Convert bytes to double (little-endian)
-      ByteBuffer bb = ByteBuffer.wrap(valueBytes);
-      bb.order(ByteOrder.LITTLE_ENDIAN);
-      result[valueIdx] = bb.getDouble();
+    int start = buffer.position();
+    for (int i = 0; i < numValues; i++) {
+      long bits = (buffer.get(start + i) & 0xffL)
+          | ((buffer.get(start + numValues + i) & 0xffL) << 8)
+          | ((buffer.get(start + 2 * numValues + i) & 0xffL) << 16)
+          | ((buffer.get(start + 3 * numValues + i) & 0xffL) << 24)
+          | ((buffer.get(start + 4 * numValues + i) & 0xffL) << 32)
+          | ((buffer.get(start + 5 * numValues + i) & 0xffL) << 40)
+          | ((buffer.get(start + 6 * numValues + i) & 0xffL) << 48)
+          | ((buffer.get(start + 7 * numValues + i) & 0xffL) << 56);
+      result[i] = Double.longBitsToDouble(bits);
     }
-
-    // Advance buffer position past all consumed data
-    buffer.position(startPos + 8 * numValues);
-
+    buffer.position(start + dataBytes);
     return result;
+  }
+
+  private void checkPayload() {
+    if (dataBytes > buffer.remaining()) {
+      throw new ParquetException("Truncated BYTE_STREAM_SPLIT payload");
+    }
   }
 }

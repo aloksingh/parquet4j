@@ -17,6 +17,7 @@ import io.github.aloksingh.parquet.model.ParquetMetadata;
 import io.github.aloksingh.parquet.model.RowColumnGroup;
 import io.github.aloksingh.parquet.model.SchemaDescriptor;
 import io.github.aloksingh.parquet.model.SimpleRowColumnGroup;
+import io.github.aloksingh.parquet.model.PrimitiveLogicalType;
 import io.github.aloksingh.parquet.model.Type;
 import io.github.aloksingh.parquet.util.filter.ColumnFilter;
 import io.github.aloksingh.parquet.util.filter.ColumnFilterDescriptor;
@@ -41,12 +42,9 @@ public class ParquetReaderQueryTest {
 
   @Test
   public void testSingleFilter() throws Exception {
-    LogicalColumnDescriptor messageCol = SchemaDescriptor.createMapColumn(
+    LogicalColumnDescriptor messageCol = SchemaDescriptor.createStringMapColumn(
         "message",
-        Type.BYTE_ARRAY,  // String key
-        Type.BYTE_ARRAY,  // String value
-        true,   // map itself is optional
-        true// values can be NULL
+        true   // map itself is optional
     );
 
     List<LogicalColumnDescriptor> logicalColumns = Arrays.asList(
@@ -79,15 +77,17 @@ public class ParquetReaderQueryTest {
     map1.put("message.sql", "insert into table_foo" + UUID.randomUUID());
     expectedMaps.add(map1);
     Map<String, String> map2 = new LinkedHashMap<>();
-    map1.put("message.queryHash", "5a6a230002");
-    map1.put("message.method", "");
-    map1.put("message.level", "ERROR");
-    map1.put("message.executionState", "start");
-    map1.put("message.class", "org.foo.bar." + UUID.randomUUID());
-    map1.put("message.timestamp", "2024-01-18T00:00:01Z");
-    map1.put("message.tableName", "bar");
-    map1.put("message.sql", "insert into table_bar" + UUID.randomUUID());
+    map2.put("message.queryHash", "5a6a230002");
+    map2.put("message.method", "");
+    map2.put("message.level", "ERROR");
+    map2.put("message.executionState", "start");
+    map2.put("message.class", "org.foo.bar." + UUID.randomUUID());
+    map2.put("message.timestamp", "2024-01-18T00:00:01Z");
+    map2.put("message.tableName", "bar");
+    map2.put("message.sql", "insert into table_bar" + UUID.randomUUID());
     expectedMaps.add(map2);
+    assertEquals("INFO", expectedMaps.get(0).get("message.level"));
+    assertEquals("ERROR", expectedMaps.get(1).get("message.level"));
     List rows = new ArrayList();
     long ts = System.currentTimeMillis();
     try (ParquetFileWriter writer = new ParquetFileWriter(outputFile, schema)) {
@@ -148,12 +148,9 @@ public class ParquetReaderQueryTest {
 
   @Test
   public void testFilterSets() throws Exception {
-    LogicalColumnDescriptor messageCol = SchemaDescriptor.createMapColumn(
+    LogicalColumnDescriptor messageCol = SchemaDescriptor.createStringMapColumn(
         "message",
-        Type.BYTE_ARRAY,  // String key
-        Type.BYTE_ARRAY,  // String value
-        true,   // map itself is optional
-        true// values can be NULL
+        true   // map itself is optional
     );
 
     List<LogicalColumnDescriptor> logicalColumns = Arrays.asList(
@@ -309,11 +306,15 @@ public class ParquetReaderQueryTest {
   }
 
   private LogicalColumnDescriptor toLogicalColumn(String id, Type type, int maxDefinitionLevel) {
+    // BYTE_ARRAY columns in these tests hold Java strings; the STRING annotation makes the
+    // writer emit it and the row API decode text instead of raw bytes.
+    PrimitiveLogicalType annotation = type == Type.BYTE_ARRAY
+        ? PrimitiveLogicalType.string() : PrimitiveLogicalType.none();
     return new LogicalColumnDescriptor(
         id,
         LogicalType.PRIMITIVE,
         type,
-        new ColumnDescriptor(type, new String[] {id}, maxDefinitionLevel, 0, 0)
+        new ColumnDescriptor(type, new String[] {id}, maxDefinitionLevel, 0, 0, annotation)
     );
   }
 

@@ -1,6 +1,8 @@
 package io.github.aloksingh.parquet.util.filter;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static io.github.aloksingh.parquet.util.filter.FilterTestSupport.*;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.aloksingh.parquet.model.ColumnStatistics;
@@ -21,7 +23,7 @@ public class ColumnGreaterThanOrEqualFilterTest {
   @Test
   public void testIntegerGreaterThanOrEqual() {
     LogicalColumnDescriptor descriptor =
-        new LogicalColumnDescriptor("col", LogicalType.PRIMITIVE, null, null);
+        primitive("col", Type.INT32);
     ColumnGreaterThanOrEqualFilter filter = new ColumnGreaterThanOrEqualFilter(descriptor, 10);
 
     assertTrue(filter.apply(15));
@@ -32,7 +34,7 @@ public class ColumnGreaterThanOrEqualFilterTest {
   @Test
   public void testLongGreaterThanOrEqual() {
     LogicalColumnDescriptor descriptor =
-        new LogicalColumnDescriptor("col", LogicalType.PRIMITIVE, null, null);
+        primitive("col", Type.INT64);
     ColumnGreaterThanOrEqualFilter filter = new ColumnGreaterThanOrEqualFilter(descriptor, 100L);
 
     assertTrue(filter.apply(200L));
@@ -43,7 +45,7 @@ public class ColumnGreaterThanOrEqualFilterTest {
   @Test
   public void testFloatGreaterThanOrEqual() {
     LogicalColumnDescriptor descriptor =
-        new LogicalColumnDescriptor("col", LogicalType.PRIMITIVE, null, null);
+        primitive("col", Type.FLOAT);
     ColumnGreaterThanOrEqualFilter filter = new ColumnGreaterThanOrEqualFilter(descriptor, 10.5f);
 
     assertTrue(filter.apply(15.5f));
@@ -54,7 +56,7 @@ public class ColumnGreaterThanOrEqualFilterTest {
   @Test
   public void testDoubleGreaterThanOrEqual() {
     LogicalColumnDescriptor descriptor =
-        new LogicalColumnDescriptor("col", LogicalType.PRIMITIVE, null, null);
+        primitive("col", Type.DOUBLE);
     ColumnGreaterThanOrEqualFilter filter = new ColumnGreaterThanOrEqualFilter(descriptor, 10.5);
 
     assertTrue(filter.apply(15.5));
@@ -65,7 +67,7 @@ public class ColumnGreaterThanOrEqualFilterTest {
   @Test
   public void testStringGreaterThanOrEqual() {
     LogicalColumnDescriptor descriptor =
-        new LogicalColumnDescriptor("col", LogicalType.PRIMITIVE, null, null);
+        primitive("col", Type.BYTE_ARRAY);
     ColumnGreaterThanOrEqualFilter filter = new ColumnGreaterThanOrEqualFilter(descriptor, "m");
 
     assertTrue(filter.apply("z"));
@@ -76,7 +78,7 @@ public class ColumnGreaterThanOrEqualFilterTest {
   @Test
   public void testNullValue() {
     LogicalColumnDescriptor descriptor =
-        new LogicalColumnDescriptor("col", LogicalType.PRIMITIVE, null, null);
+        primitive("col", Type.INT32);
     ColumnGreaterThanOrEqualFilter filter = new ColumnGreaterThanOrEqualFilter(descriptor, 10);
 
     assertFalse(filter.apply(null));
@@ -85,39 +87,34 @@ public class ColumnGreaterThanOrEqualFilterTest {
   @Test
   public void testNullMatchValue() {
     LogicalColumnDescriptor descriptor =
-        new LogicalColumnDescriptor("col", LogicalType.PRIMITIVE, null, null);
-    ColumnGreaterThanOrEqualFilter filter = new ColumnGreaterThanOrEqualFilter(descriptor, null);
-
-    assertFalse(filter.apply(10));
+        primitive("col", Type.INT32);
+    assertThrows(IllegalArgumentException.class, () -> new ColumnGreaterThanOrEqualFilter(descriptor, null));
   }
 
   @Test
   public void testNonPrimitiveType() {
-    LogicalColumnDescriptor descriptor = new LogicalColumnDescriptor("col", LogicalType.MAP,
-        (io.github.aloksingh.parquet.model.MapMetadata) null);
-    ColumnGreaterThanOrEqualFilter filter = new ColumnGreaterThanOrEqualFilter(descriptor, 10);
-
-    assertFalse(filter.apply(15));
+    LogicalColumnDescriptor descriptor = map(Type.INT32);
+    assertThrows(IllegalArgumentException.class, () -> new ColumnGreaterThanOrEqualFilter(descriptor, 10));
   }
 
   @Test
   public void testNonComparableValue() {
     LogicalColumnDescriptor descriptor =
-        new LogicalColumnDescriptor("col", LogicalType.PRIMITIVE, null, null);
+        primitive("col", Type.BYTE_ARRAY);
     ColumnGreaterThanOrEqualFilter filter = new ColumnGreaterThanOrEqualFilter(descriptor, "test");
 
     Object nonComparable = new Object();
-    assertFalse(filter.apply(nonComparable));
+    assertThrows(IllegalArgumentException.class, () -> filter.apply(nonComparable));
   }
 
   @Test
   public void testIncompatibleTypes() {
     LogicalColumnDescriptor descriptor =
-        new LogicalColumnDescriptor("col", LogicalType.PRIMITIVE, null, null);
+        primitive("col", Type.INT32);
     ColumnGreaterThanOrEqualFilter filter = new ColumnGreaterThanOrEqualFilter(descriptor, 10);
 
-    // Comparing Integer matchValue with String colValue should return false
-    assertFalse(filter.apply("test"));
+    // Comparing Integer matchValue with String colValue must throw
+    assertThrows(IllegalArgumentException.class, () -> filter.apply("test"));
   }
 
   // Map column tests
@@ -125,7 +122,7 @@ public class ColumnGreaterThanOrEqualFilterTest {
   @Test
   public void testMapKeyValueGreaterThanOrEqual() {
     LogicalColumnDescriptor descriptor =
-        new LogicalColumnDescriptor("col", LogicalType.MAP, (MapMetadata) null);
+        map(Type.INT32);
     ColumnGreaterThanOrEqualFilter filter =
         new ColumnGreaterThanOrEqualFilter(descriptor, 10, Optional.of("key1"));
 
@@ -139,7 +136,7 @@ public class ColumnGreaterThanOrEqualFilterTest {
   @Test
   public void testMapKeyValueEqualToMatch() {
     LogicalColumnDescriptor descriptor =
-        new LogicalColumnDescriptor("col", LogicalType.MAP, (MapMetadata) null);
+        map(Type.INT32);
     ColumnGreaterThanOrEqualFilter filter =
         new ColumnGreaterThanOrEqualFilter(descriptor, 10, Optional.of("key1"));
 
@@ -153,7 +150,7 @@ public class ColumnGreaterThanOrEqualFilterTest {
   @Test
   public void testMapKeyValueLessThan() {
     LogicalColumnDescriptor descriptor =
-        new LogicalColumnDescriptor("col", LogicalType.MAP, (MapMetadata) null);
+        map(Type.INT32);
     ColumnGreaterThanOrEqualFilter filter =
         new ColumnGreaterThanOrEqualFilter(descriptor, 10, Optional.of("key1"));
 
@@ -167,7 +164,7 @@ public class ColumnGreaterThanOrEqualFilterTest {
   @Test
   public void testMapKeyValueNullValue() {
     LogicalColumnDescriptor descriptor =
-        new LogicalColumnDescriptor("col", LogicalType.MAP, (MapMetadata) null);
+        map(Type.INT32);
     ColumnGreaterThanOrEqualFilter filter =
         new ColumnGreaterThanOrEqualFilter(descriptor, 10, Optional.of("key1"));
 
@@ -181,7 +178,7 @@ public class ColumnGreaterThanOrEqualFilterTest {
   @Test
   public void testMapKeyMissing() {
     LogicalColumnDescriptor descriptor =
-        new LogicalColumnDescriptor("col", LogicalType.MAP, (MapMetadata) null);
+        map(Type.INT32);
     ColumnGreaterThanOrEqualFilter filter =
         new ColumnGreaterThanOrEqualFilter(descriptor, 10, Optional.of("key3"));
 
@@ -195,7 +192,7 @@ public class ColumnGreaterThanOrEqualFilterTest {
   @Test
   public void testMapKeyValueNonComparable() {
     LogicalColumnDescriptor descriptor =
-        new LogicalColumnDescriptor("col", LogicalType.MAP, (MapMetadata) null);
+        map(Type.INT32);
     ColumnGreaterThanOrEqualFilter filter =
         new ColumnGreaterThanOrEqualFilter(descriptor, 10, Optional.of("key1"));
 
@@ -203,13 +200,13 @@ public class ColumnGreaterThanOrEqualFilterTest {
     colValue.put("key1", new Object());
     colValue.put("key2", 20);
 
-    assertFalse(filter.apply(colValue));
+    assertThrows(IllegalArgumentException.class, () -> filter.apply(colValue));
   }
 
   @Test
   public void testMapKeyValueIncompatibleTypes() {
     LogicalColumnDescriptor descriptor =
-        new LogicalColumnDescriptor("col", LogicalType.MAP, (MapMetadata) null);
+        map(Type.INT32);
     ColumnGreaterThanOrEqualFilter filter =
         new ColumnGreaterThanOrEqualFilter(descriptor, 10, Optional.of("key1"));
 
@@ -217,26 +214,20 @@ public class ColumnGreaterThanOrEqualFilterTest {
     colValue.put("key1", "not a number");
     colValue.put("key2", 20);
 
-    assertFalse(filter.apply(colValue));
+    assertThrows(IllegalArgumentException.class, () -> filter.apply(colValue));
   }
 
   @Test
   public void testMapWithoutKeyNotSupported() {
     LogicalColumnDescriptor descriptor =
-        new LogicalColumnDescriptor("col", LogicalType.MAP, (MapMetadata) null);
-    ColumnGreaterThanOrEqualFilter filter = new ColumnGreaterThanOrEqualFilter(descriptor, 10);
-
-    Map<String, Integer> colValue = new HashMap<>();
-    colValue.put("key1", 15);
-    colValue.put("key2", 20);
-
-    assertFalse(filter.apply(colValue));
+        map(Type.INT32);
+    assertThrows(IllegalArgumentException.class, () -> new ColumnGreaterThanOrEqualFilter(descriptor, 10));
   }
 
   @Test
   public void testMapKeyValueWithStringGreaterThanOrEqual() {
     LogicalColumnDescriptor descriptor =
-        new LogicalColumnDescriptor("col", LogicalType.MAP, (MapMetadata) null);
+        map(Type.BYTE_ARRAY);
     ColumnGreaterThanOrEqualFilter filter =
         new ColumnGreaterThanOrEqualFilter(descriptor, "b", Optional.of("name"));
 
@@ -250,7 +241,7 @@ public class ColumnGreaterThanOrEqualFilterTest {
   @Test
   public void testMapKeyValueWithStringEqualToMatch() {
     LogicalColumnDescriptor descriptor =
-        new LogicalColumnDescriptor("col", LogicalType.MAP, (MapMetadata) null);
+        map(Type.BYTE_ARRAY);
     ColumnGreaterThanOrEqualFilter filter =
         new ColumnGreaterThanOrEqualFilter(descriptor, "b", Optional.of("name"));
 
@@ -264,7 +255,7 @@ public class ColumnGreaterThanOrEqualFilterTest {
   @Test
   public void testMapKeyValueWithDoubleGreaterThanOrEqual() {
     LogicalColumnDescriptor descriptor =
-        new LogicalColumnDescriptor("col", LogicalType.MAP, (MapMetadata) null);
+        map(Type.DOUBLE);
     ColumnGreaterThanOrEqualFilter filter =
         new ColumnGreaterThanOrEqualFilter(descriptor, 10.5, Optional.of("score"));
 
@@ -278,7 +269,7 @@ public class ColumnGreaterThanOrEqualFilterTest {
   @Test
   public void testMapKeyValueWithDoubleEqualToMatch() {
     LogicalColumnDescriptor descriptor =
-        new LogicalColumnDescriptor("col", LogicalType.MAP, (MapMetadata) null);
+        map(Type.DOUBLE);
     ColumnGreaterThanOrEqualFilter filter =
         new ColumnGreaterThanOrEqualFilter(descriptor, 10.5, Optional.of("score"));
 
@@ -292,7 +283,7 @@ public class ColumnGreaterThanOrEqualFilterTest {
   @Test
   public void testMapKeyValueWithLongGreaterThanOrEqual() {
     LogicalColumnDescriptor descriptor =
-        new LogicalColumnDescriptor("col", LogicalType.MAP, (MapMetadata) null);
+        map(Type.INT64);
     ColumnGreaterThanOrEqualFilter filter =
         new ColumnGreaterThanOrEqualFilter(descriptor, 1000L, Optional.of("timestamp"));
 
@@ -306,7 +297,7 @@ public class ColumnGreaterThanOrEqualFilterTest {
   @Test
   public void testMapKeyValueWithLongEqualToMatch() {
     LogicalColumnDescriptor descriptor =
-        new LogicalColumnDescriptor("col", LogicalType.MAP, (MapMetadata) null);
+        map(Type.INT64);
     ColumnGreaterThanOrEqualFilter filter =
         new ColumnGreaterThanOrEqualFilter(descriptor, 1000L, Optional.of("timestamp"));
 
@@ -322,7 +313,7 @@ public class ColumnGreaterThanOrEqualFilterTest {
   @Test
   public void testIsApplicableSameDescriptor() {
     LogicalColumnDescriptor descriptor =
-        new LogicalColumnDescriptor("col", LogicalType.PRIMITIVE, null, null);
+        primitive("col", Type.INT32);
     ColumnGreaterThanOrEqualFilter filter = new ColumnGreaterThanOrEqualFilter(descriptor, 10);
 
     assertTrue(filter.isApplicable(descriptor));
@@ -331,9 +322,9 @@ public class ColumnGreaterThanOrEqualFilterTest {
   @Test
   public void testIsApplicableDifferentDescriptor() {
     LogicalColumnDescriptor descriptor1 =
-        new LogicalColumnDescriptor("col1", LogicalType.PRIMITIVE, null, null);
+        primitive("col1", Type.INT32);
     LogicalColumnDescriptor descriptor2 =
-        new LogicalColumnDescriptor("col2", LogicalType.PRIMITIVE, null, null);
+        primitive("col2", Type.INT32);
     ColumnGreaterThanOrEqualFilter filter = new ColumnGreaterThanOrEqualFilter(descriptor1, 10);
 
     assertFalse(filter.isApplicable(descriptor2));
@@ -344,188 +335,176 @@ public class ColumnGreaterThanOrEqualFilterTest {
   @Test
   public void testSkipWithNullValueAndNullCount() {
     LogicalColumnDescriptor descriptor =
-        new LogicalColumnDescriptor("col", LogicalType.PRIMITIVE, Type.INT32, null);
-    ColumnGreaterThanOrEqualFilter filter = new ColumnGreaterThanOrEqualFilter(descriptor, null);
-
-    ColumnStatistics stats =
-        new ColumnStatistics(ByteUtils.intToBytes(10), ByteUtils.intToBytes(20), 5L, null);
-    assertFalse(filter.skip(stats, null));
+        primitive("col", Type.INT32);
+    assertThrows(IllegalArgumentException.class, () -> new ColumnGreaterThanOrEqualFilter(descriptor, null));
   }
 
   @Test
   public void testSkipWithNullValueAndZeroNullCount() {
     LogicalColumnDescriptor descriptor =
-        new LogicalColumnDescriptor("col", LogicalType.PRIMITIVE, Type.INT32, null);
-    ColumnGreaterThanOrEqualFilter filter = new ColumnGreaterThanOrEqualFilter(descriptor, null);
-
-    ColumnStatistics stats =
-        new ColumnStatistics(ByteUtils.intToBytes(10), ByteUtils.intToBytes(20), 0L, null);
-    assertTrue(filter.skip(stats, null));
+        primitive("col", Type.INT32);
+    assertThrows(IllegalArgumentException.class, () -> new ColumnGreaterThanOrEqualFilter(descriptor, null));
   }
 
   @Test
   public void testSkipWithNullValueNoNullCountTracked() {
     LogicalColumnDescriptor descriptor =
-        new LogicalColumnDescriptor("col", LogicalType.PRIMITIVE, Type.INT32, null);
-    ColumnGreaterThanOrEqualFilter filter = new ColumnGreaterThanOrEqualFilter(descriptor, null);
-
-    ColumnStatistics stats =
-        new ColumnStatistics(ByteUtils.intToBytes(10), ByteUtils.intToBytes(20), null, null);
-    assertFalse(filter.skip(stats, null));
+        primitive("col", Type.INT32);
+    assertThrows(IllegalArgumentException.class, () -> new ColumnGreaterThanOrEqualFilter(descriptor, null));
   }
 
   @Test
   public void testSkipBooleanMaxGreaterThanOrEqualValue() {
     LogicalColumnDescriptor descriptor =
-        new LogicalColumnDescriptor("col", LogicalType.PRIMITIVE, Type.BOOLEAN, null);
+        primitive("col", Type.BOOLEAN);
     ColumnGreaterThanOrEqualFilter filter = new ColumnGreaterThanOrEqualFilter(descriptor, false);
 
     ColumnStatistics stats =
         new ColumnStatistics(ByteUtils.booleanToBytes(false), ByteUtils.booleanToBytes(true), 0L,
             null);
-    assertTrue(filter.skip(stats, false));
+    assertFalse(filter.skip(stats, false));
   }
 
   @Test
   public void testSkipBooleanMaxEqualToValue() {
     LogicalColumnDescriptor descriptor =
-        new LogicalColumnDescriptor("col", LogicalType.PRIMITIVE, Type.BOOLEAN, null);
+        primitive("col", Type.BOOLEAN);
     ColumnGreaterThanOrEqualFilter filter = new ColumnGreaterThanOrEqualFilter(descriptor, true);
 
     ColumnStatistics stats =
         new ColumnStatistics(ByteUtils.booleanToBytes(false), ByteUtils.booleanToBytes(true), 0L,
             null);
-    assertTrue(filter.skip(stats, true));
+    assertFalse(filter.skip(stats, true));
   }
 
   @Test
   public void testSkipBooleanMaxLessThanValue() {
     LogicalColumnDescriptor descriptor =
-        new LogicalColumnDescriptor("col", LogicalType.PRIMITIVE, Type.BOOLEAN, null);
+        primitive("col", Type.BOOLEAN);
     ColumnGreaterThanOrEqualFilter filter = new ColumnGreaterThanOrEqualFilter(descriptor, true);
 
     ColumnStatistics stats =
         new ColumnStatistics(ByteUtils.booleanToBytes(false), ByteUtils.booleanToBytes(false), 0L,
             null);
-    assertFalse(filter.skip(stats, true));
+    assertTrue(filter.skip(stats, true));
   }
 
   @Test
   public void testSkipInt32MaxGreaterThanValue() {
     LogicalColumnDescriptor descriptor =
-        new LogicalColumnDescriptor("col", LogicalType.PRIMITIVE, Type.INT32, null);
+        primitive("col", Type.INT32);
     ColumnGreaterThanOrEqualFilter filter = new ColumnGreaterThanOrEqualFilter(descriptor, 15);
 
     ColumnStatistics stats =
         new ColumnStatistics(ByteUtils.intToBytes(10), ByteUtils.intToBytes(20), 0L, null);
-    assertTrue(filter.skip(stats, 15));
+    assertFalse(filter.skip(stats, 15));
   }
 
   @Test
   public void testSkipInt32MaxEqualToValue() {
     LogicalColumnDescriptor descriptor =
-        new LogicalColumnDescriptor("col", LogicalType.PRIMITIVE, Type.INT32, null);
+        primitive("col", Type.INT32);
     ColumnGreaterThanOrEqualFilter filter = new ColumnGreaterThanOrEqualFilter(descriptor, 20);
 
     ColumnStatistics stats =
         new ColumnStatistics(ByteUtils.intToBytes(10), ByteUtils.intToBytes(20), 0L, null);
-    assertTrue(filter.skip(stats, 20));
+    assertFalse(filter.skip(stats, 20));
   }
 
   @Test
   public void testSkipInt32MaxLessThanValue() {
     LogicalColumnDescriptor descriptor =
-        new LogicalColumnDescriptor("col", LogicalType.PRIMITIVE, Type.INT32, null);
+        primitive("col", Type.INT32);
     ColumnGreaterThanOrEqualFilter filter = new ColumnGreaterThanOrEqualFilter(descriptor, 25);
 
     ColumnStatistics stats =
         new ColumnStatistics(ByteUtils.intToBytes(10), ByteUtils.intToBytes(20), 0L, null);
-    assertFalse(filter.skip(stats, 25));
+    assertTrue(filter.skip(stats, 25));
   }
 
   @Test
   public void testSkipInt32ValueAtMin() {
     LogicalColumnDescriptor descriptor =
-        new LogicalColumnDescriptor("col", LogicalType.PRIMITIVE, Type.INT32, null);
+        primitive("col", Type.INT32);
     ColumnGreaterThanOrEqualFilter filter = new ColumnGreaterThanOrEqualFilter(descriptor, 10);
 
     ColumnStatistics stats =
         new ColumnStatistics(ByteUtils.intToBytes(10), ByteUtils.intToBytes(20), 0L, null);
-    assertTrue(filter.skip(stats, 10));
+    assertFalse(filter.skip(stats, 10));
   }
 
   @Test
   public void testSkipInt32ValueBelowMin() {
     LogicalColumnDescriptor descriptor =
-        new LogicalColumnDescriptor("col", LogicalType.PRIMITIVE, Type.INT32, null);
+        primitive("col", Type.INT32);
     ColumnGreaterThanOrEqualFilter filter = new ColumnGreaterThanOrEqualFilter(descriptor, 5);
 
     ColumnStatistics stats =
         new ColumnStatistics(ByteUtils.intToBytes(10), ByteUtils.intToBytes(20), 0L, null);
-    assertTrue(filter.skip(stats, 5));
+    assertFalse(filter.skip(stats, 5));
   }
 
   @Test
   public void testSkipInt64MaxGreaterThanValue() {
     LogicalColumnDescriptor descriptor =
-        new LogicalColumnDescriptor("col", LogicalType.PRIMITIVE, Type.INT64, null);
+        primitive("col", Type.INT64);
     ColumnGreaterThanOrEqualFilter filter = new ColumnGreaterThanOrEqualFilter(descriptor, 1500L);
 
     ColumnStatistics stats =
         new ColumnStatistics(ByteUtils.longToBytes(1000L), ByteUtils.longToBytes(2000L), 0L, null);
-    assertTrue(filter.skip(stats, 1500L));
+    assertFalse(filter.skip(stats, 1500L));
   }
 
   @Test
   public void testSkipInt64MaxEqualToValue() {
     LogicalColumnDescriptor descriptor =
-        new LogicalColumnDescriptor("col", LogicalType.PRIMITIVE, Type.INT64, null);
+        primitive("col", Type.INT64);
     ColumnGreaterThanOrEqualFilter filter = new ColumnGreaterThanOrEqualFilter(descriptor, 2000L);
 
     ColumnStatistics stats =
         new ColumnStatistics(ByteUtils.longToBytes(1000L), ByteUtils.longToBytes(2000L), 0L, null);
-    assertTrue(filter.skip(stats, 2000L));
+    assertFalse(filter.skip(stats, 2000L));
   }
 
   @Test
   public void testSkipInt64MaxLessThanValue() {
     LogicalColumnDescriptor descriptor =
-        new LogicalColumnDescriptor("col", LogicalType.PRIMITIVE, Type.INT64, null);
+        primitive("col", Type.INT64);
     ColumnGreaterThanOrEqualFilter filter = new ColumnGreaterThanOrEqualFilter(descriptor, 2500L);
 
     ColumnStatistics stats =
         new ColumnStatistics(ByteUtils.longToBytes(1000L), ByteUtils.longToBytes(2000L), 0L, null);
-    assertFalse(filter.skip(stats, 2500L));
+    assertTrue(filter.skip(stats, 2500L));
   }
 
   @Test
   public void testSkipFloatMaxGreaterThanValue() {
     LogicalColumnDescriptor descriptor =
-        new LogicalColumnDescriptor("col", LogicalType.PRIMITIVE, Type.FLOAT, null);
+        primitive("col", Type.FLOAT);
     ColumnGreaterThanOrEqualFilter filter = new ColumnGreaterThanOrEqualFilter(descriptor, 15.5f);
 
     ColumnStatistics stats =
         new ColumnStatistics(ByteUtils.floatToBytes(10.0f), ByteUtils.floatToBytes(20.0f), 0L,
             null);
-    assertTrue(filter.skip(stats, 15.5f));
+    assertFalse(filter.skip(stats, 15.5f));
   }
 
   @Test
   public void testSkipFloatMaxEqualToValue() {
     LogicalColumnDescriptor descriptor =
-        new LogicalColumnDescriptor("col", LogicalType.PRIMITIVE, Type.FLOAT, null);
+        primitive("col", Type.FLOAT);
     ColumnGreaterThanOrEqualFilter filter = new ColumnGreaterThanOrEqualFilter(descriptor, 20.0f);
 
     ColumnStatistics stats =
         new ColumnStatistics(ByteUtils.floatToBytes(10.0f), ByteUtils.floatToBytes(20.0f), 0L,
             null);
-    assertTrue(filter.skip(stats, 20.0f));
+    assertFalse(filter.skip(stats, 20.0f));
   }
 
   @Test
   public void testSkipFloatMaxLessThanValue() {
     LogicalColumnDescriptor descriptor =
-        new LogicalColumnDescriptor("col", LogicalType.PRIMITIVE, Type.FLOAT, null);
+        primitive("col", Type.FLOAT);
     ColumnGreaterThanOrEqualFilter filter = new ColumnGreaterThanOrEqualFilter(descriptor, 25.0f);
 
     ColumnStatistics stats =
@@ -537,31 +516,31 @@ public class ColumnGreaterThanOrEqualFilterTest {
   @Test
   public void testSkipDoubleMaxGreaterThanValue() {
     LogicalColumnDescriptor descriptor =
-        new LogicalColumnDescriptor("col", LogicalType.PRIMITIVE, Type.DOUBLE, null);
+        primitive("col", Type.DOUBLE);
     ColumnGreaterThanOrEqualFilter filter = new ColumnGreaterThanOrEqualFilter(descriptor, 15.5);
 
     ColumnStatistics stats =
         new ColumnStatistics(ByteUtils.doubleToBytes(10.0), ByteUtils.doubleToBytes(20.0), 0L,
             null);
-    assertTrue(filter.skip(stats, 15.5));
+    assertFalse(filter.skip(stats, 15.5));
   }
 
   @Test
   public void testSkipDoubleMaxEqualToValue() {
     LogicalColumnDescriptor descriptor =
-        new LogicalColumnDescriptor("col", LogicalType.PRIMITIVE, Type.DOUBLE, null);
+        primitive("col", Type.DOUBLE);
     ColumnGreaterThanOrEqualFilter filter = new ColumnGreaterThanOrEqualFilter(descriptor, 20.0);
 
     ColumnStatistics stats =
         new ColumnStatistics(ByteUtils.doubleToBytes(10.0), ByteUtils.doubleToBytes(20.0), 0L,
             null);
-    assertTrue(filter.skip(stats, 20.0));
+    assertFalse(filter.skip(stats, 20.0));
   }
 
   @Test
   public void testSkipDoubleMaxLessThanValue() {
     LogicalColumnDescriptor descriptor =
-        new LogicalColumnDescriptor("col", LogicalType.PRIMITIVE, Type.DOUBLE, null);
+        primitive("col", Type.DOUBLE);
     ColumnGreaterThanOrEqualFilter filter = new ColumnGreaterThanOrEqualFilter(descriptor, 25.0);
 
     ColumnStatistics stats =
@@ -573,7 +552,7 @@ public class ColumnGreaterThanOrEqualFilterTest {
   @Test
   public void testSkipByteArray() {
     LogicalColumnDescriptor descriptor =
-        new LogicalColumnDescriptor("col", LogicalType.PRIMITIVE, Type.BYTE_ARRAY, null);
+        primitive("col", Type.BYTE_ARRAY);
     ColumnGreaterThanOrEqualFilter filter = new ColumnGreaterThanOrEqualFilter(descriptor, "test");
 
     ColumnStatistics stats = new ColumnStatistics("a".getBytes(), "z".getBytes(), 0L, null);
@@ -583,8 +562,8 @@ public class ColumnGreaterThanOrEqualFilterTest {
   @Test
   public void testSkipFixedLenByteArray() {
     LogicalColumnDescriptor descriptor =
-        new LogicalColumnDescriptor("col", LogicalType.PRIMITIVE, Type.FIXED_LEN_BYTE_ARRAY, null);
-    ColumnGreaterThanOrEqualFilter filter = new ColumnGreaterThanOrEqualFilter(descriptor, "test");
+        primitive("col", Type.FIXED_LEN_BYTE_ARRAY);
+    ColumnGreaterThanOrEqualFilter filter = new ColumnGreaterThanOrEqualFilter(descriptor, "test".getBytes(java.nio.charset.StandardCharsets.UTF_8));
 
     ColumnStatistics stats = new ColumnStatistics("aaaa".getBytes(), "zzzz".getBytes(), 0L, null);
     assertFalse(filter.skip(stats, "test"));
@@ -593,11 +572,7 @@ public class ColumnGreaterThanOrEqualFilterTest {
   @Test
   public void testSkipNonPrimitiveType() {
     LogicalColumnDescriptor descriptor =
-        new LogicalColumnDescriptor("col", LogicalType.LIST,
-            (io.github.aloksingh.parquet.model.ListMetadata) null);
-    ColumnGreaterThanOrEqualFilter filter = new ColumnGreaterThanOrEqualFilter(descriptor, 10);
-
-    ColumnStatistics stats = new ColumnStatistics(null, null, 0L, null);
-    assertFalse(filter.skip(stats, 10));
+        list(Type.INT32);
+    assertThrows(IllegalArgumentException.class, () -> new ColumnGreaterThanOrEqualFilter(descriptor, 10));
   }
 }

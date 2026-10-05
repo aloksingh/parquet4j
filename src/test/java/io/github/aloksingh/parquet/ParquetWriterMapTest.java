@@ -176,12 +176,9 @@ class ParquetWriterMapTest {
 
   @Test
   void testFileWithMultipleColumns() throws Exception{
-    LogicalColumnDescriptor messageCol = SchemaDescriptor.createMapColumn(
+    LogicalColumnDescriptor messageCol = SchemaDescriptor.createStringMapColumn(
         "message",
-        Type.BYTE_ARRAY,  // String key
-        Type.BYTE_ARRAY,  // String value
-        true,   // map itself is optional
-        true// values can be NULL
+        true   // map itself is optional (values can be NULL)
     );
 
     List<LogicalColumnDescriptor> logicalColumns = Arrays.asList(
@@ -287,13 +284,9 @@ class ParquetWriterMapTest {
   }
 
   void testLocalLogFile() throws Exception{
-    LogicalColumnDescriptor messageCol = SchemaDescriptor.createMapColumn(
+    LogicalColumnDescriptor messageCol = SchemaDescriptor.createStringMapColumn(
         "message",
-        Type.BYTE_ARRAY,  // String key
-        Type.BYTE_ARRAY,  // String value
-        true,   // map itself is optional
-        true// values can be NULL
-    );
+        true);
 
     List<LogicalColumnDescriptor> logicalColumns = Arrays.asList(
         toLogicalColumn("id", Type.BYTE_ARRAY, 0),
@@ -518,7 +511,7 @@ class ParquetWriterMapTest {
         "id",
         LogicalType.PRIMITIVE,
         Type.INT64,
-        new ColumnDescriptor(Type.INT32, new String[] {"id"}, 0, 0, 0)
+        new ColumnDescriptor(Type.INT64, new String[] {"id"}, 0, 0, 0)
     );
 
     LogicalColumnDescriptor mapCol = SchemaDescriptor.createMapColumn(

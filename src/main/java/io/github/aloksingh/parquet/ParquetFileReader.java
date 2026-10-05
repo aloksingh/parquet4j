@@ -1,5 +1,6 @@
 package io.github.aloksingh.parquet;
 
+import io.github.aloksingh.parquet.model.ColumnBatch;
 import io.github.aloksingh.parquet.model.ColumnDescriptor;
 import io.github.aloksingh.parquet.model.ColumnValues;
 import io.github.aloksingh.parquet.model.LogicalColumnDescriptor;
@@ -23,6 +24,7 @@ import java.util.List;
  *   System.out.println("Total rows: " + reader.getTotalRowCount());
  *   RowGroupReader rowGroup = reader.getRowGroup(0);
  *   ColumnValues column = rowGroup.readColumn(0);
+ *   ColumnBatch batch = rowGroup.readColumnBatch(0);  // primitive columnar view
  * }
  * }</pre>
  *
@@ -34,6 +36,7 @@ public class ParquetFileReader implements AutoCloseable {
   private final ChunkReader chunkReader;
   private final ParquetMetadata metadata;
   private final boolean ownsChunkReader;
+  private final String sourceDescription;
 
   /**
    * Creates a reader from a file path.
@@ -60,7 +63,17 @@ public class ParquetFileReader implements AutoCloseable {
   public ParquetFileReader(Path path) throws IOException {
     this.chunkReader = new FileChunkReader(path);
     this.ownsChunkReader = true;
-    this.metadata = ParquetMetadataReader.readMetadata(chunkReader);
+    this.sourceDescription = path.toString();
+    try {
+      this.metadata = ParquetMetadataReader.readMetadata(chunkReader);
+    } catch (IOException | RuntimeException | Error failure) {
+      try {
+        ((FileChunkReader) chunkReader).close();
+      } catch (IOException closeFailure) {
+        failure.addSuppressed(closeFailure);
+      }
+      throw failure;
+    }
   }
 
   /**
@@ -76,7 +89,19 @@ public class ParquetFileReader implements AutoCloseable {
   public ParquetFileReader(ChunkReader chunkReader) throws IOException {
     this.chunkReader = chunkReader;
     this.ownsChunkReader = false;
+    this.sourceDescription = chunkReader instanceof FileChunkReader fileChunk
+        ? fileChunk.getPath().toString()
+        : chunkReader.getClass().getSimpleName() + "@" + Integer.toHexString(
+            System.identityHashCode(chunkReader));
     this.metadata = ParquetMetadataReader.readMetadata(chunkReader);
+  }
+
+  /**
+   * A short description of the underlying source (the file path when this reader was opened
+   * from one). Surfaced in read/decode error messages so failures name their file.
+   */
+  public String getSourceDescription() {
+    return sourceDescription;
   }
 
   /**
@@ -161,6 +186,11 @@ public class ParquetFileReader implements AutoCloseable {
    */
   public RowColumnGroupIterator rowIterator(boolean closeOnComplete) {
     return new ParquetRowIterator(this, closeOnComplete);
+  }
+
+  /** Creates a lazy scan with projection and bounded read options. */
+  public ParquetRowIterator rowIterator(ReadOptions options) {
+    return new ParquetRowIterator(this, false, options);
   }
 
   /**
@@ -277,6 +307,82 @@ public class ParquetFileReader implements AutoCloseable {
           schema.findLogicalColumnByPhysicalIndex(columnIndex);
 
       return new ColumnValues(columnMeta.type(), pages, columnDescriptor, logicalColumnDescriptor);
+    }
+
+    /**
+     * Reads all values of a column as one owning primitive {@link ColumnBatch}.
+     *
+     * <p>This is the columnar companion to {@link #readColumn(int)}: both views are
+     * adapters over the same lazily decoded pages. The pages of the column chunk are
+     * decoded lazily and materialized one page at a time (the same cached per-page
+     * decode {@link ColumnValues} uses), without per-value boxing — required
+     * nonrepeated columns go straight to primitive arrays, binary values flow through
+     * one shared offsets+payload buffer, and dictionary indexes are preserved until
+     * the caller materializes a value.
+     *
+     * <p>The returned batch is an independent copy (copy-on-construct): it never
+     * aliases page buffers, numeric accessors hand out read-only views, and the batch
+     * remains valid after this reader is closed. For repeated columns the batch holds
+     * one entry per level event, matching {@link ColumnValues#decodeAsInt32()} and
+     * friends; repetition levels remain available through
+     * {@link ColumnValues#decodedPages()}.
+     *
+     * @param columnIndex the index of the column to read (0-based)
+     * @return one column batch for this column chunk
+     * @throws IOException if an I/O error occurs while reading the column
+     * @throws IndexOutOfBoundsException if the column index is out of bounds
+     */
+    public ColumnBatch readColumnBatch(int columnIndex) throws IOException {
+      return readColumn(columnIndex).toBatch();
+    }
+
+    /**
+     * Reads a column as one owning primitive {@link ColumnBatch} by logical or
+     * physical column name (the schema path such as {@code "a.b.element"}, or the
+     * logical column name). See {@link #readColumnBatch(int)} for the materialization
+     * and lifetime contract.
+     *
+     * @param columnName the logical column name or physical column path
+     * @return one column batch for this column chunk
+     * @throws IOException if an I/O error occurs while reading the column
+     * @throws IllegalArgumentException if no column matches the name
+     */
+    public ColumnBatch readColumnBatch(String columnName) throws IOException {
+      return readColumnBatch(physicalColumnIndex(columnName));
+    }
+
+    /**
+     * Reads a column as one owning {@link ColumnBatch} per data page, decoded page
+     * by page in order. Concatenating the page batches reproduces
+     * {@link #readColumnBatch(int)} exactly.
+     *
+     * @param columnIndex the index of the column to read (0-based)
+     * @return one column batch per data page of this column chunk
+     * @throws IOException if an I/O error occurs while reading the column
+     * @throws IndexOutOfBoundsException if the column index is out of bounds
+     */
+    public List<ColumnBatch> readColumnPageBatches(int columnIndex) throws IOException {
+      return readColumn(columnIndex).toPageBatches();
+    }
+
+    /** Resolves a logical column name or physical column path to a physical index. */
+    private int physicalColumnIndex(String columnName) {
+      java.util.Objects.requireNonNull(columnName, "columnName");
+      for (int i = 0; i < schema.getNumColumns(); i++) {
+        if (schema.getColumn(i).getPathString().equals(columnName)) {
+          return i;
+        }
+      }
+      LogicalColumnDescriptor logical = schema.getLogicalColumn(columnName);
+      if (logical != null && logical.isPrimitive()) {
+        String path = logical.getPhysicalDescriptor().getPathString();
+        for (int i = 0; i < schema.getNumColumns(); i++) {
+          if (schema.getColumn(i).getPathString().equals(path)) {
+            return i;
+          }
+        }
+      }
+      throw new IllegalArgumentException("Column not found: " + columnName);
     }
   }
 

@@ -2,10 +2,12 @@ package io.github.aloksingh.parquet;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
+import io.github.aloksingh.parquet.model.ParquetException;
 import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
@@ -19,10 +21,28 @@ import io.github.aloksingh.parquet.util.ParquetToJsonConverter;
  */
 public class ParquetToJsonConverterTest {
 
+  /**
+   * The converter reads every row value, so a fixture carrying INT96 (alltypes_plain) is
+   * rejected explicitly by the row API instead of being converted with silently nulled
+   * timestamp values.
+   */
+  @Test
+  void int96FixturesAreRejectedExplicitly() {
+    String testParquetFile = "src/test/data/alltypes_plain.parquet";
+    if (!new File(testParquetFile).exists()) {
+      return;
+    }
+    ParquetToJsonConverter converter = new ParquetToJsonConverter();
+    ParquetException thrown = assertThrows(ParquetException.class,
+        () -> converter.convertToJson(testParquetFile));
+    assertTrue(thrown.getMessage().contains("INT96"),
+        "rejection must name INT96 but was: " + thrown.getMessage());
+  }
+
   @Test
   void testConvertParquetToJson() throws IOException {
-    // Use a test parquet file
-    String testParquetFile = "src/test/data/alltypes_plain.parquet";
+    // Use a test parquet file without INT96 columns
+    String testParquetFile = "src/test/data/nulls.snappy.parquet";
     File parquetFile = new File(testParquetFile);
 
     // Skip test if file doesn't exist
@@ -31,7 +51,7 @@ public class ParquetToJsonConverterTest {
       return;
     }
 
-    String outputJsonFile = "target/alltypes_plain.json";
+    String outputJsonFile = "target/nulls_snappy.json";
 
     // Convert the file
     ParquetToJsonConverter converter = new ParquetToJsonConverter();
@@ -51,8 +71,8 @@ public class ParquetToJsonConverterTest {
 
   @Test
   void testConvertToJsonObject() throws IOException {
-    // Use a test parquet file
-    String testParquetFile = "src/test/data/alltypes_plain.parquet";
+    // Use a test parquet file without INT96 columns
+    String testParquetFile = "src/test/data/nulls.snappy.parquet";
     File parquetFile = new File(testParquetFile);
 
     // Skip test if file doesn't exist

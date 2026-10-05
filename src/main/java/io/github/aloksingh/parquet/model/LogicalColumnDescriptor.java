@@ -2,7 +2,9 @@ package io.github.aloksingh.parquet.model;
 
 /**
  * Represents a logical column as seen by the user.
- * A logical column may map to one (primitive) or multiple (map, struct) physical columns.
+ * A logical column may map to one (primitive) or multiple (map, list, struct) physical columns.
+ * Every logical column is backed by a node of the reconstructed schema tree, which carries the
+ * exact physical leaves underneath it.
  */
 public class LogicalColumnDescriptor {
 
@@ -12,6 +14,7 @@ public class LogicalColumnDescriptor {
   private final ColumnDescriptor physicalDescriptor;  // For primitives
   private final MapMetadata mapMetadata;  // For maps only
   private final ListMetadata listMetadata;  // For lists only
+  private final SchemaDescriptor.SchemaNode node;  // Backing schema tree node (may be null)
 
   /**
    * Constructor for primitive columns.
@@ -23,12 +26,22 @@ public class LogicalColumnDescriptor {
    */
   public LogicalColumnDescriptor(String name, LogicalType logicalType, Type physicalType,
                                  ColumnDescriptor physicalDescriptor) {
+    this(name, logicalType, physicalType, physicalDescriptor, null);
+  }
+
+  /**
+   * Constructor for primitive columns backed by a schema tree leaf.
+   */
+  public LogicalColumnDescriptor(String name, LogicalType logicalType, Type physicalType,
+                                 ColumnDescriptor physicalDescriptor,
+                                 SchemaDescriptor.SchemaNode node) {
     this.name = name;
     this.logicalType = logicalType;
     this.physicalType = physicalType;
     this.physicalDescriptor = physicalDescriptor;
     this.mapMetadata = null;
     this.listMetadata = null;
+    this.node = node;
   }
 
   /**
@@ -39,12 +52,21 @@ public class LogicalColumnDescriptor {
    * @param mapMetadata the map metadata containing key and value descriptors
    */
   public LogicalColumnDescriptor(String name, LogicalType logicalType, MapMetadata mapMetadata) {
+    this(name, logicalType, mapMetadata, null);
+  }
+
+  /**
+   * Constructor for map columns backed by a schema tree group.
+   */
+  public LogicalColumnDescriptor(String name, LogicalType logicalType, MapMetadata mapMetadata,
+                                 SchemaDescriptor.SchemaNode node) {
     this.name = name;
     this.logicalType = logicalType;
     this.physicalType = null;
     this.physicalDescriptor = null;
     this.mapMetadata = mapMetadata;
     this.listMetadata = null;
+    this.node = node;
   }
 
   /**
@@ -55,12 +77,49 @@ public class LogicalColumnDescriptor {
    * @param listMetadata the list metadata containing element descriptor
    */
   public LogicalColumnDescriptor(String name, LogicalType logicalType, ListMetadata listMetadata) {
+    this(name, logicalType, listMetadata, null);
+  }
+
+  /**
+   * Constructor for list columns backed by a schema tree group.
+   */
+  public LogicalColumnDescriptor(String name, LogicalType logicalType, ListMetadata listMetadata,
+                                 SchemaDescriptor.SchemaNode node) {
     this.name = name;
     this.logicalType = logicalType;
     this.physicalType = null;
     this.physicalDescriptor = null;
     this.mapMetadata = null;
     this.listMetadata = listMetadata;
+    this.node = node;
+  }
+
+  /**
+   * Constructor for struct columns backed by a schema tree group.
+   *
+   * @param name the name of the column
+   * @param node the schema tree node describing the struct's fields
+   */
+  public LogicalColumnDescriptor(String name, LogicalType logicalType,
+                                 SchemaDescriptor.SchemaNode node) {
+    if (logicalType != LogicalType.STRUCT) {
+      throw new IllegalArgumentException("Node-only constructor is for STRUCT columns");
+    }
+    this.name = name;
+    this.logicalType = logicalType;
+    this.physicalType = null;
+    this.physicalDescriptor = null;
+    this.mapMetadata = null;
+    this.listMetadata = null;
+    this.node = node;
+  }
+
+  /**
+   * Returns the schema tree node backing this logical column (may be {@code null} for
+   * programmatically built descriptors without a reconstructed tree).
+   */
+  public SchemaDescriptor.SchemaNode node() {
+    return node;
   }
 
   /**
@@ -70,6 +129,26 @@ public class LogicalColumnDescriptor {
    */
   public String getName() {
     return name;
+  }
+
+  /**
+   * Returns the dot-separated path of this column (its name when it has no schema tree node).
+   * Retained for source compatibility with physical descriptor call sites.
+   */
+  public String getPathString() {
+    return node != null ? String.join(".", node.path()) : name;
+  }
+
+  /**
+   * Returns the physical type of the underlying primitive/list element, or {@code null} for
+   * complex columns without a single physical carrier. Retained for source compatibility.
+   */
+  public Type physicalType() {
+    try {
+      return getPhysicalType();
+    } catch (IllegalStateException noSingleType) {
+      return null;
+    }
   }
 
   /**
@@ -175,22 +254,30 @@ public class LogicalColumnDescriptor {
   }
 
   /**
-   * Get the physical columns that this logical column maps to.
-   * For PRIMITIVE and LIST columns, returns a single physical column.
-   * For MAP columns, returns two physical columns (key and value).
+   * Get the physical columns that this logical column maps to, in schema order.
+   * When the column is backed by a schema tree node, every leaf underneath it is returned
+   * (map keys and values, list elements, struct fields, and their nested leaves). Otherwise
+   * primitives and lists return a single physical column and maps return key and value.
    *
    * @return List of physical column descriptors
    */
   public java.util.List<ColumnDescriptor> getPhysicalColumns() {
+    if (node != null) {
+      return node.leaves().stream().map(SchemaDescriptor.LeafNode::descriptor).toList();
+    }
     if (isPrimitive()) {
       return java.util.List.of(physicalDescriptor);
     } else if (isList()) {
       return java.util.List.of(listMetadata.elementDescriptor());
     } else if (isMap()) {
-      return java.util.List.of(
-          mapMetadata.keyDescriptor(),
-          mapMetadata.valueDescriptor()
-      );
+      java.util.List<ColumnDescriptor> out = new java.util.ArrayList<>(2);
+      if (mapMetadata.keyDescriptor() != null) {
+        out.add(mapMetadata.keyDescriptor());
+      }
+      if (mapMetadata.valueDescriptor() != null) {
+        out.add(mapMetadata.valueDescriptor());
+      }
+      return out;
     }
     throw new IllegalStateException("Unknown logical type: " + logicalType);
   }

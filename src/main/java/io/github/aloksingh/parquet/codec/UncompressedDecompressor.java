@@ -11,12 +11,19 @@ import io.github.aloksingh.parquet.Decompressor;
  *
  * @see Decompressor
  */
-public class UncompressedDecompressor implements Decompressor {
+public class UncompressedDecompressor extends BoundedDecompressor {
 
   /**
    * Constructs a new uncompressed decompressor (no-op).
    */
   public UncompressedDecompressor() {
+  }
+
+  /** Constructs a decompressor with explicit page byte limits.
+   * @param options the input and output allocation limits
+   */
+  public UncompressedDecompressor(io.github.aloksingh.parquet.PageReadOptions options) {
+    super(options);
   }
 
   /**
@@ -30,7 +37,7 @@ public class UncompressedDecompressor implements Decompressor {
    * @return the input buffer unchanged
    */
   @Override
-  public ByteBuffer decompress(ByteBuffer compressed, int uncompressedSize) {
+  protected ByteBuffer decompressBounded(ByteBuffer compressed, int uncompressedSize) {
     return compressed;
   }
 }

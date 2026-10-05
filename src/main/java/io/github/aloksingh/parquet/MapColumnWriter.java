@@ -3,7 +3,13 @@ package io.github.aloksingh.parquet;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.HashSet;
+import java.util.Set;
+import java.nio.ByteBuffer;
 import io.github.aloksingh.parquet.model.Type;
+import io.github.aloksingh.parquet.model.MapMetadata;
+import io.github.aloksingh.parquet.writer.WriterValues;
+import io.github.aloksingh.parquet.writer.WriterColumnBuffer;
 
 /**
  * Helper class for writing MAP logical type columns to Parquet.
@@ -40,6 +46,60 @@ public class MapColumnWriter {
     this.valueType = valueType;
     this.keyMaxDefLevel = keyMaxDefLevel;
     this.valueMaxDefLevel = valueMaxDefLevel;
+  }
+
+  /** Traverse a MAP exactly once, snapshotting both leaves and definition events together. */
+  static void appendRow(Object data, MapMetadata metadata, WriterColumnBuffer keys,
+      WriterColumnBuffer values) {
+    int keyDefinition = metadata.keyDescriptor().maxDefinitionLevel();
+    int valueDefinition = metadata.valueDescriptor().maxDefinitionLevel();
+    if (data == null) {
+      if (keyDefinition == 1) throw new IllegalArgumentException("Required MAP must not be null");
+      keys.add(null, 0, 0, true);
+      values.add(null, 0, 0, true);
+      return;
+    }
+    if (!(data instanceof Map<?, ?> map)) {
+      throw new IllegalArgumentException("Expected a MAP value, got " + data.getClass().getName());
+    }
+    var entries = map.entrySet().iterator();
+    if (!entries.hasNext()) {
+      keys.add(null, keyDefinition - 1, 0, true);
+      values.add(null, keyDefinition - 1, 0, true);
+      return;
+    }
+    int repetition = 0;
+    Set<Object> encodedKeys = new HashSet<>();
+    do {
+      Map.Entry<?, ?> entry = entries.next();
+      Object key = entry.getKey();
+      Object value = entry.getValue();
+      Object normalizedKey = keys.add(key, keyDefinition, repetition, false);
+      Object equalityKey = normalizedKey instanceof byte[] bytes
+          ? ByteBuffer.wrap(bytes).asReadOnlyBuffer() : normalizedKey;
+      if (!encodedKeys.add(equalityKey)) throw new IllegalArgumentException("Duplicate encoded MAP key");
+      values.add(value, value == null ? keyDefinition : valueDefinition, repetition,
+          valueDefinition > keyDefinition);
+      repetition = 1;
+    } while (entries.hasNext());
+  }
+
+  static void validate(Object data, MapMetadata metadata) {
+    if (data == null) {
+      if (metadata.keyDescriptor().maxDefinitionLevel() == 1) {
+        throw new IllegalArgumentException("Required MAP must not be null");
+      }
+      return;
+    }
+    if (!(data instanceof Map<?, ?> map)) {
+      throw new IllegalArgumentException("Expected a MAP value, got " + data.getClass().getName());
+    }
+    boolean nullableValue = metadata.valueDescriptor().maxDefinitionLevel()
+        > metadata.keyDescriptor().maxDefinitionLevel();
+    for (Map.Entry<?, ?> entry : map.entrySet()) {
+      WriterValues.validate(metadata.keyDescriptor(), entry.getKey(), false);
+      WriterValues.validate(metadata.valueDescriptor(), entry.getValue(), nullableValue);
+    }
   }
 
   /**

@@ -1,6 +1,8 @@
 package io.github.aloksingh.parquet.util.filter;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static io.github.aloksingh.parquet.util.filter.FilterTestSupport.*;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.aloksingh.parquet.model.ListMetadata;
@@ -9,20 +11,16 @@ import io.github.aloksingh.parquet.model.LogicalType;
 import io.github.aloksingh.parquet.model.MapMetadata;
 import java.util.Arrays;
 import java.util.HashMap;
+import io.github.aloksingh.parquet.model.Type;
 import org.junit.jupiter.api.Test;
 
 public class ColumnNullFiltersTest {
 
-  private final LogicalColumnDescriptor primitiveDescriptor =
-      new LogicalColumnDescriptor("col", LogicalType.PRIMITIVE, null, null);
-  private final LogicalColumnDescriptor listDescriptor =
-      new LogicalColumnDescriptor("col", LogicalType.LIST, (ListMetadata) null);
-  private final LogicalColumnDescriptor mapDescriptor =
-      new LogicalColumnDescriptor("col", LogicalType.MAP, (MapMetadata) null);
 
   // IsNull Tests
   @Test
   public void testIsNullWithNullValue() {
+    var primitiveDescriptor = primitive("col", Type.INT32);
     ColumnIsNullFilter filter = new ColumnIsNullFilter(primitiveDescriptor);
 
     assertTrue(filter.apply(null));
@@ -30,6 +28,7 @@ public class ColumnNullFiltersTest {
 
   @Test
   public void testIsNullWithNonNullPrimitive() {
+    var primitiveDescriptor = primitive("col", Type.INT32);
     ColumnIsNullFilter filter = new ColumnIsNullFilter(primitiveDescriptor);
 
     assertFalse(filter.apply("test"));
@@ -40,6 +39,7 @@ public class ColumnNullFiltersTest {
 
   @Test
   public void testIsNullWithList() {
+    var listDescriptor = list(Type.INT32);
     ColumnIsNullFilter filter = new ColumnIsNullFilter(listDescriptor);
 
     assertFalse(filter.apply(Arrays.asList("a", "b")));
@@ -49,6 +49,7 @@ public class ColumnNullFiltersTest {
 
   @Test
   public void testIsNullWithMap() {
+    var mapDescriptor = map(Type.INT32);
     ColumnIsNullFilter filter = new ColumnIsNullFilter(mapDescriptor);
 
     assertFalse(filter.apply(new HashMap<>()));
@@ -58,6 +59,7 @@ public class ColumnNullFiltersTest {
   // IsNotNull Tests
   @Test
   public void testIsNotNullWithNullValue() {
+    var primitiveDescriptor = primitive("col", Type.INT32);
     ColumnIsNotNullFilter filter = new ColumnIsNotNullFilter(primitiveDescriptor);
 
     assertFalse(filter.apply(null));
@@ -65,6 +67,7 @@ public class ColumnNullFiltersTest {
 
   @Test
   public void testIsNotNullWithNonNullPrimitive() {
+    var primitiveDescriptor = primitive("col", Type.INT32);
     ColumnIsNotNullFilter filter = new ColumnIsNotNullFilter(primitiveDescriptor);
 
     assertTrue(filter.apply("test"));
@@ -76,6 +79,7 @@ public class ColumnNullFiltersTest {
 
   @Test
   public void testIsNotNullWithList() {
+    var listDescriptor = list(Type.INT32);
     ColumnIsNotNullFilter filter = new ColumnIsNotNullFilter(listDescriptor);
 
     assertTrue(filter.apply(Arrays.asList("a", "b")));
@@ -85,6 +89,7 @@ public class ColumnNullFiltersTest {
 
   @Test
   public void testIsNotNullWithMap() {
+    var mapDescriptor = map(Type.INT32);
     ColumnIsNotNullFilter filter = new ColumnIsNotNullFilter(mapDescriptor);
 
     assertTrue(filter.apply(new HashMap<>()));
@@ -93,6 +98,7 @@ public class ColumnNullFiltersTest {
 
   @Test
   public void testIsNotNullWithZeroValues() {
+    var primitiveDescriptor = primitive("col", Type.INT32);
     ColumnIsNotNullFilter filter = new ColumnIsNotNullFilter(primitiveDescriptor);
 
     // Zero is not null
@@ -104,6 +110,7 @@ public class ColumnNullFiltersTest {
 
   @Test
   public void testIsNullWithZeroValues() {
+    var primitiveDescriptor = primitive("col", Type.INT32);
     ColumnIsNullFilter filter = new ColumnIsNullFilter(primitiveDescriptor);
 
     // Zero is not null
@@ -115,6 +122,7 @@ public class ColumnNullFiltersTest {
 
   @Test
   public void testNullFiltersIgnoreColumnType() {
+    var primitiveDescriptor = primitive("col", Type.INT32);
     ColumnIsNullFilter isNullFilter = new ColumnIsNullFilter(primitiveDescriptor);
     ColumnIsNotNullFilter isNotNullFilter = new ColumnIsNotNullFilter(primitiveDescriptor);
 
@@ -128,3 +136,4 @@ public class ColumnNullFiltersTest {
     assertFalse(isNotNullFilter.apply(null));
   }
 }
+

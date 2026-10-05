@@ -54,7 +54,10 @@ public class NestedStructureReader {
    * @param keyDecoder function to decode key values from their raw representation
    * @param valueDecoder function to decode value values from their raw representation
    * @return list of maps, where each map corresponds to one row. Null values represent
-   *         rows where the map itself is null.
+   *         rows where the map itself is null; entries with a null value keep their key.
+   *         For leaves with nested repetition levels (a MAP of MAPs), each row's map
+   *         contains all inner entries of that row flattened together; rows whose inner
+   *         map is absent decode as null and rows with an empty inner map as empty maps.
    * @throws IOException if an I/O error occurs while reading the columns
    * @throws ParquetException if the key and value columns have mismatched structures
    */
@@ -67,9 +70,28 @@ public class NestedStructureReader {
     ColumnValues keyColumn = rowGroupReader.readColumn(keyColumnIndex);
     ColumnValues valueColumn = rowGroupReader.readColumn(valueColumnIndex);
 
-    // Decode both as lists (they should have the same structure)
-    List<List<K>> keyLists = keyColumn.decodeAsList(keyDecoder);
-    List<List<V>> valueLists = valueColumn.decodeAsList(valueDecoder);
+    // Both leaves share one repeated key_value layer. MAP keys are required by the
+    // Parquet specification, so entries sit at the key leaf's maximum definition level
+    // and the map container one level below. Decoding both leaves with those shared
+    // structural thresholds aligns their per-row containers by row/level events, never
+    // by page numbers, so the two leaves may split their V1 pages at different points.
+    ColumnDescriptor keyDescriptor =
+        keyColumn.getColumnDescriptor();
+    ColumnDescriptor valueDescriptor =
+        valueColumn.getColumnDescriptor();
+    int entryDefinition = keyDescriptor.maxDefinitionLevel();
+    int valueDefinition = valueDescriptor.maxDefinitionLevel();
+    boolean sharedEntryLayer = keyDescriptor.maxRepetitionLevel() >= 1
+        && keyDescriptor.maxRepetitionLevel() == valueDescriptor.maxRepetitionLevel()
+        && entryDefinition >= 1
+        && valueDefinition >= entryDefinition && valueDefinition <= entryDefinition + 1;
+
+    List<List<K>> keyLists = sharedEntryLayer
+        ? keyColumn.decodeAsList(entryDefinition - 1, entryDefinition, keyDecoder)
+        : keyColumn.decodeAsList(keyDecoder);
+    List<List<V>> valueLists = sharedEntryLayer
+        ? valueColumn.decodeAsList(entryDefinition - 1, entryDefinition, valueDecoder)
+        : valueColumn.decodeAsList(valueDecoder);
 
     if (keyLists.size() != valueLists.size()) {
       throw new ParquetException("Key and value lists have different sizes: " +
@@ -92,6 +114,10 @@ public class NestedStructureReader {
       } else {
         Map<K, V> map = new LinkedHashMap<>();
         for (int j = 0; j < keys.size(); j++) {
+          if (map.containsKey(keys.get(j))) {
+            throw new ParquetException("MAP row " + i + " repeats key " + keys.get(j) +
+                "; flattening nested MAP entries would drop data");
+          }
           map.put(keys.get(j), values.get(j));
         }
         result.add(map);
@@ -178,7 +204,7 @@ public class NestedStructureReader {
   }
 
   /**
-   * Find column indices for a given path prefix.
+   * Find column indexes for a given path prefix via the schema's central leaf resolver.
    * This is useful for finding all columns that belong to a struct or map.
    * <p>
    * For example, if the schema has columns with paths:
@@ -191,34 +217,9 @@ public class NestedStructureReader {
    * the indices of the first two columns.
    *
    * @param pathPrefix the prefix to match (e.g., ["my_map", "key_value"])
-   * @return list of column indices that match the prefix, in schema order
+   * @return list of column indexes that match the prefix, in schema order
    */
   public List<Integer> findColumnsByPathPrefix(String[] pathPrefix) {
-    List<Integer> result = new ArrayList<>();
-
-    for (int i = 0; i < schema.getNumColumns(); i++) {
-      ColumnDescriptor column = schema.getColumn(i);
-      String[] columnPath = column.path();
-
-      if (matchesPrefix(columnPath, pathPrefix)) {
-        result.add(i);
-      }
-    }
-
-    return result;
-  }
-
-  private boolean matchesPrefix(String[] path, String[] prefix) {
-    if (path.length < prefix.length) {
-      return false;
-    }
-
-    for (int i = 0; i < prefix.length; i++) {
-      if (!path[i].equals(prefix[i])) {
-        return false;
-      }
-    }
-
-    return true;
+    return schema.leafIndexesByPathPrefix(pathPrefix);
   }
 }
