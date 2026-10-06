@@ -5,10 +5,12 @@ import java.nio.ByteBuffer;
 import java.util.Objects;
 
 /**
- * BYTE_STREAM_SPLIT decoding for FLOAT and DOUBLE. Byte planes are reassembled
- * directly into primitive bit patterns: decoding allocates only its output array,
- * not a byte array or ByteBuffer wrapper per value. Caller buffer order is ignored
- * and preserved; its position advances by exactly the consumed encoded bytes.
+ * BYTE_STREAM_SPLIT decoding for fixed-width primitives (INT32, INT64, FLOAT, DOUBLE).
+ * Byte planes are reassembled directly into primitive bit patterns: decoding allocates
+ * only its output array, not a byte array or ByteBuffer wrapper per value. Caller buffer
+ * order is ignored and preserved; its position advances by exactly the consumed encoded
+ * bytes. FIXED_LEN_BYTE_ARRAY planes stay in the page decoder because they assemble a
+ * shared binary payload rather than a primitive array.
  */
 public class ByteStreamSplitDecoder {
   private final ByteBuffer buffer;
@@ -83,6 +85,54 @@ public class ByteStreamSplitDecoder {
           | ((buffer.get(start + 6 * numValues + i) & 0xffL) << 48)
           | ((buffer.get(start + 7 * numValues + i) & 0xffL) << 56);
       result[i] = Double.longBitsToDouble(bits);
+    }
+    buffer.position(start + dataBytes);
+    return result;
+  }
+
+  /**
+   * @return decoded int values, preserving their original bit patterns
+   * @throws IllegalArgumentException if configured for another width
+   * @throws ParquetException if the caller changed the buffer to truncate the payload
+   */
+  public int[] decodeInt32() {
+    if (bytesPerValue != 4) {
+      throw new IllegalArgumentException("Expected 4 bytes per INT32 value, got " + bytesPerValue);
+    }
+    checkPayload();
+    int[] result = new int[numValues];
+    int start = buffer.position();
+    for (int i = 0; i < numValues; i++) {
+      result[i] = (buffer.get(start + i) & 0xff)
+          | ((buffer.get(start + numValues + i) & 0xff) << 8)
+          | ((buffer.get(start + 2 * numValues + i) & 0xff) << 16)
+          | ((buffer.get(start + 3 * numValues + i) & 0xff) << 24);
+    }
+    buffer.position(start + dataBytes);
+    return result;
+  }
+
+  /**
+   * @return decoded long values, preserving their original bit patterns
+   * @throws IllegalArgumentException if configured for another width
+   * @throws ParquetException if the caller changed the buffer to truncate the payload
+   */
+  public long[] decodeInt64() {
+    if (bytesPerValue != 8) {
+      throw new IllegalArgumentException("Expected 8 bytes per INT64 value, got " + bytesPerValue);
+    }
+    checkPayload();
+    long[] result = new long[numValues];
+    int start = buffer.position();
+    for (int i = 0; i < numValues; i++) {
+      result[i] = (buffer.get(start + i) & 0xffL)
+          | ((buffer.get(start + numValues + i) & 0xffL) << 8)
+          | ((buffer.get(start + 2 * numValues + i) & 0xffL) << 16)
+          | ((buffer.get(start + 3 * numValues + i) & 0xffL) << 24)
+          | ((buffer.get(start + 4 * numValues + i) & 0xffL) << 32)
+          | ((buffer.get(start + 5 * numValues + i) & 0xffL) << 40)
+          | ((buffer.get(start + 6 * numValues + i) & 0xffL) << 48)
+          | ((buffer.get(start + 7 * numValues + i) & 0xffL) << 56);
     }
     buffer.position(start + dataBytes);
     return result;

@@ -304,31 +304,15 @@ public final class ColumnPageDecoder {
             default -> throw new ParquetException("Unsupported BYTE_STREAM_SPLIT type " + descriptor.physicalType());
         };
         requireBytes(data, count * (long) width, "BYTE_STREAM_SPLIT values");
-        int start = data.position();
-        Object result = switch (descriptor.physicalType()) {
-            case INT32 -> {
-                int[] values = new int[count];
-                for (int i = 0; i < count; i++) values[i] = (int) splitBits(data, start, count, 4, i);
-                yield values;
-            }
-            case INT64 -> {
-                long[] values = new long[count];
-                for (int i = 0; i < count; i++) values[i] = splitBits(data, start, count, 8, i);
-                yield values;
-            }
-            case FLOAT -> {
-                float[] values = new float[count];
-                for (int i = 0; i < count; i++)
-                    values[i] = Float.intBitsToFloat((int) splitBits(data, start, count, 4, i));
-                yield values;
-            }
-            case DOUBLE -> {
-                double[] values = new double[count];
-                for (int i = 0; i < count; i++)
-                    values[i] = Double.longBitsToDouble(splitBits(data, start, count, 8, i));
-                yield values;
-            }
+        // Fixed-width primitives share one plane-reassembly implementation. The page-level
+        // truncation check above keeps this path's error messages independent of it.
+        return switch (descriptor.physicalType()) {
+            case INT32 -> new io.github.aloksingh.parquet.ByteStreamSplitDecoder(data, count, 4).decodeInt32();
+            case INT64 -> new io.github.aloksingh.parquet.ByteStreamSplitDecoder(data, count, 8).decodeInt64();
+            case FLOAT -> new io.github.aloksingh.parquet.ByteStreamSplitDecoder(data, count, 4).decodeFloat();
+            case DOUBLE -> new io.github.aloksingh.parquet.ByteStreamSplitDecoder(data, count, 8).decodeDouble();
             case FIXED_LEN_BYTE_ARRAY -> {
+                int start = data.position();
                 int[] offsets = new int[count + 1];
                 ByteBuffer payload = ByteBuffer.allocate(checkedSize(count * (long) width, "fixed binary payload"));
                 for (int i = 0; i < count; i++) {
@@ -336,20 +320,11 @@ public final class ColumnPageDecoder {
                     for (int lane = 0; lane < width; lane++)
                         payload.put(i * width + lane, data.get(start + lane * count + i));
                 }
+                data.position(start + count * width);
                 yield new BinaryValues(offsets, payload);
             }
             default -> throw new ParquetException("Unsupported BYTE_STREAM_SPLIT type " + descriptor.physicalType());
         };
-        data.position(start + count * width);
-        return result;
-    }
-
-    private static long splitBits(ByteBuffer data, int start, int count, int width, int index) {
-        long bits = 0;
-        for (int lane = 0; lane < width; lane++) {
-            bits |= (data.get(start + lane * count + index) & 0xffL) << (lane * 8);
-        }
-        return bits;
     }
 
     private static BinaryValues readPlainBinary(ByteBuffer data, int count) {
