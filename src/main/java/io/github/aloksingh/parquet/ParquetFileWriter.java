@@ -9,7 +9,7 @@ import io.github.aloksingh.parquet.model.RowColumnGroup;
 import io.github.aloksingh.parquet.model.SchemaDescriptor;
 import io.github.aloksingh.parquet.model.Type;
 import io.github.aloksingh.parquet.util.ByteUtils;
-import io.github.aloksingh.parquet.writer.WriterValues;
+import io.github.aloksingh.parquet.writer.MapRowStaging;
 import io.github.aloksingh.parquet.writer.WriterSchema;
 import io.github.aloksingh.parquet.writer.WriterStatistics;
 import io.github.aloksingh.parquet.writer.WriterColumnBuffer;
@@ -265,7 +265,7 @@ public class ParquetFileWriter implements ParquetWriter {
           if (column.isPrimitive()) {
             stagePrimitive(stagedRow[physical++], value);
           } else {
-            MapColumnWriter.appendRow(value, column.getMapMetadata(),
+            MapRowStaging.appendRow(value, column.getMapMetadata(),
                 stagedRow[physical], stagedRow[physical + 1]);
             physical += 2;
           }
