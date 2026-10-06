@@ -103,6 +103,20 @@ mvn test
 mvn package
 ```
 
+## Benchmarks
+
+Reproducible JMH benchmarks with checksum-guarded scans live in [benchmarks/](benchmarks/)
+(commands, parameter matrix, guard design, profiling notes in [benchmarks/README.md](benchmarks/README.md);
+latest measured numbers in [benchmarks/RESULTS.md](benchmarks/RESULTS.md)). They are built
+behind the Maven profile `benchmarks` (`mvn -Pbenchmarks package -DskipTests` produces
+`target/benchmarks.jar`) and never enter the library's dependency graph or the published jar —
+**never build a release with `-Pbenchmarks`**.
+
+```bash
+mvn -Pbenchmarks package -DskipTests
+java -jar target/benchmarks.jar -l     # list benchmarks
+```
+
 ## Dependencies
 
 - **Apache Parquet Format Structures** (1.13.1): Provides Thrift definitions for Parquet metadata
