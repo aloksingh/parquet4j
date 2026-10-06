@@ -37,7 +37,7 @@ public final class ColumnPageDecoder {
         }
         if (page.numValues() < 0) throw new ParquetException("Negative dictionary value count: " + page.numValues());
         ByteBuffer data = physicalBuffer(page.data());
-        Object values = readPlain(data, page.numValues());
+        Object values = PlainValueDecoder.decode(descriptor, data, page.numValues());
         DecodeChecks.requireConsumed(data, "dictionary values");
         Object[] entries = new Object[page.numValues()];
         for (int i = 0; i < entries.length; i++) {
@@ -105,7 +105,7 @@ public final class ColumnPageDecoder {
         }
         Object values;
         if (encoding == Encoding.PLAIN) {
-            values = readPlain(data, present);
+            values = PlainValueDecoder.decode(descriptor, data, present);
         } else if (encoding == Encoding.DELTA_BYTE_ARRAY && (descriptor.physicalType() == Type.BYTE_ARRAY
                 || descriptor.physicalType() == Type.FIXED_LEN_BYTE_ARRAY)) {
             values = present == 0 && !data.hasRemaining()
@@ -115,14 +115,7 @@ public final class ColumnPageDecoder {
         } else if (encoding == Encoding.DELTA_LENGTH_BYTE_ARRAY && descriptor.physicalType() == Type.BYTE_ARRAY) {
             values = DeltaLengthByteArrayDecoder.decode(data, present);
         } else if (encoding == Encoding.DELTA_BINARY_PACKED) {
-            io.github.aloksingh.parquet.DeltaBinaryPackedDecoder delta = present == 0 && !data.hasRemaining() ? null
-                    : DecodeChecks.validatedDelta(data, present, descriptor.physicalType() == Type.INT64);
-            values = switch (descriptor.physicalType()) {
-                case INT32 -> delta == null ? new int[0] : delta.decodeInt32(present);
-                case INT64 -> delta == null ? new long[0] : delta.decodeInt64(present);
-                default ->
-                        throw new ParquetException("Unsupported DELTA_BINARY_PACKED type " + descriptor.physicalType());
-            };
+            values = DeltaBinaryValueDecoder.decode(descriptor, data, present);
         } else if (encoding == Encoding.BYTE_STREAM_SPLIT) {
             values = readByteStreamSplit(data, present);
         } else if (encoding == Encoding.RLE && descriptor.physicalType() == Type.BOOLEAN) {
@@ -148,59 +141,6 @@ public final class ColumnPageDecoder {
     private static ByteBuffer physicalBuffer(ByteBuffer source) {
         if (source == null) throw new ParquetException("Missing physical page buffer");
         return source.duplicate().order(ByteOrder.LITTLE_ENDIAN);
-    }
-
-    private Object readPlain(ByteBuffer data, int count) {
-        long required = switch (descriptor.physicalType()) {
-            case BOOLEAN -> (count + 7L) / 8;
-            case INT32, FLOAT, BYTE_ARRAY -> count * 4L;
-            case INT64, DOUBLE -> count * 8L;
-            case INT96 -> count * 12L;
-            case FIXED_LEN_BYTE_ARRAY -> count * (long) descriptor.typeLength();
-        };
-        DecodeChecks.requireBytes(data, required, "PLAIN " + descriptor.physicalType());
-        return switch (descriptor.physicalType()) {
-            case INT32 -> {
-                int[] values = new int[count];
-                for (int i = 0; i < count; i++) values[i] = data.getInt();
-                yield values;
-            }
-            case INT64 -> {
-                long[] values = new long[count];
-                for (int i = 0; i < count; i++) values[i] = data.getLong();
-                yield values;
-            }
-            case FLOAT -> {
-                float[] values = new float[count];
-                for (int i = 0; i < count; i++) values[i] = data.getFloat();
-                yield values;
-            }
-            case DOUBLE -> {
-                double[] values = new double[count];
-                for (int i = 0; i < count; i++) values[i] = data.getDouble();
-                yield values;
-            }
-            case BOOLEAN -> {
-                boolean[] values = new boolean[count];
-                int packed = 0;
-                for (int i = 0; i < count; i++) {
-                    if ((i & 7) == 0) packed = data.get() & 0xff;
-                    values[i] = (packed & (1 << (i & 7))) != 0;
-                }
-                yield values;
-            }
-            case FIXED_LEN_BYTE_ARRAY, INT96 -> {
-                int width = descriptor.physicalType() == Type.INT96 ? 12 : descriptor.typeLength();
-                int[] offsets = new int[count + 1];
-                for (int i = 0; i < count; i++) offsets[i + 1] = Math.addExact(offsets[i], width);
-                ByteBuffer payload = data.slice();
-                payload.limit(offsets[count]);
-                data.position(data.position() + offsets[count]);
-                yield new BinaryValues(offsets, payload);
-            }
-            case BYTE_ARRAY -> readPlainBinary(data, count);
-            default -> throw new ParquetException("Unsupported PLAIN type " + descriptor.physicalType());
-        };
     }
 
     private Object readByteStreamSplit(ByteBuffer data, int count) {
@@ -232,25 +172,6 @@ public final class ColumnPageDecoder {
             }
             default -> throw new ParquetException("Unsupported BYTE_STREAM_SPLIT type " + descriptor.physicalType());
         };
-    }
-
-    private static BinaryValues readPlainBinary(ByteBuffer data, int count) {
-        int[] offsets = new int[count + 1];
-        ByteBuffer scan = data.duplicate().order(ByteOrder.LITTLE_ENDIAN);
-        for (int i = 0; i < count; i++) {
-            DecodeChecks.requireBytes(scan, 4, "binary length");
-            int length = scan.getInt();
-            DecodeChecks.requireBytes(scan, length, "binary value");
-            offsets[i + 1] = Math.addExact(offsets[i], length);
-            scan.position(scan.position() + length);
-        }
-        ByteBuffer payload = ByteBuffer.allocate(offsets[count]);
-        for (int i = 0; i < count; i++) {
-            int length = data.getInt();
-            payload.put(offsets[i], data, data.position(), length);
-            data.position(data.position() + length);
-        }
-        return new BinaryValues(offsets, payload);
     }
 
 }
