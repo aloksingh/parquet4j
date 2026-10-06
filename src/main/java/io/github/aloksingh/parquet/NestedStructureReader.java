@@ -93,38 +93,9 @@ public class NestedStructureReader {
         ? valueColumn.decodeAsList(entryDefinition - 1, entryDefinition, valueDecoder)
         : valueColumn.decodeAsList(valueDecoder);
 
-    if (keyLists.size() != valueLists.size()) {
-      throw new ParquetException("Key and value lists have different sizes: " +
-          keyLists.size() + " vs " + valueLists.size());
-    }
-
-    // Combine into maps
-    List<Map<K, V>> result = new ArrayList<>();
-    for (int i = 0; i < keyLists.size(); i++) {
-      List<K> keys = keyLists.get(i);
-      List<V> values = valueLists.get(i);
-
-      if (keys == null && values == null) {
-        result.add(null);
-      } else if (keys == null || values == null) {
-        throw new ParquetException("Key and value lists should both be null or both be non-null");
-      } else if (keys.size() != values.size()) {
-        throw new ParquetException("Key and value lists have different sizes at index " + i +
-            ": " + keys.size() + " vs " + values.size());
-      } else {
-        Map<K, V> map = new LinkedHashMap<>();
-        for (int j = 0; j < keys.size(); j++) {
-          if (map.containsKey(keys.get(j))) {
-            throw new ParquetException("MAP row " + i + " repeats key " + keys.get(j) +
-                "; flattening nested MAP entries would drop data");
-          }
-          map.put(keys.get(j), values.get(j));
-        }
-        result.add(map);
-      }
-    }
-
-    return result;
+    return io.github.aloksingh.parquet.model.NestedAssembler.zipEntryLists(
+        keyLists, valueLists,
+        io.github.aloksingh.parquet.model.NestedAssembler.DuplicateKeyPolicy.REJECT);
   }
 
   /**

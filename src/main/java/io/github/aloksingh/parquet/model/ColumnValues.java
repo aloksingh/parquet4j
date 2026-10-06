@@ -595,39 +595,11 @@ public class ColumnValues {
   public <T> List<List<T>> decodeAsList(int listDefinition, int elementDefinition,
                                       java.util.function.Function<Object, T> elementDecoder) {
     int maxDefinition = columnDescriptor.maxDefinitionLevel();
-    if (columnDescriptor.maxRepetitionLevel() < 1 || listDefinition < 0
-        || elementDefinition != listDefinition + 1 || elementDefinition > maxDefinition) {
+    if (columnDescriptor.maxRepetitionLevel() < 1) {
       throw new ParquetException("Unsupported LIST structural definition levels");
     }
-    java.util.Objects.requireNonNull(elementDecoder, "elementDecoder");
-    List<List<T>> result = new ArrayList<>();
-    List<T> active = null;
-    for (DecodedPage page : decodedPages()) {
-      int physical = 0;
-      for (int event = 0; event < page.numValues(); event++) {
-        int definition = page.definitionLevel(event);
-        int repetition = page.repetitionLevel(event);
-        if (repetition == 0) {
-          if (definition < listDefinition) {
-            active = null;
-            result.add(null);
-            continue;
-          }
-          active = new ArrayList<>();
-          result.add(active);
-          if (definition < elementDefinition) {
-            continue; // Present container without an entry: an empty container.
-          }
-        } else if (active == null) {
-          throw new ParquetException("LIST continuation without an active element container");
-        }
-        // This slot holds an entry: only the leaf maximum carries a physical value,
-        // every lower definition appends null and keeps the container active.
-        active.add(definition == maxDefinition
-            ? elementDecoder.apply(page.physicalValue(physical++)) : null);
-      }
-    }
-    return result;
+    return NestedAssembler.assembleLists(decodedPages(), maxDefinition,
+        listDefinition, elementDefinition, elementDecoder);
   }
 
   /**
@@ -651,100 +623,8 @@ public class ColumnValues {
       ColumnValues valueColumn,
       java.util.function.Function<Object, K> keyDecoder,
       java.util.function.Function<Object, V> valueDecoder) {
-    java.util.Objects.requireNonNull(keyColumn, "keyColumn");
-    java.util.Objects.requireNonNull(valueColumn, "valueColumn");
-    java.util.Objects.requireNonNull(keyDecoder, "keyDecoder");
-    java.util.Objects.requireNonNull(valueDecoder, "valueDecoder");
-    int entryDefinition = keyColumn.columnDescriptor.maxDefinitionLevel();
-    int valueDefinition = valueColumn.columnDescriptor.maxDefinitionLevel();
-    if (keyColumn.columnDescriptor.maxRepetitionLevel() != 1
-        || valueColumn.columnDescriptor.maxRepetitionLevel() != 1 || entryDefinition < 1
-        || valueDefinition < entryDefinition || valueDefinition > entryDefinition + 1) {
-      throw new ParquetException("Unsupported scalar MAP key/value shape");
-    }
-    int mapDefinition = entryDefinition - 1;
-    PageEvents keys = new PageEvents(keyColumn);
-    PageEvents values = new PageEvents(valueColumn);
-    List<java.util.Map<K, V>> result = new ArrayList<>();
-    java.util.Map<K, V> active = null;
-    boolean hasEntries = false;
-    while (keys.hasNext()) {
-      if (!values.hasNext()) throw new ParquetException("MAP key/value event count mismatch");
-      int keyDef = keys.definition();
-      int valueDef = values.definition();
-      int repetition = keys.repetition();
-      if (repetition != values.repetition()) throw new ParquetException("MAP repetition levels do not align");
-      if (keyDef < entryDefinition && valueDef != keyDef) {
-        throw new ParquetException("MAP container definition levels do not align");
-      }
-      if (keyDef == entryDefinition && valueDef < entryDefinition) {
-        throw new ParquetException("MAP entry is missing a required key or value event");
-      }
-      if (repetition == 0) {
-        hasEntries = keyDef == entryDefinition;
-        if (keyDef < mapDefinition) {
-          active = null;
-          result.add(null);
-        } else {
-          active = new java.util.LinkedHashMap<>();
-          result.add(active);
-        }
-      } else if (active == null || !hasEntries || keyDef < entryDefinition) {
-        throw new ParquetException("MAP continuation without an active entry container");
-      }
-      if (keyDef == entryDefinition) {
-        K key = keyDecoder.apply(keys.physicalValue());
-        if (key == null) throw new ParquetException("MAP keys are required");
-        V value = valueDef == valueDefinition ? valueDecoder.apply(values.physicalValue()) : null;
-        if (value == null && valueDefinition == entryDefinition) {
-          throw new ParquetException("MAP value is required");
-        }
-        active.put(key, value);
-      }
-      keys.advance();
-      values.advance();
-    }
-    if (values.hasNext()) throw new ParquetException("MAP key/value event count mismatch");
-    return result;
+    return NestedAssembler.assembleScalarMaps(keyColumn, valueColumn, keyDecoder, valueDecoder,
+        NestedAssembler.DuplicateKeyPolicy.LAST_WINS);
   }
 
-  /** Event cursor independent of each leaf's page boundaries. */
-  private static final class PageEvents {
-    private final List<DecodedPage> pages;
-    private final int maxDefinition;
-    private int pageIndex;
-    private int eventIndex;
-    private int physicalIndex;
-
-    private PageEvents(ColumnValues column) {
-      pages = column.decodedPages();
-      maxDefinition = column.columnDescriptor.maxDefinitionLevel();
-    }
-
-    private boolean hasNext() {
-      while (pageIndex < pages.size() && eventIndex == pages.get(pageIndex).numValues()) {
-        pageIndex++;
-        eventIndex = 0;
-        physicalIndex = 0;
-      }
-      return pageIndex < pages.size();
-    }
-
-    private int definition() {
-      return pages.get(pageIndex).definitionLevel(eventIndex);
-    }
-
-    private int repetition() {
-      return pages.get(pageIndex).repetitionLevel(eventIndex);
-    }
-
-    private Object physicalValue() {
-      return pages.get(pageIndex).physicalValue(physicalIndex);
-    }
-
-    private void advance() {
-      if (definition() == maxDefinition) physicalIndex++;
-      eventIndex++;
-    }
-  }
 }
