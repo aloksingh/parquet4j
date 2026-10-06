@@ -1,9 +1,6 @@
 package io.github.aloksingh.parquet.model;
 
-import java.nio.ByteBuffer;
 import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.BitSet;
 import java.util.List;
 
 /**
@@ -352,7 +349,15 @@ public class ColumnValues {
   /**
    * A physical leaf cannot supply both MAP chunks. This legacy signature remains
    * source-compatible but rejects the former guessed alternating-value format.
+   *
+   * @deprecated a single physical leaf cannot express the MAP container shape of the
+   * format; this method always throws. Use {@link #decodeMapFromKeyValueColumns},
+   * which joins the separate key and value leaves by level events, or
+   * {@code NestedStructureReader#readMap}, which also reconstructs nested MAPs.
+   * @throws ParquetException always: the unsupported single-column MAP shape is
+   *                          rejected rather than decoded from guessed framing
    */
+  @Deprecated
   public <K, V> List<java.util.Map<K, V>> decodeAsMap(
       java.util.function.Function<Object, K> keyDecoder,
       java.util.function.Function<Object, V> valueDecoder) {

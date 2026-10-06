@@ -1,19 +1,16 @@
 package io.github.aloksingh.parquet;
 
+import io.github.aloksingh.parquet.model.*;
+import org.apache.parquet.format.PageHeader;
+import org.apache.parquet.format.PageType;
+import shaded.parquet.org.apache.thrift.TException;
+import shaded.parquet.org.apache.thrift.protocol.TCompactProtocol;
+import shaded.parquet.org.apache.thrift.transport.TIOStreamTransport;
+
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.List;
-import org.apache.parquet.format.PageHeader;
-import org.apache.parquet.format.PageType;
-import io.github.aloksingh.parquet.model.ColumnDescriptor;
-import io.github.aloksingh.parquet.model.Encoding;
-import io.github.aloksingh.parquet.model.Page;
-import io.github.aloksingh.parquet.model.ParquetException;
-import io.github.aloksingh.parquet.model.ParquetMetadata;
-import shaded.parquet.org.apache.thrift.TException;
-import shaded.parquet.org.apache.thrift.protocol.TCompactProtocol;
-import shaded.parquet.org.apache.thrift.transport.TIOStreamTransport;
 
 /**
  * Reads pages from a column chunk in a Parquet file.
@@ -237,8 +234,9 @@ public class PageReader {
         Encoding encoding = Encoding.fromValue(
             pageHeader.getData_page_header().getEncoding().getValue());
 
-        // V1 RLE level sections include a little-endian byte-length prefix.
-        // Keep the prefixes in data for ColumnValues, without advancing its position.
+        // V1 RLE level sections carry their own little-endian byte-length prefix
+        // (Parquet encodings spec). The prefixed sections are passed through unread;
+        // the page decoder validates and parses the framing itself.
         pageData.order(java.nio.ByteOrder.LITTLE_ENDIAN);
         int repLevelLen = columnDescriptor.maxRepetitionLevel() > 0
             ? v1LevelLength(pageData, 0, "repetition levels") : 0;

@@ -1,15 +1,13 @@
 package io.github.aloksingh.parquet;
 
-import io.github.aloksingh.parquet.model.ColumnDescriptor;
-import io.github.aloksingh.parquet.model.ColumnStatistics;
+import io.github.aloksingh.parquet.model.*;
 import io.github.aloksingh.parquet.model.CompressionCodec;
-import io.github.aloksingh.parquet.model.LogicalColumnDescriptor;
-import io.github.aloksingh.parquet.model.LogicalType;
-import io.github.aloksingh.parquet.model.MapMetadata;
-import io.github.aloksingh.parquet.model.ParquetException;
-import io.github.aloksingh.parquet.model.ParquetMetadata;
-import io.github.aloksingh.parquet.model.SchemaDescriptor;
 import io.github.aloksingh.parquet.model.Type;
+import org.apache.parquet.format.*;
+import shaded.parquet.org.apache.thrift.TException;
+import shaded.parquet.org.apache.thrift.protocol.TCompactProtocol;
+import shaded.parquet.org.apache.thrift.transport.TIOStreamTransport;
+
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.nio.ByteBuffer;
@@ -19,16 +17,6 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import org.apache.parquet.format.ColumnChunk;
-import org.apache.parquet.format.ColumnMetaData;
-import org.apache.parquet.format.FieldRepetitionType;
-import org.apache.parquet.format.FileMetaData;
-import org.apache.parquet.format.KeyValue;
-import org.apache.parquet.format.RowGroup;
-import org.apache.parquet.format.SchemaElement;
-import shaded.parquet.org.apache.thrift.TException;
-import shaded.parquet.org.apache.thrift.protocol.TCompactProtocol;
-import shaded.parquet.org.apache.thrift.transport.TIOStreamTransport;
 
 /**
  * Reads Parquet file metadata from the footer.
@@ -241,54 +229,6 @@ public class ParquetMetadataReader {
 
     return new ParquetMetadata(fileMetadata, rowGroups);
   }
-
-  /**
-   * Recursively builds column descriptors from schema elements.
-   *
-   * @deprecated leaf descriptors and their logical annotations are derived centrally from the
-   * reconstructed schema tree by {@link SchemaDescriptor#fromSchemaElements}; this method is
-   * retained for source compatibility and delegates to the same tree.
-   * @param schemaElements the list of all schema elements from the file
-   * @param index the current index in schemaElements to process
-   * @param currentPath the path from the root to the current element
-   * @param currentDefLevel the current definition level
-   * @param currentRepLevel the current repetition level
-   * @param columns the list to add discovered ColumnDescriptors to
-   * @return the next index to process after this element and its children
-   */
-  private static int buildColumns(List<SchemaElement> schemaElements, int index,
-                                  String[] currentPath, int currentDefLevel,
-                                  int currentRepLevel,
-                                  List<ColumnDescriptor> columns) {
-    // Delegate to the central tree so annotations are applied consistently.
-    SchemaDescriptor schema = SchemaDescriptor.fromSchemaElements(
-        schemaElements.get(0).getName(), schemaElements);
-    columns.clear();
-    columns.addAll(schema.columns());
-    return schemaElements.size();
-  }
-
-  /**
-   * Builds logical columns from physical columns by reconstructing the annotated schema tree.
-   *
-   * <p>Classification is annotation-first (LIST per the 3-level standard plus legacy
-   * variants, MAP per the 3-level standard with a required key, STRUCT as the unannotated
-   * default); the {@code key_value} name pattern is only a last-resort legacy heuristic, so
-   * unannotated structures with MAP-like child names are never classified as MAP. Physical
-   * columns supplied by the caller are matched back by full path.
-   *
-   * @param physicalColumns the list of physical ColumnDescriptors
-   * @param schemaElements the schema elements of the file schema
-   * @return a list of LogicalColumnDescriptors representing the logical schema
-   */
-  public static List<LogicalColumnDescriptor> buildLogicalColumns(
-      List<ColumnDescriptor> physicalColumns,
-      List<SchemaElement> schemaElements) {
-    SchemaDescriptor schema = SchemaDescriptor.fromSchemaElements(
-        schemaElements.get(0).getName(), schemaElements);
-    return schema.logicalColumns();
-  }
-
 
   /**
    * Reads and verifies the header magic bytes to confirm this is a Parquet file.

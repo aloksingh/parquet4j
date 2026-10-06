@@ -1,15 +1,12 @@
 package io.github.aloksingh.parquet;
 
-import static org.junit.jupiter.api.Assertions.assertArrayEquals;
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.fail;
+import io.github.aloksingh.parquet.model.*;
+import org.junit.jupiter.api.Test;
 
-import io.github.aloksingh.parquet.model.ColumnDescriptor;
-import io.github.aloksingh.parquet.model.ColumnValues;
-import io.github.aloksingh.parquet.model.SchemaDescriptor;
 import java.io.IOException;
 import java.util.List;
-import org.junit.jupiter.api.Test;
+
+import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * Tests for dictionary encoding support.
@@ -113,5 +110,30 @@ class DictionaryEncodingTest {
 
     int[] values = decoder.readAll();
     assertArrayEquals(new int[] {1, 0, 0, 1, 0, 6, 0, 0}, values);
+  }
+
+  /**
+   * Regression from the retired {@code DebugRleDictionaryTest}: the corpus file
+   * with an unrecognized logical-type annotation has a RLE_DICTIONARY string leaf
+   * whose dictionary page is PLAIN. This fixture has no golden JSON, so these
+   * exact values are its only value pin.
+   */
+  @Test
+  void unknownLogicalTypeDictionaryColumnDecodesExactly() throws IOException {
+    try (ParquetFileReader reader = new ParquetFileReader("src/test/data/unknown-logical-type.parquet")) {
+      ParquetFileReader.RowGroupReader rowGroup = reader.getRowGroup(0);
+      List<Page> pages = rowGroup.getColumnPageReader(0).readAllPages();
+      assertEquals(2, pages.size());
+      Page.DictionaryPage dictionary = (Page.DictionaryPage) pages.get(0);
+      assertEquals(3, dictionary.numValues());
+      assertEquals(Encoding.PLAIN, dictionary.encoding());
+      Page.DataPage dataPage = (Page.DataPage) pages.get(1);
+      assertEquals(3, dataPage.numValues());
+      assertEquals(Encoding.RLE_DICTIONARY, dataPage.encoding());
+      ColumnValues values = new ColumnValues(io.github.aloksingh.parquet.model.Type.BYTE_ARRAY,
+              pages, reader.getSchema().getColumn(0), null);
+      assertEquals(List.of("known string 1", "known string 2", "known string 3"),
+              values.decodeAsString());
+    }
   }
 }
