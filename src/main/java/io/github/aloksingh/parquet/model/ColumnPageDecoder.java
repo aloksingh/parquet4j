@@ -60,16 +60,16 @@ public final class ColumnPageDecoder {
             count = dataPage.numValues();
             if (count < 0) throw new ParquetException("Negative page value count: " + count);
             encoding = dataPage.encoding();
-            repetitions = readV1Levels(data, dataPage.repetitionLevelByteLen(), count,
+            repetitions = LevelStreams.readV1Levels(data, dataPage.repetitionLevelByteLen(), count,
                     descriptor.maxRepetitionLevel(), "repetition");
-            definitions = readV1Levels(data, dataPage.definitionLevelByteLen(), count, maxDefinition, "definition");
+            definitions = LevelStreams.readV1Levels(data, dataPage.definitionLevelByteLen(), count, maxDefinition, "definition");
         } else if (page instanceof Page.DataPageV2 dataPage) {
             data = physicalBuffer(dataPage.data());
             count = dataPage.numValues();
             if (count < 0) throw new ParquetException("Negative page value count: " + count);
             encoding = dataPage.encoding();
-            repetitions = readLevels(dataPage.repetitionLevels(), count, descriptor.maxRepetitionLevel(), "repetition");
-            definitions = readLevels(dataPage.definitionLevels(), count, maxDefinition, "definition");
+            repetitions = LevelStreams.readLevels(dataPage.repetitionLevels(), count, descriptor.maxRepetitionLevel(), "repetition");
+            definitions = LevelStreams.readLevels(dataPage.definitionLevels(), count, maxDefinition, "definition");
         } else {
             throw new ParquetException("Expected a data page for " + descriptor.getPathString());
         }
@@ -93,7 +93,7 @@ public final class ColumnPageDecoder {
             }
             if (present > 0) DecodeChecks.requireBytes(data, 1, "dictionary bit width");
             int width = present == 0 && !data.hasRemaining() ? 0 : data.get() & 0xff;
-            validateHybrid(data, width, present, "dictionary indexes");
+            LevelStreams.validateHybrid(data, width, present, "dictionary indexes");
             int[] indices = new RleDecoder(data, width, present).readAll();
             for (int index : indices) {
                 if (index < 0 || index >= dictionary.length) {
@@ -132,7 +132,7 @@ public final class ColumnPageDecoder {
             ByteBuffer rle = data.slice().order(ByteOrder.LITTLE_ENDIAN);
             rle.limit(length);
             data.position(data.position() + length);
-            validateHybrid(rle, 1, present, "boolean values");
+            LevelStreams.validateHybrid(rle, 1, present, "boolean values");
             int[] integers = new RleDecoder(rle, 1, present).readAll();
             boolean[] booleans = new boolean[present];
             for (int i = 0; i < present; i++) booleans[i] = integers[i] == 1;
@@ -203,9 +203,6 @@ public final class ColumnPageDecoder {
         };
     }
 
-
-
-
     private Object readByteStreamSplit(ByteBuffer data, int count) {
         int width = switch (descriptor.physicalType()) {
             case INT32, FLOAT -> 4;
@@ -256,80 +253,4 @@ public final class ColumnPageDecoder {
         return new BinaryValues(offsets, payload);
     }
 
-
-
-
-
-    // Validate framing before handing a bounded stream to the reusable RLE reader.
-    // In particular, a short packed run must not become zero-filled values.
-    private static void validateHybrid(ByteBuffer source, int width, int count, String kind) {
-        if (width < 0 || width > 32 || count < 0) {
-            throw new ParquetException("Invalid " + kind + " width/count: " + width + "/" + count);
-        }
-        ByteBuffer data = source.duplicate();
-        int decoded = 0;
-        while (decoded < count) {
-            long header = DecodeChecks.unsignedVarInt(data, kind);
-            long run = header >>> 1;
-            if (run == 0) throw new ParquetException("Zero-length " + kind + " run");
-            if ((header & 1) == 0) {
-                int bytes = (width + 7) / 8;
-                DecodeChecks.requireBytes(data, bytes, kind);
-                long value = 0;
-                for (int i = 0; i < bytes; i++) value |= (data.get() & 0xffL) << (8 * i);
-                if ((value >>> width) != 0) throw new ParquetException("Invalid " + kind + " value for width " + width);
-                if (run > count - decoded) throw new ParquetException("Too many " + kind + " values");
-                decoded += (int) run;
-            } else {
-                long values = run * 8;
-                long bytes = run * width;
-                DecodeChecks.requireBytes(data, bytes, kind);
-                if (values > (long) count - decoded + 7) throw new ParquetException("Too many " + kind + " values");
-                data.position(data.position() + (int) bytes);
-                decoded += (int) Math.min(values, count - decoded);
-            }
-        }
-        if (data.hasRemaining()) throw new ParquetException("Trailing " + kind + " bytes");
-    }
-
-    private static int[] readV1Levels(ByteBuffer data, int byteLength, int count, int maxLevel, String kind) {
-        if (maxLevel == 0) {
-            if (byteLength != 0) throw new ParquetException("Unexpected " + kind + " level section");
-            return null;
-        }
-        if (count == 0 && byteLength == 0) return new int[0];
-        if (byteLength < 4) throw new ParquetException("Missing " + kind + " level section");
-        DecodeChecks.requireBytes(data, byteLength, kind + " level section");
-        int length = data.getInt();
-        if (length < 0 || 4L + length != byteLength) {
-            throw new ParquetException("Invalid " + kind + " level section length: " + length + "/" + byteLength);
-        }
-        DecodeChecks.requireBytes(data, length, kind + " levels");
-        ByteBuffer levels = data.slice().order(ByteOrder.LITTLE_ENDIAN);
-        levels.limit(length);
-        data.position(data.position() + length);
-        return readLevels(levels, count, maxLevel, kind);
-    }
-
-    private static int[] readLevels(ByteBuffer data, int count, int maxLevel, String kind) {
-        if (maxLevel == 0) {
-            // Some legacy V2 writers explicitly encode the implicit zero levels.
-            // Validate their count/framing rather than rejecting a correct width-zero stream.
-            if (data != null && data.hasRemaining()) validateHybrid(data, 0, count, kind + " levels");
-            return null;
-        }
-        if (data == null || !data.hasRemaining()) {
-            if (count == 0) return new int[0];
-            throw new ParquetException("Missing " + kind + " levels");
-        }
-        int width = 32 - Integer.numberOfLeadingZeros(maxLevel);
-        validateHybrid(data, width, count, kind + " levels");
-        int[] levels = new RleDecoder(data, width, count).readAll();
-        for (int level : levels) {
-            if (level < 0 || level > maxLevel) {
-                throw new ParquetException("Invalid " + kind + " level " + level + ", maximum " + maxLevel);
-            }
-        }
-        return levels;
-    }
 }
