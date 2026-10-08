@@ -648,6 +648,16 @@ encoding with fallback for low-cardinality columns, delta encoding for suitable 
 where useful for floats. Sampling compression/encoding decisions is optional; keep metadata and chunk/page semantics
 correct.
 
+**Status (2026-10-07): dictionary encoding implemented.** `DictionaryOptions` (opt-in, off by default) drives bounded
+RLE_DICTIONARY writing for all physical types except BOOLEAN: one PLAIN dictionary page per column chunk (entries keyed
+by exact PLAIN bytes, so FLOAT/DOUBLE raw bit patterns are preserved), `u8` bit-width + unprefixed hybrid index streams
+per data page, PLAIN fallback once the dictionary budget is exhausted (mixed chunks list all encodings), all-null pages
+stay PLAIN, and dictionaries reset per row group. Page/row-group flush sizing now uses estimated encoded sizes. The
+dictionary page always carries the chunk codec (it has no per-page `is_compressed` flag). Covered by
+WriterDictionaryEncodingTest (golden width-0 and packed index streams, fallback reconstruction, DuckDB interop for
+scalar and MAP columns, raw-bit identity, row-group reset). DELTA_BINARY_PACKED/DELTA_LENGTH_BYTE_ARRAY/
+BYTE_STREAM_SPLIT writer encodings remain future work.
+
 **Validate:** instrument compressor invocation, test zero/one/boundary/NaN/infinite thresholds, and cover incompressible
 data rather than only favorable fixtures. Compare CPU, file size, and external readability for each new policy/encoding.
 Coordinate multi-page behavior with recommendation 10.

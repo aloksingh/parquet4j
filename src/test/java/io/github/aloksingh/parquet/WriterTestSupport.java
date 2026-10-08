@@ -1,16 +1,16 @@
 package io.github.aloksingh.parquet;
 
+import org.apache.parquet.format.FileMetaData;
+import org.apache.parquet.format.PageHeader;
+import shaded.parquet.org.apache.thrift.protocol.TCompactProtocol;
+import shaded.parquet.org.apache.thrift.transport.TIOStreamTransport;
+
 import java.io.ByteArrayInputStream;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Arrays;
-
-import org.apache.parquet.format.FileMetaData;
-import org.apache.parquet.format.PageHeader;
-import shaded.parquet.org.apache.thrift.protocol.TCompactProtocol;
-import shaded.parquet.org.apache.thrift.transport.TIOStreamTransport;
 
 final class WriterTestSupport {
     private WriterTestSupport() {
@@ -31,7 +31,8 @@ final class WriterTestSupport {
     static java.util.List<PageData> pages(Path path, int group, int column) throws Exception {
         var metadata = footer(path).getRow_groups().get(group).getColumns().get(column).getMeta_data();
         byte[] bytes = Files.readAllBytes(path);
-        int start = Math.toIntExact(metadata.getData_page_offset());
+        int start = Math.toIntExact(metadata.isSetDictionary_page_offset()
+                ? metadata.getDictionary_page_offset() : metadata.getData_page_offset());
         int length = Math.toIntExact(metadata.getTotal_compressed_size());
         ByteArrayInputStream input = new ByteArrayInputStream(bytes, start, length);
         java.util.List<PageData> pages = new java.util.ArrayList<>();

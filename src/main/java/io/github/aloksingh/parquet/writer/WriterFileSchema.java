@@ -1,15 +1,11 @@
 package io.github.aloksingh.parquet.writer;
 
-import io.github.aloksingh.parquet.model.ColumnDescriptor;
-import io.github.aloksingh.parquet.model.CompressionCodec;
-import io.github.aloksingh.parquet.model.LogicalColumnDescriptor;
-import io.github.aloksingh.parquet.model.MapMetadata;
-import io.github.aloksingh.parquet.model.SchemaDescriptor;
-import io.github.aloksingh.parquet.model.Type;
-import java.util.ArrayList;
-import java.util.List;
+import io.github.aloksingh.parquet.model.*;
 import org.apache.parquet.format.FieldRepetitionType;
 import org.apache.parquet.format.SchemaElement;
+
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * Footer schema serialization: the thrift SchemaElement tree and the thrift
@@ -59,6 +55,21 @@ public final class WriterFileSchema {
       case LZ4_RAW -> org.apache.parquet.format.CompressionCodec.LZ4_RAW;
     };
   }
+
+    /**
+     * Convert internal Encoding to Parquet format Encoding for writer-emitted pages.
+     *
+     * @param encoding Internal encoding enum
+     * @return Parquet format encoding enum
+     * @throws IllegalArgumentException if the writer cannot emit the encoding
+     */
+    public static org.apache.parquet.format.Encoding convertEncoding(Encoding encoding) {
+        return switch (encoding) {
+            case PLAIN -> org.apache.parquet.format.Encoding.PLAIN;
+            case RLE_DICTIONARY -> org.apache.parquet.format.Encoding.RLE_DICTIONARY;
+            default -> throw new IllegalArgumentException("Unsupported writer encoding: " + encoding);
+        };
+    }
 
   /**
    * Build the file schema from the schema descriptor.

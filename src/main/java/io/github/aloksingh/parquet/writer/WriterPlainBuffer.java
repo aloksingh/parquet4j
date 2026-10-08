@@ -51,6 +51,26 @@ final class WriterPlainBuffer {
         }
     }
 
+    /**
+     * Backing array of the raw PLAIN stream (only for non-BOOLEAN types).
+     */
+    byte[] data() {
+        if (type == Type.BOOLEAN) {
+            throw new IllegalStateException("Boolean values are bit-packed, not raw slices");
+        }
+        return bytes.data;
+    }
+
+    /**
+     * Appends one raw PLAIN value slice (only for non-BOOLEAN types).
+     */
+    void appendRaw(byte[] data, int offset, int length) {
+        if (type == Type.BOOLEAN) {
+            throw new IllegalStateException("Boolean values are bit-packed, not raw slices");
+        }
+        bytes.putBytes(data, offset, length);
+    }
+
     long projectedSize(WriterPlainBuffer row) {
         return type == Type.BOOLEAN ? ((long) booleanCount + row.booleanCount + 7) / 8
                 : (long) bytes.size + row.bytes.size;

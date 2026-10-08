@@ -1,21 +1,10 @@
 package io.github.aloksingh.parquet;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-
-import io.github.aloksingh.parquet.model.ColumnDescriptor;
-import io.github.aloksingh.parquet.model.ColumnValues;
-import io.github.aloksingh.parquet.model.CompressionCodec;
-import io.github.aloksingh.parquet.model.Encoding;
-import io.github.aloksingh.parquet.model.LogicalColumnDescriptor;
-import io.github.aloksingh.parquet.model.LogicalType;
-import io.github.aloksingh.parquet.model.Page;
-import io.github.aloksingh.parquet.model.ParquetException;
-import io.github.aloksingh.parquet.model.RowColumnGroup;
-import io.github.aloksingh.parquet.model.SchemaDescriptor;
-import io.github.aloksingh.parquet.model.SimpleRowColumnGroup;
-import io.github.aloksingh.parquet.model.Type;
+import io.github.aloksingh.parquet.model.*;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
@@ -31,10 +20,7 @@ import java.util.Map;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.MethodSource;
-import org.junit.jupiter.api.io.TempDir;
+import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * Behavior tripwire for the improvement-16 refactor (splitting monolithic decoding/writing
@@ -45,7 +31,7 @@ import org.junit.jupiter.api.io.TempDir;
  *   <li><b>Writer byte identity</b> — a pinned SHA-256 of each generated file's bytes and of a
  *       canonical rendering of the rows read back through the row API.</li>
  *   <li><b>Decode identity</b> — exact decoded values for every encoding family, including the
- *       ones the writer cannot emit (DELTA_*, BYTE_STREAM_SPLIT, RLE boolean, dictionary).</li>
+ *       ones the writer does not emit (DELTA_*, BYTE_STREAM_SPLIT, RLE boolean).</li>
  *   <li><b>Malformed-input behavior</b> — exact exception type and message for representative
  *       corrupt inputs per decoder family.</li>
  * </ol>

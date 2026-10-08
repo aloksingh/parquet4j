@@ -1,21 +1,14 @@
 package io.github.aloksingh.parquet;
 
-import io.github.aloksingh.parquet.model.ColumnDescriptor;
+import io.github.aloksingh.parquet.model.*;
 import io.github.aloksingh.parquet.model.CompressionCodec;
-import io.github.aloksingh.parquet.model.LogicalColumnDescriptor;
-import io.github.aloksingh.parquet.model.MapMetadata;
-import io.github.aloksingh.parquet.model.ParquetException;
-import io.github.aloksingh.parquet.model.RowColumnGroup;
-import io.github.aloksingh.parquet.model.SchemaDescriptor;
-import io.github.aloksingh.parquet.model.Type;
-import io.github.aloksingh.parquet.util.ByteUtils;
-import io.github.aloksingh.parquet.writer.MapRowStaging;
-import io.github.aloksingh.parquet.writer.WriterSchema;
-import io.github.aloksingh.parquet.writer.WriterStatistics;
-import io.github.aloksingh.parquet.writer.WriterColumnBuffer;
-import io.github.aloksingh.parquet.writer.WriterColumnBuilder;
-import io.github.aloksingh.parquet.writer.WriterFileSchema;
-import io.github.aloksingh.parquet.writer.WriterPage;
+import io.github.aloksingh.parquet.model.Encoding;
+import io.github.aloksingh.parquet.writer.*;
+import org.apache.parquet.format.*;
+import shaded.parquet.org.apache.thrift.TException;
+import shaded.parquet.org.apache.thrift.protocol.TCompactProtocol;
+import shaded.parquet.org.apache.thrift.transport.TIOStreamTransport;
+
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
@@ -28,26 +21,7 @@ import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Map;
-import java.util.Set;
-import org.apache.parquet.format.ColumnChunk;
-import org.apache.parquet.format.ColumnMetaData;
-import org.apache.parquet.format.ColumnOrder;
-import org.apache.parquet.format.ConvertedType;
-import org.apache.parquet.format.DataPageHeaderV2;
-import org.apache.parquet.format.FieldRepetitionType;
-import org.apache.parquet.format.FileMetaData;
-import org.apache.parquet.format.PageHeader;
-import org.apache.parquet.format.PageType;
-import org.apache.parquet.format.RowGroup;
-import org.apache.parquet.format.SchemaElement;
-import org.apache.parquet.format.Statistics;
-import org.apache.parquet.format.TypeDefinedOrder;
-import shaded.parquet.org.apache.thrift.TException;
-import shaded.parquet.org.apache.thrift.protocol.TCompactProtocol;
-import shaded.parquet.org.apache.thrift.transport.TIOStreamTransport;
 
 /**
  * A Parquet file writer that implements the ParquetWriter interface.
@@ -57,7 +31,8 @@ import shaded.parquet.org.apache.thrift.transport.TIOStreamTransport;
  * <ul>
  *   <li>Supports primitive types: BOOLEAN, INT32, INT64, FLOAT, DOUBLE, BYTE_ARRAY, FIXED_LEN_BYTE_ARRAY</li>
  *   <li>Supports MAP type with proper hierarchical schema encoding</li>
- *   <li>PLAIN encoding for values</li>
+ *   <li>PLAIN encoding for values, optional RLE_DICTIONARY encoding with PLAIN fallback
+ *       (one dictionary page per column chunk; BOOLEAN columns are never dictionary encoded)</li>
  *   <li>RLE/Bit-Packing Hybrid encoding for definition and repetition levels</li>
  *   <li>Optional compression: UNCOMPRESSED, SNAPPY, GZIP, LZO, BROTLI, LZ4, ZSTD, LZ4_RAW</li>
  *   <li>Automatic row group management</li>
@@ -151,9 +126,33 @@ public class ParquetFileWriter implements ParquetWriter {
   public ParquetFileWriter(Path filePath, SchemaDescriptor schema,
                            CompressionCodec compressionCodec, int pageSize,
                            int rowGroupSize, double minCompressionRatio) {
+    this(filePath, schema, compressionCodec, pageSize, rowGroupSize, minCompressionRatio,
+            DictionaryOptions.disabled());
+  }
+
+  /**
+   * Create a new ParquetFileWriter with custom settings, compression ratio threshold,
+   * and dictionary encoding options.
+   *
+   * @param filePath            Path to the output Parquet file
+   * @param schema              Schema descriptor for the file
+   * @param compressionCodec    Compression codec to use
+   * @param pageSize            Target page size in bytes
+   * @param rowGroupSize        Target row group size in bytes
+   * @param minCompressionRatio Minimum ratio of compressed/uncompressed size required
+   *                            to keep compression (0.0 to 1.0). 0.90 means compression
+   *                            is kept only when it achieves at least 10% reduction.
+   * @param dictionary          RLE_DICTIONARY encoding options; when enabled, eligible
+   *                            columns are dictionary encoded with PLAIN fallback
+   */
+  public ParquetFileWriter(Path filePath, SchemaDescriptor schema,
+                           CompressionCodec compressionCodec, int pageSize,
+                           int rowGroupSize, double minCompressionRatio,
+                           DictionaryOptions dictionary) {
     WriterSchema.validate(schema);
     if (filePath == null) throw new IllegalArgumentException("Output path must not be null");
     if (compressionCodec == null) throw new IllegalArgumentException("Compression codec must not be null");
+    if (dictionary == null) throw new IllegalArgumentException("Dictionary options must not be null");
     if (pageSize <= 0 || rowGroupSize <= 0) throw new IllegalArgumentException("Byte targets must be positive");
     if (!Double.isFinite(minCompressionRatio) || minCompressionRatio < 0 || minCompressionRatio > 1) {
       throw new IllegalArgumentException("Compression ratio must be finite and within [0, 1]");
@@ -169,7 +168,7 @@ public class ParquetFileWriter implements ParquetWriter {
     int byteLimit = pageBodyLimit();
     int valueLimit = pageValueLimit();
     for (int i = 0; i < schema.getNumColumns(); i++) {
-      columns[i] = new WriterColumnBuilder(schema.getColumn(i), pageSize, byteLimit, valueLimit);
+      columns[i] = new WriterColumnBuilder(schema.getColumn(i), pageSize, byteLimit, valueLimit, dictionary);
       stagedRow[i] = new WriterColumnBuffer(schema.getColumn(i), byteLimit, valueLimit);
     }
     this.currentPosition = 0;
@@ -325,7 +324,22 @@ public class ParquetFileWriter implements ParquetWriter {
     long uncompressed = 0;
     long compressed = 0;
     boolean retainedCompression = false;
-    for (WriterPage data : column.finishAndGetPages()) {
+    List<WriterPage> pages = column.finishAndGetPages();
+    boolean dictionaryEncoded = false;
+    for (WriterPage page : pages) {
+      dictionaryEncoded |= page.encoding() == Encoding.RLE_DICTIONARY;
+    }
+    long dictionaryOffset = -1;
+    if (dictionaryEncoded) {
+      // One dictionary page per chunk, always the chunk's first page.
+      PageInfo dictionary = writeDictionaryPage(column.dictionary());
+      dictionaryOffset = start;
+      uncompressed = Math.addExact(uncompressed, dictionary.total_uncompressed_size);
+      compressed = Math.addExact(compressed, dictionary.total_compressed_size);
+      retainedCompression |= dictionary.effectiveCodec != CompressionCodec.UNCOMPRESSED;
+    }
+    long dataPageOffset = currentPosition;
+    for (WriterPage data : pages) {
       PageInfo page = writeDataPage(data);
       uncompressed = Math.addExact(uncompressed, page.total_uncompressed_size);
       compressed = Math.addExact(compressed, page.total_compressed_size);
@@ -334,14 +348,24 @@ public class ParquetFileWriter implements ParquetWriter {
     ColumnDescriptor descriptor = column.descriptor();
     ColumnMetaData metadata = new ColumnMetaData();
     metadata.setType(WriterFileSchema.convertType(descriptor.physicalType()));
-    metadata.setEncodings(Arrays.asList(org.apache.parquet.format.Encoding.RLE,
-        org.apache.parquet.format.Encoding.PLAIN));
+    List<org.apache.parquet.format.Encoding> encodings = new ArrayList<>(3);
+    encodings.add(org.apache.parquet.format.Encoding.RLE);
+    // PLAIN covers the dictionary page body and any fallback data pages; it is
+    // listed whenever a dictionary page exists because its entries are PLAIN.
+    encodings.add(org.apache.parquet.format.Encoding.PLAIN);
+    if (dictionaryEncoded) {
+      encodings.add(org.apache.parquet.format.Encoding.RLE_DICTIONARY);
+    }
+    metadata.setEncodings(encodings);
     metadata.setPath_in_schema(Arrays.asList(descriptor.path()));
     metadata.setCodec(WriterFileSchema.convertCompressionCodec(retainedCompression ? compressionCodec : CompressionCodec.UNCOMPRESSED));
     metadata.setNum_values(column.numValues());
     metadata.setTotal_uncompressed_size(uncompressed);
     metadata.setTotal_compressed_size(compressed);
-    metadata.setData_page_offset(start);
+    metadata.setData_page_offset(dataPageOffset);
+    if (dictionaryOffset >= 0) {
+      metadata.setDictionary_page_offset(dictionaryOffset);
+    }
     metadata.setStatistics(column.statistics().toParquet());
     ColumnChunk chunk = new ColumnChunk();
     chunk.setFile_offset(start);
@@ -390,7 +414,7 @@ public class ParquetFileWriter implements ParquetWriter {
     data.setNum_values(page.numValues());
     data.setNum_nulls(page.numNulls());
     data.setNum_rows(page.numRows());
-    data.setEncoding(org.apache.parquet.format.Encoding.PLAIN);
+    data.setEncoding(WriterFileSchema.convertEncoding(page.encoding()));
     data.setDefinition_levels_byte_length(page.definitions().length);
     data.setRepetition_levels_byte_length(page.repetitions().length);
     data.setIs_compressed(effective != CompressionCodec.UNCOMPRESSED);
@@ -413,6 +437,41 @@ public class ParquetFileWriter implements ParquetWriter {
     outputStream.write(stored);
     currentPosition = Math.addExact(currentPosition, (long) headerBytes.length + compressedSize);
     return new PageInfo(uncompressedSize, compressedSize, headerBytes.length, effective);
+  }
+
+  /**
+   * Writes the column chunk's dictionary page: PLAIN-encoded entries as the body,
+   * compressed with the chunk codec. The dictionary page has no per-page
+   * {@code is_compressed} flag, so when a codec is configured the body is always
+   * compressed and the chunk metadata reports that codec.
+   */
+  private PageInfo writeDictionaryPage(WriterDictionary dictionary) throws IOException {
+    byte[] body = dictionary.pageBody();
+    byte[] stored = body;
+    CompressionCodec effective = CompressionCodec.UNCOMPRESSED;
+    if (compressor != null) {
+      stored = compressor.compress(body);
+      effective = compressionCodec;
+    }
+    org.apache.parquet.format.DictionaryPageHeader data =
+            new org.apache.parquet.format.DictionaryPageHeader(dictionary.size(),
+                    org.apache.parquet.format.Encoding.PLAIN);
+    PageHeader header = new PageHeader();
+    header.setType(PageType.DICTIONARY_PAGE);
+    header.setUncompressed_page_size(body.length);
+    header.setCompressed_page_size(stored.length);
+    header.setDictionary_page_header(data);
+    ByteArrayOutputStream encodedHeader = new ByteArrayOutputStream();
+    try {
+      header.write(new TCompactProtocol(new TIOStreamTransport(encodedHeader)));
+    } catch (TException failure) {
+      throw new IOException("Failed to write dictionary page header", failure);
+    }
+    byte[] headerBytes = encodedHeader.toByteArray();
+    outputStream.write(headerBytes);
+    outputStream.write(stored);
+    currentPosition = Math.addExact(currentPosition, (long) headerBytes.length + stored.length);
+    return new PageInfo(body.length, stored.length, headerBytes.length, effective);
   }
 
   /**
