@@ -8,59 +8,134 @@ dogma_v1 utf-8
 # Apache Parquet File Format
 # ==============================================================================
 #
-# Parquet is a columnar storage format that organizes data by columns rather
-# than rows. A Parquet file consists of:
-# 1. File header (magic number)
-# 2. One or more row groups (data)
-# 3. File footer (metadata + footer length + magic number)
+# Parquet is a columnar storage format: data is organized by columns rather
+# than rows, so similar values sit together (good compression) and a query can
+# read only the columns it needs.
 #
-# The file metadata is encoded using Apache Thrift Compact Protocol and
-# contains the schema, row group information, and column chunk metadata.
+# A Parquet file looks like this:
+#
+#   +--------------------------+
+#   | "PAR1"                   |  4-byte magic number (file header)
+#   +--------------------------+
+#   | Row group 0              |  horizontal slice of the table
+#   |   Column chunk A         |  all values of leaf column A in this row group
+#   |     [dictionary page]    |  optional, at most one per chunk, always first
+#   |     data page 0          |  PageHeader + body
+#   |     data page 1          |
+#   |   Column chunk B         |
+#   |     ...                  |
+#   | Row group 1              |
+#   |   ...                    |
+#   +--------------------------+
+#   | FileMetaData             |  Thrift Compact Protocol bytes (the "footer
+#   |                          |  metadata"): schema, row groups, statistics
+#   +--------------------------+
+#   | footer length (u32 LE)   |  byte length of the FileMetaData above
+#   +--------------------------+
+#   | "PAR1"                   |  4-byte magic number (file footer)
+#   +--------------------------+
+#
+# Key vocabulary:
+#   - Row group:     a horizontal partition of rows. Unit of parallelism and of
+#                    I/O batching; typically 64 MiB - 1 GiB of column data.
+#   - Column chunk:  all the data of ONE leaf column within ONE row group,
+#                    stored as one contiguous run of pages.
+#   - Page:          the unit of compression and encoding within a chunk.
+#   - Leaf column:   a primitive (non-group) node of the schema tree. Nested
+#                    structures (LIST/MAP/STRUCT) are flattened into leaves;
+#                    repetition/definition levels (section 4) rebuild nesting.
+#   - Levels:        two integer streams per data page (repetition levels and
+#                    definition levels) that describe nesting and nulls.
+#
+# Reading a file (the standard recipe):
+#   1. Check the first 4 bytes are "PAR1".
+#   2. Seek to the end: read the last 8 bytes = [u32 LE footer length]["PAR1"].
+#   3. footer_meta_start = file_length - 8 - footer_length; read footer_length
+#      bytes there and Thrift-decode them as FileMetaData.
+#   4. FileMetaData.schema describes the columns (depth-first tree).
+#   5. For each RowGroup, for each ColumnChunk, seek to its first page offset
+#      and walk PageHeader+body pairs until the chunk's bytes are consumed.
+#
+# Everything outside the page bodies is serialized with the Thrift Compact
+# Protocol (FileMetaData and every page header). Integer byte order in page
+# bodies and footer framing is little-endian unless stated otherwise.
+#
+# Authoritative upstream references (this document summarizes and cross-checks
+# them; when in doubt, these win):
+#   - https://github.com/apache/parquet-format/blob/master/src/main/thrift/parquet.thrift
+#   - https://github.com/apache/parquet-format/blob/master/Encodings.md
+#   - https://github.com/apache/parquet-format/blob/master/LogicalTypes.md
+#   - https://github.com/apache/parquet-format/blob/master/Compression.md
 # ==============================================================================
 
-# Main file structure
+# ------------------------------------------------------------------------------
+# 1. File structure
+# ------------------------------------------------------------------------------
+
+# Main file structure. A file with zero row groups is valid (header + empty
+# footer metadata); writers emit one when closed with no rows.
 parquet_file      = byte_order(lsb, file_structure);
 
 file_structure    = file_header
-                  & row_group+
+                  & row_group*
                   & file_footer
                   ;
 
-# ------------------------------------------------------------------------------
-# File Header
-# ------------------------------------------------------------------------------
 # The file begins with a 4-byte magic number "PAR1"
 file_header       = magic_number;
 magic_number      = "PAR1";
 
 # ------------------------------------------------------------------------------
-# Row Groups
+# 2. Row groups and column chunks
 # ------------------------------------------------------------------------------
-# Row groups contain the actual data, organized into column chunks.
-# Each column chunk contains one or more pages (dictionary page + data pages).
-# The exact structure and offsets are described in the file metadata.
+# A row group holds N rows (FileMetaData.row_groups[i].num_rows) and contains
+# exactly one column chunk per leaf column, in schema leaf order
+# (RowGroup.columns must match the FileMetaData.schema leaf order).
+#
+# A column chunk is a contiguous byte range of the file:
+#   [first page offset, first page offset + ColumnMetaData.total_compressed_size)
+# Pages are laid out back to back, each as: PageHeader (Thrift) + page body.
+# Only the chunk's first page offset is recorded in the metadata; to walk the
+# pages, parse each PageHeader and skip compressed_page_size bytes of body.
+#
+# If a dictionary page exists it is always the FIRST page of the chunk
+# (dictionary_page_offset < data_page_offset), and there is at most one.
 row_group         = column_chunk+;
 
 column_chunk      = dictionary_page?
                   & data_page+
                   ;
 
+# Each data page is V1 or V2, declared by its PageHeader.type. A chunk may mix
+# versions in theory; all pages of a chunk share ColumnMetaData.codec (V2 pages
+# may individually opt out of compression via is_compressed, see section 7).
+data_page         = data_page_v1
+                  | data_page_v2
+                  ;
+
 # ------------------------------------------------------------------------------
-# Pages
+# 3. Pages
 # ------------------------------------------------------------------------------
-# Pages are the unit of compression and encoding in Parquet.
-# Each page starts with a Thrift-encoded PageHeader, followed by page data.
+# Pages are the unit of compression and encoding. Each page is a Thrift-encoded
+# PageHeader followed by the page body (compressed_page_size bytes).
 #
-# Page types:
-# - DICTIONARY_PAGE (0): Contains dictionary values for dictionary encoding
-# - DATA_PAGE (1): Contains column data with embedded repetition/definition levels
-# - DATA_PAGE_V2 (3): Contains column data with separate uncompressed levels
+# PageHeader.uncompressed_page_size is the size of the body AFTER decompression
+# (for V2: level bytes + decompressed values bytes); compressed_page_size is
+# the size of the body AS STORED. Neither includes the page header itself.
+#
+# Page types (PageType enum):
+#   DATA_PAGE       (0): V1 data page (levels framed with 4-byte lengths,
+#                        whole body compressed as one unit)
+#   INDEX_PAGE      (1): reserved for the (never standardized) index page
+#   DICTIONARY_PAGE (2): dictionary values for dictionary encoding
+#   DATA_PAGE_V2    (3): V2 data page (levels stored uncompressed and unframed,
+#                        only the values region may be compressed)
 
 dictionary_page   = page_header_dict
                   & compressed_dict_data
                   ;
 
-data_page         = page_header_data
+data_page_v1      = page_header_data_v1
                   & compressed_data_page_v1
                   ;
 
@@ -69,36 +144,86 @@ data_page_v2      = page_header_data_v2
                   ;
 
 # ------------------------------------------------------------------------------
-# Page Headers (Thrift Compact Protocol encoded)
+# 3a. Page headers (Thrift Compact Protocol encoded)
 # ------------------------------------------------------------------------------
-# PageHeader structure (Thrift):
-# - type: PageType (required)
-# - uncompressed_page_size: i32 (required)
-# - compressed_page_size: i32 (required)
-# - crc: i32 (optional)
-# - data_page_header: DataPageHeader (optional, for DATA_PAGE)
-# - index_page_header: IndexPageHeader (optional)
-# - dictionary_page_header: DictionaryPageHeader (optional, for DICTIONARY_PAGE)
-# - data_page_header_v2: DataPageHeaderV2 (optional, for DATA_PAGE_V2)
+# PageHeader (parquet.thrift field ids):
+#   1: required PageType type                       which *_header field is set
+#   2: required i32   uncompressed_page_size        body size after decompression
+#   3: required i32   compressed_page_size          body size as stored
+#   4: optional i32   crc                           CRC32 of the stored body
+#   5: optional DataPageHeader       data_page_header
+#   6: optional IndexPageHeader      index_page_header
+#   7: optional DictionaryPageHeader dictionary_page_header
+#   8: optional DataPageHeaderV2     data_page_header_v2
+#
+# Exactly one of fields 5-8 is set, matching `type`.
+#
+# crc semantics (easy to get wrong):
+#   - Algorithm: standard CRC-32 (polynomial 0x04C11DB7, the same as GZIP's;
+#     e.g. java.util.zip.CRC32 in Java).
+#   - Computed over the page body bytes EXACTLY as stored on disk (i.e. after
+#     compression/encryption), NOT over the decompressed bytes, and NOT
+#     including the page header.
+#   - Optional; many writers omit it and some legacy files contain wrong values,
+#     so readers commonly verify it only under a strict policy.
+#
+# DataPageHeader (V1) - field ids:
+#   1: required i32 num_values                values INCLUDING nulls (level count)
+#   2: required Encoding encoding             value encoding (see section 6)
+#   3: required Encoding definition_level_encoding
+#   4: required Encoding repetition_level_encoding
+#   5: optional Statistics statistics
+#   Fields 3/4 must be RLE (3) for modern files (BIT_PACKED (4) is deprecated);
+#   they describe the LEVEL sections, not the values.
+#
+# DataPageHeaderV2 - field ids:
+#   1: required i32 num_values                values INCLUDING nulls (level count)
+#   2: required i32 num_nulls                 nulls in this page
+#   3: required i32 num_rows                  rows in this page; V2 pages MUST
+#                                             begin and end at row boundaries
+#                                             (a row is never split across pages)
+#   4: required Encoding encoding             value encoding
+#   5: required i32 definition_levels_byte_length
+#   6: required i32 repetition_levels_byte_length
+#   7: optional bool is_compressed = true     "true" if the VALUES region is
+#                                             compressed (see section 7)
+#   8: optional Statistics statistics
+#   NOTE THE TRAP: field order lists definition (5) before repetition (6), but
+#   the on-disk body stores REPETITION levels FIRST, then definition levels.
+#   NOTE: is_compressed omitted = true (Thrift default). Writers storing raw
+#   values must explicitly write false.
+#
+# DictionaryPageHeader - field ids:
+#   1: required i32 num_values                entries in the dictionary
+#   2: required Encoding encoding             PLAIN (PLAIN_DICTIONARY deprecated)
+#   3: optional bool is_sorted
+#
+# The header serialization has no length prefix: it is a self-delimiting Thrift
+# struct ending with a 0x00 stop byte. The body begins immediately after it.
 
-page_header_dict   = thrift_compact_protocol;
-page_header_data   = thrift_compact_protocol;
+page_header_dict    = thrift_compact_protocol;
+page_header_data_v1 = thrift_compact_protocol;
 page_header_data_v2 = thrift_compact_protocol;
 
 # ------------------------------------------------------------------------------
-# DATA_PAGE (V1) Structure
+# 3b. DATA_PAGE (V1) body
 # ------------------------------------------------------------------------------
-# After decompression, DATA_PAGE contains:
-# 1. Repetition levels (RLE/bit-packed encoded) - only if max_repetition_level > 0
-#    - 4-byte length (LE) indicating byte length of RLE data
-#    - RLE/bit-packed encoded level data
-# 2. Definition levels (RLE/bit-packed encoded) - only if max_definition_level > 0
-#    - 4-byte length (LE) indicating byte length of RLE data
-#    - RLE/bit-packed encoded level data
-# 3. Encoded values (encoding specified in page header)
+# V1 framing rule: the whole body is ONE compressed unit (when a codec is set,
+# everything below is compressed together; compressed_page_size is the stored
+# size, uncompressed_page_size the decompressed size).
 #
-# The compressed data is the entire structure above, compressed with the
-# codec specified in the column chunk metadata.
+# After decompression the body contains, in order:
+#   1. Repetition levels  - ONLY IF max_repetition_level > 0
+#        4-byte little-endian length (bytes of RLE data that follow)
+#        RLE/bit-packed-hybrid encoded level stream (section 6c)
+#   2. Definition levels  - ONLY IF max_definition_level > 0
+#        4-byte little-endian length (bytes of RLE data that follow)
+#        RLE/bit-packed-hybrid encoded level stream (section 6c)
+#   3. Encoded values     - present-value encoding from the header's `encoding`
+#        (number of encoded values = num_values minus the nulls)
+#
+# Both level sections are present or absent independently, based on the
+# column's max levels (computed from the schema path, section 4).
 
 compressed_data_page_v1 = u8(~)*;
 
@@ -107,117 +232,599 @@ decompressed_data_page_v1 = repetition_levels_v1?
                           & encoded_values_v1
                           ;
 
-# Repetition levels in V1 (RLE/bit-packed with 4-byte length prefix)
+# Repetition levels in V1 (RLE/bit-packed hybrid with 4-byte LE length prefix)
 repetition_levels_v1 = u32(var(rep_len, ~))
-                     & rle_encoded_levels{rep_len}
+                     & rle_hybrid{rep_len}
                      ;
 
-# Definition levels in V1 (RLE/bit-packed with 4-byte length prefix)
+# Definition levels in V1 (RLE/bit-packed hybrid with 4-byte LE length prefix)
 definition_levels_v1 = u32(var(def_len, ~))
-                     & rle_encoded_levels{def_len}
+                     & rle_hybrid{def_len}
                      ;
 
-# RLE/bit-packed encoded level data
-rle_encoded_levels = u8(~);
+# Raw RLE/bit-packed-hybrid stream (section 6c); byte length given by caller
+rle_hybrid         = u8(~)*;
 
-# Encoded values depend on the encoding type specified in the page header
+# Encoded values; layout depends on the encoding named in the page header
 encoded_values_v1  = u8(~)*;
 
 # ------------------------------------------------------------------------------
-# DATA_PAGE_V2 Structure
+# 3c. DATA_PAGE_V2 body
 # ------------------------------------------------------------------------------
-# For DATA_PAGE_V2, the structure is different:
-# - Repetition levels (RLE/bit-packed encoded, UNCOMPRESSED)
-# - Definition levels (RLE/bit-packed encoded, UNCOMPRESSED)
-# - Encoded values (possibly compressed based on is_compressed flag)
+# V2 framing rule: level sections are stored UNCOMPRESSED and UNFRAMED (no
+# 4-byte length prefixes - their byte lengths come from DataPageHeaderV2), and
+# only the values region may be compressed. The stored body layout is:
 #
-# The lengths are specified in the DataPageHeaderV2 (in page header), not
-# as 4-byte prefixes like in V1.
+#   +--------------------------------------+
+#   | repetition levels (raw hybrid RLE)   |  repetition_levels_byte_length bytes
+#   +--------------------------------------+
+#   | definition levels (raw hybrid RLE)   |  definition_levels_byte_length bytes
+#   +--------------------------------------+
+#   | encoded values                       |  remainder of the body;
+#   |                                      |  compressed iff is_compressed
+#   +--------------------------------------+
+#
+# Sizes: compressed_page_size   = rep_len + def_len + stored values bytes
+#        uncompressed_page_size = rep_len + def_len + decoded values bytes
+# (level byte lengths are identical in both sizes because levels are raw)
+#
+# A level section is empty (length 0) when its max level is 0. Some legacy
+# writers emit an explicit width-0 hybrid stream instead; readers should
+# tolerate both.
 
-page_v2_data      = repetition_levels_v2
+page_v2_data       = repetition_levels_v2
                   & definition_levels_v2
                   & encoded_values_v2
                   ;
 
-# Repetition levels in V2 (uncompressed, length from header)
+# Repetition levels in V2 (uncompressed, byte length from page header)
 repetition_levels_v2 = u8(~)*;
 
-# Definition levels in V2 (uncompressed, length from header)
+# Definition levels in V2 (uncompressed, byte length from page header)
 definition_levels_v2 = u8(~)*;
 
-# Encoded values in V2 (may be compressed if is_compressed is true)
-encoded_values_v2 = u8(~)*;
+# Encoded values in V2 (compressed iff is_compressed is true / omitted)
+encoded_values_v2  = u8(~)*;
 
 # ------------------------------------------------------------------------------
-# DICTIONARY_PAGE Structure
+# 3d. DICTIONARY_PAGE body
 # ------------------------------------------------------------------------------
-# After decompression, contains dictionary values encoded with PLAIN or
-# PLAIN_DICTIONARY encoding
+# After decompression, the body holds num_values dictionary entries encoded
+# back to back with PLAIN (section 6a). Plain encoding here means, e.g., that a
+# BYTE_ARRAY dictionary is a run of [u32 LE length][bytes] entries.
+#
+# Data pages then reference entries by index using RLE_DICTIONARY (8) or the
+# deprecated PLAIN_DICTIONARY (2); see section 6b.
 
 compressed_dict_data = u8(~)*;
 
 # ------------------------------------------------------------------------------
-# File Footer
+# 4. Repetition and definition levels (Dremel)
 # ------------------------------------------------------------------------------
-# The footer contains file metadata (Thrift-encoded), followed by the footer
-# length (4 bytes, little-endian), and the magic number again.
+# Leaf columns of nested schemas carry two integer streams per data page that
+# describe, per "value slot", how the value nests and where nulls live. One
+# slot = one entry in each level stream = one unit of num_values. A slot whose
+# definition level is below the column's maximum carries NO encoded value (the
+# value is null at that nesting depth); the values stream contains only
+# non-null values, in slot order.
 #
-# Footer structure:
-# - FileMetaData (Thrift Compact Protocol)
-# - Footer length (4 bytes LE) - size of FileMetaData in bytes
-# - Magic number "PAR1" (4 bytes)
+# Definition level (max_definition_level = number of OPTIONAL + REPEATED nodes
+# in the path from the root, excluding the root itself):
+#   "how many fields in the path to this column are actually defined."
+#   - equal to max_definition_level: value is present (encoded in values stream)
+#   - less: null (or an enclosing container is null/empty) at that depth
+#
+# Repetition level (max_repetition_level = number of REPEATED nodes in the path):
+#   "at which repeated ancestor the value's row repeats."
+#   - 0: start of a new top-level row
+#   - r > 0: this slot continues the same row, repeating the ancestor at
+#     repetition depth r (used to rebuild lists/maps)
+#
+# Example schema:
+#
+#   message Document {
+#     optional group Person {
+#       repeated string phoneNumbers;
+#     }
+#   }
+#
+# Path for leaf "phoneNumbers": Person (optional, def +1) -> phoneNumbers
+# (repeated, def +1 and rep +1). The root message does not count. So:
+#   max_definition_level = 2, max_repetition_level = 1.
+#
+# Row: { Person: { phoneNumbers: ["a", null, "b"] } } produces 3 slots:
+#   slot  def rep  meaning
+#   1     2   0    "a"   - new row, value present
+#   2     1   1    null  - same list, missing value (def 1 < 2)
+#   3     2   1    "b"   - same list, value present
+# A row with Person = null gives ONE slot (def 0, rep 0); a row with
+# Person = {} (empty list) gives one slot (def 1, rep 0).
+#
+# Level value ranges: 0 <= level <= max_level. Each level stream has exactly
+# num_values slots (V2: the streams' decoded counts equal num_values too).
+#
+# Level stream encoding: RLE/bit-packed hybrid (section 6c) at bit width
+#     ceil(log2(max_level + 1))
+# i.e. just enough bits to represent max_level.
+
+# ------------------------------------------------------------------------------
+# 5. File footer (metadata)
+# ------------------------------------------------------------------------------
+# The footer is: FileMetaData (Thrift Compact Protocol) + 4-byte little-endian
+# footer length (byte size of that FileMetaData) + "PAR1".
+#
+# To locate the metadata from EOF:
+#   footer_length   = u32 LE at [file_length - 8 .. file_length - 4]
+#   magic           = "PAR1"      at [file_length - 4 .. file_length]
+#   metadata_start  = file_length - 8 - footer_length
+# Validate: magic matches, 0 < footer_length <= file_length - 8.
 
 file_footer       = file_metadata
                   & footer_length
                   & magic_number
                   ;
 
-# FileMetaData contains:
-# - version: Parquet format version
-# - schema: List of SchemaElements describing the schema tree
-# - num_rows: Total number of rows
-# - row_groups: List of RowGroup metadata
-# - key_value_metadata: Optional key-value pairs
-# - created_by: Optional string identifying the writer
-# - column_orders: Optional list of column sort orders
-# - encryption_algorithm: Optional encryption metadata
 file_metadata     = thrift_compact_protocol;
 
 # Footer length is stored as a 4-byte little-endian integer
 footer_length     = u32(~);
 
 # ------------------------------------------------------------------------------
-# Thrift Compact Protocol
+# 5a. FileMetaData (Thrift struct; field ids matter for forward compatibility)
 # ------------------------------------------------------------------------------
-# Parquet uses Thrift Compact Protocol for serialization of metadata.
-# This is a complex binary format with variable-length encoding.
-# Details: https://github.com/apache/thrift/blob/master/doc/specs/thrift-compact-protocol.md
-thrift_compact_protocol: bits =
+#   1: required i32 version               always write 1; readers accept 1 or 2
+#   2: required list<SchemaElement> schema   depth-first, schema[0] = root
+#   3: required i64 num_rows               total rows in the file
+#   4: required list<RowGroup> row_groups
+#   5: optional list<KeyValue> key_value_metadata   free-form strings
+#   6: optional string created_by          writer identification
+#   7: optional list<ColumnOrder> column_orders     one per leaf column
+#   8: optional EncryptionAlgorithm encryption_algorithm
+#   9: optional binary footer_signing_key_metadata
+#
+# SchemaElement (the schema tree is flattened depth-first; num_children
+# rebuilds the nesting):
+#   1: optional Type type                 set for LEAVES only
+#   2: optional i32 type_length           required for FIXED_LEN_BYTE_ARRAY
+#   3: optional FieldRepetitionType repetition_type  REQUIRED/OPTIONAL/REPEATED;
+#                                         unset for the root element only
+#   4: required string name
+#   5: optional i32 num_children          set for GROUPS only (absent for leaves)
+#   6: optional ConvertedType converted_type   DEPRECATED logical annotation
+#   7: optional i32 scale                 DEPRECATED (DECIMAL)
+#   8: optional i32 precision             DEPRECATED (DECIMAL)
+#   9: optional i32 field_id
+#  10: optional LogicalType logicalType   modern logical annotation
+#
+# Rules a reader must apply:
+#   - schema[0] is the root: has name + num_children, NO type, NO repetition.
+#   - leaves are exactly the elements with `type` set; they appear in the same
+#     order as RowGroup.columns and determine ColumnMetaData.path_in_schema.
+#   - path_in_schema is the full path from the root's CHILD down to the leaf
+#     (root name excluded), one string per level.
+#   - When logicalType is set, converted_type should also be set where a legacy
+#     equivalent exists (format v1 compatibility requirement); when the two
+#     disagree, logicalType wins.
+#
+# Logical annotations (see LogicalTypes.md) interpret the physical bytes:
+#   STRING/ENUM/JSON/BSON (BYTE_ARRAY UTF-8), DECIMAL (INT32/INT64/
+#   BYTE_ARRAY/FIXED_LEN_BYTE_ARRAY; unscaled value as two's-complement
+#   BIG-ENDIAN, value = unscaled * 10^-scale), DATE (INT32 days since epoch),
+#   TIME, TIMESTAMP (INT32/INT64; isAdjustedToUTC + MILLIS/MICROS/NANOS),
+#   INTEGER (bitWidth + isSigned), UUID (FIXED_LEN_BYTE_ARRAY[16]), UNKNOWN,
+#   plus the group-level MAP and LIST annotations (standard 3-level encoding,
+#   see LogicalTypes.md). ConvertedType (UTF8, MAP, MAP_KEY_VALUE, LIST, ENUM,
+#   DECIMAL, DATE, TIME_*, TIMESTAMP_*, UINT_*, INT_*, JSON, BSON, INTERVAL)
+#   is the deprecated equivalent.
+#
+# RowGroup (field ids):
+#   1: required list<ColumnChunk> columns   one per leaf, schema leaf order
+#   2: required i64 total_byte_size         uncompressed size (see note below)
+#   3: required i64 num_rows                rows in this row group
+#   4: optional list<SortingColumn> sorting_columns
+#   5: optional i64 file_offset             first page of the row group
+#   6: optional i64 total_compressed_size   compressed size (same accounting)
+#   7: optional i16 ordinal
+#   Note: total_byte_size conventionally includes page headers, i.e. the sum of
+#   ColumnMetaData.total_uncompressed_size (which per spec includes headers).
+#   The spec text ("uncompressed column data") is ambiguous on headers; the
+#   de-facto convention is "including headers" (parquet-mr, this repo).
+#
+# ColumnChunk (field ids):
+#   1: optional string file_path    only for "_metadata" summary files
+#   2: required i64 file_offset     DEPRECATED - historically pointed at the
+#         ColumnMetaData or at the first page, inconsistently across writers;
+#         current spec says write 0 unless ColumnMetaData is replicated outside
+#         the footer. NEVER use it to find data; use data_page_offset /
+#         dictionary_page_offset instead.
+#   3: optional ColumnMetaData meta_data   required by all real implementations
+#   4: optional i64 offset_index_offset    page index (OffsetIndex) location
+#   5: optional i32 offset_index_length
+#   6: optional i64 column_index_offset    page index (ColumnIndex) location
+#   7: optional i32 column_index_length
+#   8: optional ColumnCryptoMetaData crypto_metadata
+#   9: optional binary encrypted_column_metadata
+#
+# ColumnMetaData (field ids):
+#   1: required Type type                     physical type
+#   2: required list<Encoding> encodings      every encoding used in the chunk
+#   3: required list<string> path_in_schema   leaf path (see SchemaElement rules)
+#   4: required CompressionCodec codec        chunk-level codec (section 7)
+#   5: required i64 num_values                ALL slots, including nulls
+#   6: required i64 total_uncompressed_size   sum of (header + uncompressed body)
+#   7: required i64 total_compressed_size     sum of (header + stored body)
+#   8: optional list<KeyValue> key_value_metadata
+#   9: required i64 data_page_offset          file offset of the first DATA page
+#                                             header (V1 or V2)
+#  10: optional i64 index_page_offset
+#  11: optional i64 dictionary_page_offset    file offset of the dictionary page
+#                                             header; must be < data_page_offset
+#  12: optional Statistics statistics
+#  13: optional list<PageEncodingStats> encoding_stats
+#  14: optional i64 bloom_filter_offset
+#  15: optional i32 bloom_filter_length
+#  16: optional SizeStatistics size_statistics
+#  17: optional GeospatialStatistics geospatial_statistics
+#   Size accounting: total_*_size cover the whole chunk INCLUDING page headers
+#   (and the dictionary page if present), not just bodies.
+#
+# Statistics (field ids) - optional at page and chunk level:
+#   1: optional binary max              DEPRECATED bounds, signed order only
+#   2: optional binary min              DEPRECATED bounds, signed order only
+#   3: optional i64 null_count          distinguish ABSENT from 0!
+#   4: optional i64 distinct_count
+#   5: optional binary max_value        current bounds (ColumnOrder)
+#   6: optional binary min_value        current bounds (ColumnOrder)
+#   7: optional bool is_max_value_exact
+#   8: optional bool is_min_value_exact
+#   9: optional i64 nan_count           FLOAT/DOUBLE only; absent = unknown
+#   Encoding: bounds are PLAIN-encoded EXCEPT variable-length byte arrays omit
+#   the 4-byte length prefix (raw bytes only). min_value/max_value follow the
+#   column's ColumnOrder (TYPE_ORDER by default: unsigned byte-wise for
+#   BYTE_ARRAY/FIXED_LEN_BYTE_ARRAY, signed for integers, false<true for
+#   BOOLEAN; IEEE754_TOTAL_ORDER recommended for FLOAT/DOUBLE). Bounds may be
+#   tightened (non-existent values like "B".."C" for "Blart") but must be valid
+#   for the logical type. NaN handling under TYPE_ORDER is ambiguous by design;
+#   readers should follow the parquet.thrift compatibility rules (section 11).
+#
+# ColumnOrder (union): 1 TypeDefinedOrder | 2 IEEE754TotalOrder |
+#                      3 Int96TimestampOrder
+#   One entry per leaf column. If a reader does not understand the order, it
+#   must ignore that column's min/max statistics.
+
+# ------------------------------------------------------------------------------
+# 6. Encodings
+# ------------------------------------------------------------------------------
+# An encoding is named per page (DataPageHeader.encoding / V2 equivalent) for
+# the VALUES region only; level sections always use the RLE/bit-packed hybrid.
+# Valid combinations (per Encodings.md):
+#
+#   encoding                 enum  physical types
+#   PLAIN                      0   all
+#   PLAIN_DICTIONARY           2   all (DEPRECATED; data pages -> RLE_DICTIONARY,
+#                                  dictionary pages -> PLAIN)
+#   RLE                        3   BOOLEAN values, dictionary indices, levels
+#   BIT_PACKED                 4   levels only (DEPRECATED)
+#   DELTA_BINARY_PACKED        5   INT32, INT64
+#   DELTA_LENGTH_BYTE_ARRAY    6   BYTE_ARRAY
+#   DELTA_BYTE_ARRAY           7   BYTE_ARRAY, FIXED_LEN_BYTE_ARRAY
+#   RLE_DICTIONARY             8   all (index stream)
+#   BYTE_STREAM_SPLIT          9   INT32, INT64, FLOAT, DOUBLE, FIXED_LEN_BYTE_ARRAY
+#   ALP                       10   FLOAT, DOUBLE (preview as of 2026)
+#
+# 6a. PLAIN (0)
+plain_encoding: bits =
     """
-    Apache Thrift Compact Protocol binary serialization.
+    PLAIN: values back to back, no metadata.
 
-    Compact protocol uses variable-length encoding for integers (zigzag + varint),
-    field headers, and type information. Structures contain:
-    - Field headers: (field_id_delta << 4) | field_type
-    - Field stop: 0x00
-    - Lists/Sets: size_and_type byte + elements
-    - Maps: size varint + key_type + value_type + key-value pairs
+      BOOLEAN:              bit-packed, 8 values per byte, LSB first
+                            (value i is bit (i mod 8) of byte (i div 8));
+                            the last byte is zero-padded
+      INT32:                4 bytes little-endian
+      INT64:                8 bytes little-endian
+      INT96:                12 bytes little-endian (deprecated). In practice
+                            the legacy timestamp layout is an 8-byte
+                            little-endian nanos-of-day followed by a 4-byte
+                            little-endian Julian day; treat as opaque 12 bytes.
+      FLOAT:                4 bytes IEEE-754 little-endian
+      DOUBLE:               8 bytes IEEE-754 little-endian
+      BYTE_ARRAY:           u32 LE byte length, then the bytes
+      FIXED_LEN_BYTE_ARRAY: type_length raw bytes
+    """;
 
-    For full specification, see:
-    https://github.com/apache/thrift/blob/master/doc/specs/thrift-compact-protocol.md
+# 6b. Dictionary encoding (PLAIN_DICTIONARY = 2 deprecated, RLE_DICTIONARY = 8)
+dictionary_encoding: bits =
+    """
+    A column chunk may carry ONE optional dictionary page (always the first
+    page of the chunk), whose body holds num_values entries in PLAIN encoding.
+
+    Dictionary-encoded data pages store INDICES into that dictionary:
+
+      index stream = u8 bit_width          (single byte, 0..32 - NOT a varint)
+                 &   rle-bit-packed-hybrid (indices at that bit width)
+
+    The index stream has NO 4-byte length prefix in either page version; it
+    simply runs to the end of the values region. bit_width 0 is legal (a
+    one-entry dictionary: all indices are 0). If the dictionary gets too large,
+    writers fall back to PLAIN for the remaining data pages of the chunk
+    (ColumnMetaData.encodings then lists both).
+    """;
+
+# 6c. RLE / bit-packed hybrid (RLE = 3)
+# Used ONLY for: repetition/definition levels, dictionary indices, BOOLEAN
+# values (as an alternative to PLAIN).
+rle_bitpacked_hybrid: bits =
+    """
+    RLE/Bit-Packing Hybrid Encoding.
+
+    stream = run*
+    run    = bit-packed run | repeated (RLE) run
+
+    Run headers are ULEB-128 varints (UNSIGNED - not zigzag) whose least
+    significant bit selects the run type:
+
+      repeated run    header = count << 1            (LSB = 0)
+                      payload = the value, fixed width
+                                round-up-to-next-byte(bit_width), little-endian
+                      the value repeats `count` times
+
+      bit-packed run  header = (groups << 1) | 1     (LSB = 1)
+                      groups = run length / 8 (values are packed 8 at a time)
+                      payload = groups * bit_width bytes
+
+    NOTE (frequently got wrong): LSB 0 = repeated/RLE run, LSB 1 = bit-packed
+    run. (An older revision of this document had the polarity inverted.)
+
+    Bit-packing order: values are packed from the LEAST significant bit of each
+    byte upwards (value 0 occupies bits 0..w-1 of byte 0); the bits within one
+    value keep their normal most-significant-first order. (This differs from
+    the deprecated BIT_PACKED = 4 encoding, which packs MSB first!)
+
+    Constraints: run lengths (both kinds) must be in [1, 2^31 - 1]. Zero-length
+    runs are invalid. The final bit-packed run may carry fewer real values than
+    groups * 8; the tail (at most 7 values) is padding. An empty stream
+    represents zero values.
+
+    Length-prefix framing (when the hybrid stream is preceded by a 4-byte
+    little-endian byte length):
+
+      +--------------+-------------------+-----------------+
+      | Page kind    | stream            | 4-byte length?  |
+      +--------------+-------------------+-----------------+
+      | Data page v1 | definition levels | yes             |
+      |              | repetition levels | yes             |
+      |              | dictionary indices| no              |
+      |              | BOOLEAN values    | yes             |
+      +--------------+-------------------+-----------------+
+      | Data page v2 | definition levels | no (header len) |
+      |              | repetition levels | no (header len) |
+      |              | dictionary indices| no              |
+      |              | BOOLEAN values    | yes             |
+      +--------------+-------------------+-----------------+
+
+    BOOLEAN values with encoding RLE (3): 4-byte LE length, then a hybrid
+    stream at bit width 1 (0 = false, 1 = true) of the PRESENT values only.
+    """;
+
+# 6d. DELTA_BINARY_PACKED (5) - INT32 and INT64
+delta_encoding: bits =
+    """
+    Delta Binary Packed Encoding (DELTA_BINARY_PACKED).
+
+    Adapted from Lemire & Boytsov, "Decoding billions of integers per second
+    through vectorization". Signed values use zigzag + ULEB-128; unsigned
+    quantities (counts, sizes) use plain ULEB-128.
+
+    stream = header & block*
+    header = <block size in values>          ULEB-128, multiple of 128
+           & <miniblocks per block>          ULEB-128; values per miniblock =
+                                             block size / miniblocks per block
+                                             must be a multiple of 32
+           & <total value count>             ULEB-128
+           & <first value>                   zigzag ULEB-128 (of the type width)
+
+    block  = <min delta>                     zigzag ULEB-128 (frame of reference
+                                             for THIS block, not per miniblock)
+           & <bit widths>                    one raw byte per miniblock (the
+                                             whole table is always present,
+                                             even for unused miniblocks)
+           & <miniblock>*                    only the used miniblocks
+
+    miniblock = bit-packed (value - min delta) deltas at the miniblock's width,
+                padded to full size: values_per_miniblock * width / 8 bytes.
+
+    Reconstruction:
+      values[0] = first value (header)
+      each subsequent value = previous value + min_delta + unpacked delta bits
+    Arithmetic wraps in two's complement on overflow (intentional).
+
+    Padding rules: the last miniblock is padded to full byte length (pad bits
+    should be zero but readers must accept any bits); unused miniblock width
+    bytes in the last block should be zero but readers must accept any value,
+    and those miniblocks have NO payload bytes. The reader counts values
+    (total value count) to know where to stop - do not use widths to delimit.
+
+    Example (8 values, block size 8 shown for brevity; real blocks are >= 128):
+      values 7, 5, 3, 1, 2, 3, 4, 5
+      deltas -2, -2, -2, 1, 1, 1, 1 ; min delta = -2 ; relative 0, 0, 0, 3, 3, 3, 3
+      header: 8 (block size), 1 (miniblocks), 8 (count), 7 (first value)
+      block:  -2 (min delta), 2 (width), then 0,0,0,3,3,3,3 packed at 2 bits
+    """;
+
+# 6e. DELTA_LENGTH_BYTE_ARRAY (6) - BYTE_ARRAY
+delta_length_encoding: bits =
+    """
+    Delta-length byte array: all lengths first, then all bytes.
+
+      stream = <DELTA_BINARY_PACKED INT32 lengths> & <bytes...>
+
+    The value bytes are the plain concatenation of the arrays in order (no
+    length prefixes inside the byte region). Example: "Hello", "World",
+    "Foobar", "ABCDEF" -> DeltaEncoding(5, 5, 6, 6) + "HelloWorldFoobarABCDEF".
+    """;
+
+# 6f. DELTA_BYTE_ARRAY (7) - BYTE_ARRAY, FIXED_LEN_BYTE_ARRAY
+delta_byte_array_encoding: bits =
+    """
+    Delta byte array (incremental / front compression): each value shares a
+    prefix with the previous value; store the prefix length and the suffix.
+
+      stream = <DELTA_BINARY_PACKED INT32 prefix lengths>
+             & <DELTA_BINARY_PACKED INT32 suffix lengths>
+             & <suffix bytes concatenated>
+
+    (I.e. the suffixes are exactly a DELTA_LENGTH_BYTE_ARRAY stream; the prefix
+    lengths are one more DELTA_BINARY_PACKED stream in front.)
+
+    value[0] prefix must be 0; value[i] prefix cannot exceed len(value[i-1]);
+    value[i] = value[i-1][0..prefix) + suffix. For FIXED_LEN_BYTE_ARRAY all
+    lengths are still encoded despite the fixed width.
+
+    Example: "axis", "axle", "babble", "babyhood"
+      prefixes 0, 2, 0, 3 ; suffix lengths 4, 2, 6, 5 ; bytes "axislebabbleyhood"
+    """;
+
+# 6g. BYTE_STREAM_SPLIT (9) - FLOAT, DOUBLE, INT32, INT64, FIXED_LEN_BYTE_ARRAY
+byte_stream_split_encoding: bits =
+    """
+    Byte Stream Split: de-interleave the bytes of N fixed-width values into K
+    byte planes (K = value width in bytes), concatenated plane by plane.
+
+      stream = plane 0 (N bytes) & plane 1 & ... & plane K-1
+
+    Byte j of value i lives at plane j, offset i. The total is exactly K * N
+    bytes - no metadata, no padding; the planes run to the end of the values
+    region. Does not shrink data by itself but greatly improves subsequent
+    compression on float-like data.
+
+    Example (three 32-bit values with bytes AA BB CC DD | 00 11 22 33 | A3 B4 C5 D6):
+      planes: AA 00 A3 | BB 11 B4 | CC 22 C5 | DD 33 D6
+    """;
+
+# 6h. BIT_PACKED (4) - DEPRECATED, levels only
+bit_packed_encoding: bits =
+    """
+    Deprecated bit-packed encoding (BIT_PACKED = 4): fixed-width values packed
+    back to back WITHOUT run headers, padded to whole bytes. WARNING: it packs
+    from the MOST significant bit of each byte downward - the opposite order of
+    the hybrid encoding's bit-packed runs. Only ever used for (old) level
+    streams; superseded by RLE = 3.
     """;
 
 # ------------------------------------------------------------------------------
-# Page Types (from org.apache.parquet.format.PageType)
+# 7. Compression
 # ------------------------------------------------------------------------------
+# CompressionCodec (chunk-level, ColumnMetaData.codec):
+#   UNCOMPRESSED (0), SNAPPY (1), GZIP (2), LZO (3), BROTLI (4), LZ4 (5,
+#   DEPRECATED - Hadoop-frame based), ZSTD (6), LZ4_RAW (7).
+# Exact framing per codec: see Compression.md (e.g. GZIP members may be
+# concatenated; SNAPPY is the raw block format; LZ4 vs LZ4_RAW differ in
+# framing; ZSTD is a standard frame).
+#
+# Where compression applies:
+#   - V1 pages: the ENTIRE body (levels + values) is one compressed unit.
+#     All pages of a chunk use the chunk codec uniformly.
+#   - V2 pages: ONLY the values region; level sections are always raw. The
+#     per-page flag is_compressed selects it (omitted = TRUE):
+#       is_compressed true/omitted: values region compressed with the chunk
+#         codec; uncompressed_page_size = level bytes + decoded values bytes
+#       is_compressed explicitly false: values region stored raw and
+#         compressed_page_size == uncompressed_page_size
+#     This permits MIXED compression inside one chunk (some pages compressed,
+#     some raw) - legal for V2, impossible for V1. When any page is compressed
+#     the chunk's codec field names that codec; when every page is raw the
+#     codec is UNCOMPRESSED.
+#
+# Decoder side: always know the expected decoded size BEFORE decompressing
+# (V1: uncompressed_page_size; V2: uncompressed_page_size minus the level
+# lengths) and reject mismatches/oversized output.
+
+# ------------------------------------------------------------------------------
+# 8. Thrift Compact Protocol (used for FileMetaData and every page header)
+# ------------------------------------------------------------------------------
+thrift_compact_protocol: bits =
+    """
+    Apache Thrift Compact Protocol binary serialization
+    (https://github.com/apache/thrift/blob/master/doc/specs/thrift-compact-protocol.md).
+
+    Type codes (low nibble of field headers):
+      0 STOP            5 I32              10 SET
+      1 BOOLEAN_TRUE    6 I64              11 MAP
+      2 BOOLEAN_FALSE   7 DOUBLE           12 STRUCT
+      3 BYTE            8 BINARY
+      4 I16             9 LIST
+
+    Field header (struct fields):
+      delta in 1..15:   one byte = (delta << 4) | type   (delta = id - prev id)
+      otherwise:        one byte = type, then field id as zigzag ULEB-128 i16
+      end of struct:    one STOP byte 0x00
+      A bool field's VALUE is encoded in the header type itself
+      (1 = true, 2 = false) - no payload byte follows.
+
+    Values:
+      I16/I32/I64:  zigzag then ULEB-128 varint.
+                    zigzag(n) = (n << 1) ^ (n >> 31)   [i32]
+                              = (n << 1) ^ (n >> 63)   [i64]
+                    decode: (u >>> 1) ^ -(u & 1)
+      BYTE:         one raw byte
+      DOUBLE:       8 bytes, little-endian IEEE-754
+      BINARY:       ULEB-128 byte length, then the bytes (strings are UTF-8)
+
+    LIST/SET header:
+      size 0..14:   one byte = (size << 4) | element_type
+      size > 14:    one byte = 0xF0 | element_type, then ULEB-128 size
+      then `size` elements (bool elements inside collections are byte 0/1)
+
+    MAP header:
+      empty map:    one byte 0x00 (no type byte follows)
+      non-empty:    ULEB-128 size, then one byte = (key_type << 4) | value_type,
+                    then `size` key/value pairs
+
+    STRUCT:         fields as above until STOP. Unknown fields MUST be skipped
+                    by their type (forward compatibility); enum values travel
+                    as I32. Note ULEB-128 (unsigned) appears for lengths/sizes
+                    and zigzag-ULEB128 for signed ints - do not mix them up.
+    """;
+
+# ULEB-128 ("varint") as used by RLE headers, delta headers, and Thrift lengths
+varint: bits =
+    """
+    Variable-length integer encoding (ULEB-128, unsigned).
+
+    Each byte contains 7 bits of data (bits 0-6) and a continuation bit (bit 7):
+    - If bit 7 = 1, more bytes follow
+    - If bit 7 = 0, this is the last byte
+
+    The 7-bit data chunks are concatenated little-endian-first (the first byte
+    carries the least significant bits) to form the integer.
+
+    Example: 300 (0x012C)
+      Binary: 00000001 00101100
+      Varint: 10101100 00000010
+              ^------^ ^-------
+              0x2C      0x02
+              (cont=1)  (cont=0)
+
+    SIGNED integers (Thrift I16/I32/I64, delta first_value/min_delta) are
+    zigzag-mapped to unsigned BEFORE this encoding: zigzag(n) = (n << 1) ^
+    (n >> 31 or 63). RLE run headers and length/size fields are unsigned and
+    must NOT be zigzagged.
+    """;
+
+# ------------------------------------------------------------------------------
+# 9. Enumerations
+# ------------------------------------------------------------------------------
+# These are the Thrift enum values from org.apache.parquet.format
+# (parquet.thrift). This repo mirrors them in io.github.aloksingh.parquet.model
+# (Type, Encoding, CompressionCodec).
+
+# PageType (parquet.thrift PageType)
 PAGE_TYPE_DATA_PAGE       = 0;
 PAGE_TYPE_INDEX_PAGE      = 1;
 PAGE_TYPE_DICTIONARY_PAGE = 2;
 PAGE_TYPE_DATA_PAGE_V2    = 3;
 
-# ------------------------------------------------------------------------------
-# Physical Types (from org.parquet.model.Type)
-# ------------------------------------------------------------------------------
+# Physical types (parquet.thrift Type)
 TYPE_BOOLEAN              = 0;
 TYPE_INT32                = 1;
 TYPE_INT64                = 2;
@@ -227,126 +834,168 @@ TYPE_DOUBLE               = 5;
 TYPE_BYTE_ARRAY           = 6;
 TYPE_FIXED_LEN_BYTE_ARRAY = 7;
 
-# ------------------------------------------------------------------------------
-# Encoding Types (from org.parquet.model.Encoding)
-# ------------------------------------------------------------------------------
+# Encodings (parquet.thrift Encoding; value 1 = reserved, never used)
 ENCODING_PLAIN                 = 0;
-ENCODING_PLAIN_DICTIONARY      = 2;
+# (1 reserved: GROUP_VAR_INT, never used)
+ENCODING_PLAIN_DICTIONARY      = 2;  # Deprecated
 ENCODING_RLE                   = 3;
-ENCODING_BIT_PACKED            = 4;
+ENCODING_BIT_PACKED            = 4;  # Deprecated
 ENCODING_DELTA_BINARY_PACKED   = 5;
 ENCODING_DELTA_LENGTH_BYTE_ARRAY = 6;
 ENCODING_DELTA_BYTE_ARRAY      = 7;
 ENCODING_RLE_DICTIONARY        = 8;
 ENCODING_BYTE_STREAM_SPLIT     = 9;
+ENCODING_ALP                   = 10; # Preview (2026); not implemented here
 
-# ------------------------------------------------------------------------------
-# Compression Codecs (from org.parquet.model.CompressionCodec)
-# ------------------------------------------------------------------------------
+# Compression codecs (parquet.thrift CompressionCodec)
 CODEC_UNCOMPRESSED = 0;
 CODEC_SNAPPY       = 1;
 CODEC_GZIP         = 2;
 CODEC_LZO          = 3;
 CODEC_BROTLI       = 4;
-CODEC_LZ4          = 5;
+CODEC_LZ4          = 5;  # Deprecated (Hadoop-frame LZ4)
 CODEC_ZSTD         = 6;
 CODEC_LZ4_RAW      = 7;
 
-# ------------------------------------------------------------------------------
-# Repetition Types (from org.apache.parquet.format.FieldRepetitionType)
-# ------------------------------------------------------------------------------
+# Field repetition types (parquet.thrift FieldRepetitionType)
 REPETITION_REQUIRED = 0;  # Field is required (appears exactly once)
 REPETITION_OPTIONAL = 1;  # Field is optional (appears 0 or 1 times)
 REPETITION_REPEATED = 2;  # Field is repeated (appears 0 or more times)
 
-# ------------------------------------------------------------------------------
-# Encoding Formats
-# ------------------------------------------------------------------------------
-
-# ------------------------------------------------------------------------------
-# Variable-length integer encoding (varint)
-# Used in RLE encoding and Thrift protocol
-# ------------------------------------------------------------------------------
-# Varints encode integers using 1-10 bytes. Each byte uses 7 bits for data
-# and 1 bit (MSB) as a continuation flag.
-# - If MSB = 1, more bytes follow
-# - If MSB = 0, this is the last byte
-# - Bytes are in little-endian order for data bits
-varint: bits = """
-Variable-length integer encoding (varint).
-
-Each byte contains 7 bits of data (bits 0-6) and a continuation bit (bit 7):
-- If bit 7 = 1, more bytes follow
-- If bit 7 = 0, this is the last byte
-
-The 7-bit data chunks are concatenated in little-endian order to form the integer.
-
-Example: 300 (0x012C)
-  Binary: 00000001 00101100
-  Varint: 10101100 00000010
-          ^------^ ^-------
-          0x2C      0x02
-          (cont=1)  (cont=0)
-""";
-
-# ------------------------------------------------------------------------------
-# RLE/Bit-Packed Hybrid Encoding
-# Used for repetition and definition levels
-# ------------------------------------------------------------------------------
-# Format:
-# - Header byte group: varint-encoded value with bit 0 indicating mode:
-#   - If bit 0 = 1: RLE run (remaining bits = run length)
-#   - If bit 0 = 0: Bit-packed run (remaining bits = byte count / 8)
-# - Data: Either repeated value (RLE) or bit-packed values
-rle_bitpacked_hybrid: bits = """
-RLE/Bit-Packed Hybrid Encoding for levels.
-
-The encoding alternates between RLE runs and bit-packed runs.
-Each run starts with a header indicating the run type and length:
-
-Header format (varint):
-- Bit 0: Mode (1 = RLE, 0 = bit-packed)
-- Remaining bits: Length information
-
-RLE run:
-  header = (count << 1) | 1
-  followed by: single value (encoded in bit width specified by max level)
-
-Bit-packed run:
-  header = (byte_count << 1) | 0
-  followed by: bit-packed values (8 values per byte_count bytes)
-
-The bit width for values is determined by: ceil(log2(max_level + 1))
-""";
-
-# ------------------------------------------------------------------------------
-# Delta Encoding
-# Used for INT32 and INT64 columns
-# ------------------------------------------------------------------------------
-delta_encoding: bits = """
-Delta Binary Packed Encoding (DELTA_BINARY_PACKED).
-
-Encodes integers as differences (deltas) from previous values, using
-variable-width bit-packing to compress the deltas.
-
-Format:
-1. Block header (5 varints):
-   - block_size: number of values in this block
-   - miniblocks_in_block: number of miniblocks
-   - total_value_count: total values in this page
-   - first_value: the first value (zigzag encoded)
-
-2. For each miniblock:
-   - min_delta: minimum delta in this miniblock (zigzag varint)
-   - bit_width: bits per delta value
-   - deltas: bit-packed delta values
-
-Values are reconstructed by: value[i] = value[i-1] + delta[i]
-""";
-
-# ------------------------------------------------------------------------------
+# ==============================================================================
+# 10. Implementation notes - this repository (parquet4j)
+# ==============================================================================
+#
+# The grammar above is the format; this section records what the Java code in
+# src/main/java/io/github/aloksingh/parquet/ actually writes and accepts, so
+# the two can be audited against each other.
+#
+# Writer (ParquetFileWriter + writer/*):
+#   - Writes only DATA_PAGE_V2 pages; values always PLAIN; levels always
+#     hybrid-RLE written by WriterLevelBuffer as repeated runs (unprefixed,
+#     matching V2 framing; RleEncoder offers both raw and V1-prefixed forms
+#     as a utility). Rows are never split across pages (row-boundary splits).
+#   - No dictionary pages; ColumnMetaData.encodings is always [RLE, PLAIN];
+#     dictionary_page_offset is never set. INT96 is not writable.
+#   - Per-page conditional compression: with a codec configured and
+#     minCompressionRatio (default 0.90), a page is stored raw with
+#     is_compressed=false unless compression achieved at least a 10% reduction;
+#     ColumnMetaData.codec names the codec if ANY page kept compression, else
+#     UNCOMPRESSED. is_compressed is always written explicitly.
+#   - Statistics: page-level (DataPageHeaderV2.statistics) and chunk-level
+#     (ColumnMetaData.statistics) with null_count always, distinct_count only
+#     when cheaply exact (<= 4096 distinct, <= 1 MiB tracked), min_value/max_value
+#     always, deprecated min/max only for signed-order types; NaNs excluded
+#     from bounds; zero bounds normalized (min -0.0, max +0.0).
+#   - FileMetaData: version=1, schema (root + DFS leaves; MAP written as the
+#     standard 3-level group), column_orders = TYPE_ORDER per leaf,
+#     created_by="java-parquet-rs ParquetFileWriter", no key_value_metadata.
+#   - ColumnChunk.file_offset is set to the chunk's first page offset (legacy
+#     convention - see the deprecation note in section 5). RowGroup carries
+#     total_byte_size (uncompressed, incl. headers) and total_compressed_size.
+#   - Pages are staged in a temp file and moved into place on close (footer
+#     written last: FileMetaData, u32 LE length, "PAR1").
+#
+# Reader (ParquetMetadataReader, PageReader, model/ColumnPageDecoder):
+#   - Validates magic, footer bounds, chunk ranges, page sizes/counts against
+#     PageReadOptions (defaults: header <= 1 MiB, stored body <= 64 MiB,
+#     decoded body <= 128 MiB, <= 16 Mi values/page; CRC verification opt-in
+#     via PageReadOptions.STRICT - CRC-32 over the stored body per section 3a).
+#   - Accepts V1 and V2 data pages and dictionary pages; value encodings
+#     PLAIN, PLAIN_DICTIONARY/RLE_DICTIONARY (dictionary page must precede
+#     data pages, indices bounds-checked), DELTA_BINARY_PACKED,
+#     DELTA_LENGTH_BYTE_ARRAY, DELTA_BYTE_ARRAY, BYTE_STREAM_SPLIT, and
+#     RLE for BOOLEAN. Levels: hybrid-RLE only.
+#   - V2 invariants enforced: num_nulls must match the definition levels,
+#     num_rows <= num_values and (for flat columns) == num_values, level byte
+#     lengths must fit the stored/decoded sizes, is_compressed=false implies
+#     compressed_page_size == uncompressed_page_size.
+#
+# ==============================================================================
+# 11. Inconsistencies and ambiguities (READ THIS before trusting any single
+#     description, including this one)
+# ==============================================================================
+#
+# Fixed while writing this revision (previous text of this file disagreed with
+# both parquet-format and this repo's code):
+#   [F1] RLE run-header polarity was INVERTED (claimed bit0=1 -> RLE run,
+#        bit0=0 -> bit-packed). Truth (Encodings.md, RleEncoder/RleDecoder):
+#        LSB 0 = repeated run (count = header>>1), LSB 1 = bit-packed run
+#        (groups of 8 values = header>>1). Section 6c is now correct.
+#   [F2] DELTA_BINARY_PACKED header was called "5 varints" (its own list had
+#        4 entries): it is 4 fields - block size, miniblocks per block, total
+#        value count, first value. And min_delta is per BLOCK (not per
+#        miniblock) followed by a one-byte-per-miniblock width table; deltas
+#        are stored relative to min_delta. Section 6d is now correct.
+#   [F3] Page-type comment mapped DICTIONARY_PAGE=0 and DATA_PAGE=1, clashing
+#        with the enum table in the same file (DATA_PAGE=0, INDEX_PAGE=1,
+#        DICTIONARY_PAGE=2). Section 3 is now correct.
+#   [F4] column_chunk referenced only V1 data_page; the V2 rule was defined but
+#        unreachable, and zero-row-group files were ruled out (row_group+)
+#        although they are valid and this repo's writer produces them.
+#   [F5] Enum tables were labeled "org.parquet.model.*" - no such package;
+#        the enums come from parquet.thrift (org.apache.parquet.format) and are
+#        mirrored in io.github.aloksingh.parquet.model.
+#   [F6] Minor: rle_encoded_levels was a single-byte rule used as a byte run;
+#        the "repeated value" of an RLE run was described as bit_width wide
+#        instead of round-up-to-next-byte(bit_width); V2 body order and the
+#        is_compressed default were unspecified.
+#
+# Format-level ambiguities (upstream spec is genuinely unclear or loose):
+#   [A1] DataPageHeaderV2.is_compressed: "if missing it is considered
+#        compressed" - an omitted flag means TRUE (Thrift default). Both this
+#        repo's reader and writer treat omitted as compressed and the writer
+#        always writes the flag explicitly. Verifiers should test both.
+#   [A2] ColumnChunk.file_offset: deprecated precisely because writers split
+#        between "offset of ColumnMetaData" and "offset of first page"; current
+#        spec says write 0 when no external ColumnMetaData is stored. This
+#        repo's writer sets the first-page offset (old convention); this repo's
+#        reader correctly ignores the field. Do not read data through it.
+#   [A3] RowGroup.total_byte_size ("Total byte size of all the uncompressed
+#        column data"): header bytes in or out is unspecified. De-facto
+#        convention (and this repo) includes page headers, matching the sum of
+#        total_uncompressed_size which the spec says includes headers.
+#   [A4] Statistics with TYPE_ORDER on FLOAT/DOUBLE: NaN and -0.0/+0.0 make
+#        "min/max" ill-defined; parquet.thrift gives long reader-side rules
+#        (ignore NaN bounds, +/-0 caveats). This repo excludes NaNs from
+#        bounds, normalizes zero bounds, and writes TYPE_ORDER for every
+#        column - readers must apply the compatibility rules. nan_count is
+#        never written, so "absent = NaNs may be present".
+#   [A5] DataPageHeader.definition_level_encoding / repetition_level_encoding
+#        are required fields, but modern files always say RLE(3); the spec
+#        still permits deprecated BIT_PACKED(4) with a different bit order.
+#        Which is authoritative for a file that declares BIT_PACKED is
+#        underspecified in practice (nobody writes it anymore).
+#   [A6] Merging page versions within one chunk is not forbidden by the spec
+#        (V1 pages and V2 pages sharing one codec field) but has awkward
+#        compression semantics (V1 body-level vs V2 region-level). Treat mixed
+#        chunks as legal-but-avoided.
+#   [A7] Statistics bounds encoding: "PLAIN encoding, except variable-length
+#        byte arrays do not include a length prefix" - BOOLEAN bounds are
+#        therefore a single packed byte per bound, INT96 a raw 12 bytes; both
+#        are easy to get wrong. This repo writes BOOLEAN bounds as one byte.
+#
+# Implementation limitations (this repo deviates from or ignores parts of the
+# format - documented here so the mismatch is explicit, not accidental):
+#   [L1] Reader ignores DataPageHeader.definition_level_encoding /
+#        repetition_level_encoding and decodes level sections as hybrid-RLE
+#        unconditionally: a legacy file with BIT_PACKED (4) levels would be
+#        mis-decoded (silently or with a framing error).
+#   [L2] Writer emits only V2 pages with PLAIN values; no dictionary pages, no
+#        V1 pages, no INT96, no page index / bloom filter / SizeStatistics /
+#        encryption. encodings metadata is the fixed pair [RLE, PLAIN] rather
+#        than the set actually used (harmless while that stays true).
+#   [L3] Reader accepts ALP (10) as an enum value but cannot decode it (no
+#        implementation); PLAIN_DICTIONARY dictionary pages are accepted with
+#        their deprecated enum value.
+#   [L4] Reader computes chunk bounds as
+#        [first page offset, + total_compressed_size) and does not cross-check
+#        against data_page_offset + pages; a lying total_compressed_size can
+#        truncate or overrun a chunk (overrun is caught by file-length checks).
+#
+# ==============================================================================
 # Helper macros
-# ------------------------------------------------------------------------------
+# ==============================================================================
 # Unsigned integers in little-endian byte order
 u8(values)  = uint(8, values);
 u16(values) = ordered(uint(16, values));

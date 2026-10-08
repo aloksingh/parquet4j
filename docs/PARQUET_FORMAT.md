@@ -249,17 +249,20 @@ Varint: [0xAC, 0x02] = [0b10101100, 0b00000010]
 
 ### RLE/Bit-Packed Hybrid
 
-Used for repetition and definition levels. The encoding alternates between RLE runs and bit-packed runs.
+Used for repetition and definition levels, dictionary indices, and BOOLEAN values. The encoding alternates between
+repeated (RLE) runs and bit-packed runs. Each run starts with a ULEB-128 varint header (unsigned) whose least
+significant bit selects the run type:
 
-Header format (varint):
+- **Repeated run** (bit 0 = 0): `header = count << 1`, followed by a single value repeated `count` times. The value
+  occupies `ceil(bit_width / 8)` bytes, little-endian.
+- **Bit-packed run** (bit 0 = 1): `header = (groups << 1) | 1`, where `groups = run_length / 8` (values are packed
+  8 at a time), followed by `groups * bit_width` bytes of bit-packed values, starting from the least significant bit
+  of each byte.
 
-- Bit 0: Mode (1 = RLE, 0 = bit-packed)
-- Remaining bits: Length information
+Note the polarity: **bit 0 = 0 is the repeated run, bit 0 = 1 is the bit-packed run** (an earlier revision of this
+document had it inverted). Run lengths of both kinds must be in `[1, 2^31 - 1]`; zero-length runs are invalid.
 
-**RLE run**: `header = (count << 1) | 1` followed by single value
-**Bit-packed run**: `header = (byte_count << 1) | 0` followed by bit-packed values
-
-The bit width for values is: `ceil(log2(max_level + 1))`
+The bit width for level values is: `ceil(log2(max_level + 1))`.
 
 ### Delta Binary Packed
 
@@ -267,16 +270,22 @@ Encodes integers as differences (deltas) from previous values, using variable-wi
 
 Format:
 
-1. Block header (5 varints):
-    - block_size: number of values in this block
-    - miniblocks_in_block: number of miniblocks
-    - total_value_count: total values in this page
-    - first_value: the first value (zigzag encoded)
+1. Block header (4 fields):
+    - block_size: number of values per block (ULEB-128, a multiple of 128)
+    - miniblocks_in_block: number of miniblocks per block (ULEB-128; values per miniblock = block_size /
+      miniblocks_in_block, a multiple of 32)
+    - total_value_count: total values in this stream (ULEB-128)
+    - first_value: the first value (zigzag ULEB-128)
 
-2. For each miniblock:
-    - min_delta: minimum delta in this miniblock (zigzag varint)
-    - bit_width: bits per delta value
-    - deltas: bit-packed delta values
+2. For each block:
+    - min_delta: frame of reference for the whole block, not per miniblock (zigzag ULEB-128)
+    - bit_widths: one raw byte per miniblock (the full table is always present, even for unused miniblocks)
+    - miniblock payloads (used miniblocks only): `values_per_miniblock * bit_width / 8` bytes of bit-packed
+      `(delta - min_delta)` values
+
+Values are reconstructed as `value[0] = first_value` and `value[i] = value[i-1] + min_delta + packed[i]`, with
+wrapping two's-complement arithmetic. The last miniblock is padded to its full byte length (readers must count values
+via `total_value_count`; unused miniblocks have no payload bytes).
 
 ## Java Implementation Reference
 
