@@ -1,15 +1,18 @@
 package io.github.aloksingh.parquet.writer;
 
+import io.github.aloksingh.parquet.model.ColumnDescriptor;
+import io.github.aloksingh.parquet.model.PrimitiveLogicalType;
 import io.github.aloksingh.parquet.model.Type;
+import org.apache.parquet.format.Statistics;
 
+import java.math.BigInteger;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
+import java.util.Comparator;
 import java.util.HashSet;
 import java.util.Set;
-
-import org.apache.parquet.format.Statistics;
 
 /**
  * Exact bounds/null counts and bounded, exact-or-omitted distinct counts.
@@ -18,14 +21,34 @@ public final class WriterStatistics {
     private static final int DISTINCT_LIMIT = 4096;
     private static final long DISTINCT_BYTE_LIMIT = 1024 * 1024;
     private final Type type;
+    private final int typeLength;
+    private final PrimitiveLogicalType annotation;
+    private final Comparator<Object> comparator;
+    private final boolean writeDeprecatedBounds;
     private Object min;
     private Object max;
     private long nullCount;
     private Set<Object> distinct = new HashSet<>();
     private long distinctBytes;
 
+    /**
+     * Physical-order compatibility constructor for unannotated columns.
+     */
     public WriterStatistics(Type type) {
+        this(type, 0, PrimitiveLogicalType.none());
+    }
+
+    public WriterStatistics(ColumnDescriptor descriptor) {
+        this(descriptor.physicalType(), descriptor.typeLength(), descriptor.annotation());
+    }
+
+    private WriterStatistics(Type type, int typeLength, PrimitiveLogicalType annotation) {
         this.type = type;
+        this.typeLength = typeLength;
+        this.annotation = annotation;
+        comparator = comparator(type, annotation);
+        writeDeprecatedBounds = type != Type.BYTE_ARRAY && type != Type.FIXED_LEN_BYTE_ARRAY
+                && !(annotation.kind() == PrimitiveLogicalType.Kind.INTEGER && !annotation.isSigned());
     }
 
     public void addNull() {
@@ -49,6 +72,7 @@ public final class WriterStatistics {
                 distinctBytes = 0;
             }
         }
+        if (comparator == null) return; // Unknown logical order: keep counts, never guess bounds.
         if ((type == Type.FLOAT && Float.isNaN((Float) canonical))
                 || (type == Type.DOUBLE && Double.isNaN((Double) canonical))) return;
         if (min == null || compare(canonical, min) < 0) min = canonical;
@@ -65,7 +89,9 @@ public final class WriterStatistics {
     }
 
     public void merge(WriterStatistics row) {
-        if (type != row.type) throw new IllegalArgumentException("Cannot merge statistics of different physical types");
+        if (type != row.type || typeLength != row.typeLength || !annotation.equals(row.annotation)) {
+            throw new IllegalArgumentException("Cannot merge statistics of different physical types or logical annotations");
+        }
         nullCount = Math.addExact(nullCount, row.nullCount);
         if (row.min != null && (min == null || compare(row.min, min) < 0)) min = row.min;
         if (row.max != null && (max == null || compare(row.max, max) > 0)) max = row.max;
@@ -94,16 +120,15 @@ public final class WriterStatistics {
         Statistics result = new Statistics();
         result.setNull_count(nullCount);
         if (distinct != null) result.setDistinct_count(distinct.size());
-        boolean signedOrder = type != Type.BYTE_ARRAY && type != Type.FIXED_LEN_BYTE_ARRAY;
         if (min != null) {
             byte[] bytes = encode(zeroBound(min, true));
             result.setMin_value(bytes);
-            if (signedOrder) result.setMin(bytes);
+            if (writeDeprecatedBounds) result.setMin(bytes);
         }
         if (max != null) {
             byte[] bytes = encode(zeroBound(max, false));
             result.setMax_value(bytes);
-            if (signedOrder) result.setMax(bytes);
+            if (writeDeprecatedBounds) result.setMax(bytes);
         }
         return result;
     }
@@ -143,14 +168,28 @@ public final class WriterStatistics {
     }
 
     private int compare(Object first, Object second) {
+        return comparator.compare(first, second);
+    }
+
+    private static Comparator<Object> comparator(Type type, PrimitiveLogicalType annotation) {
+        if (annotation.kind() == PrimitiveLogicalType.Kind.UNKNOWN) return null;
+        boolean unsigned = annotation.kind() == PrimitiveLogicalType.Kind.INTEGER && !annotation.isSigned();
         return switch (type) {
-            case BOOLEAN -> Boolean.compare((Boolean) first, (Boolean) second);
-            case INT32 -> Integer.compare((Integer) first, (Integer) second);
-            case INT64 -> Long.compare((Long) first, (Long) second);
-            case FLOAT -> Float.compare((Float) first, (Float) second);
-            case DOUBLE -> Double.compare((Double) first, (Double) second);
-            case BYTE_ARRAY, FIXED_LEN_BYTE_ARRAY -> Arrays.compareUnsigned((byte[]) first, (byte[]) second);
-            case INT96 -> throw new IllegalArgumentException("INT96 writing is not supported");
+            case BOOLEAN -> (first, second) -> Boolean.compare((Boolean) first, (Boolean) second);
+            case INT32 -> unsigned
+                    ? (first, second) -> Integer.compareUnsigned((Integer) first, (Integer) second)
+                    : (first, second) -> Integer.compare((Integer) first, (Integer) second);
+            case INT64 -> unsigned
+                    ? (first, second) -> Long.compareUnsigned((Long) first, (Long) second)
+                    : (first, second) -> Long.compare((Long) first, (Long) second);
+            case FLOAT -> (first, second) -> Float.compare((Float) first, (Float) second);
+            case DOUBLE -> (first, second) -> Double.compare((Double) first, (Double) second);
+            case BYTE_ARRAY, FIXED_LEN_BYTE_ARRAY -> annotation.kind() == PrimitiveLogicalType.Kind.DECIMAL
+                    ? (first, second) -> new BigInteger((byte[]) first).compareTo(new BigInteger((byte[]) second))
+                    : (first, second) -> Arrays.compareUnsigned((byte[]) first, (byte[]) second);
+            case INT96 -> (first, second) -> {
+                throw new IllegalArgumentException("INT96 writing is not supported");
+            };
         };
     }
 

@@ -1235,9 +1235,15 @@ REPETITION_REPEATED = 2;  # Field is repeated (appears 0 or more times)
 #     GZIP reader accepts concatenated members; LZ4_RAW is not LZ4 framing.
 #   - Statistics on pages/chunks: null_count always; distinct_count exact or
 #     omitted after >4096 distinct values or >1 MiB tracked. Bounds only when
-#     non-null, non-NaN values exist. NaNs excluded; min zero=-0, max zero=+0.
-#     Deprecated min/max are written for non-binary PHYSICAL types. This does
-#     not ensure correct logical order for all annotations: see [L6].
+#     non-null, non-NaN values exist and the logical order is known. NaNs
+#     excluded; min zero=-0, max zero=+0. Bounds honor descriptor annotations:
+#     INTEGER(isSigned=false) uses unsigned integer order; binary DECIMAL uses
+#     signed big-endian unscaled numeric order. Raw binary/STRING/UUID retain
+#     unsigned byte-wise order. Physical value/bound encodings do not change.
+#     Deprecated min/max are omitted for unsigned INTEGER and all binary types.
+#     Unknown annotation order omits bounds but retains counts. Row/page/chunk
+#     merges require equal physical type/width and logical annotations before
+#     changing statistics; see the fixed [L6] finding.
 #   - Footer: version=1; root + DFS schema nodes; TYPE_ORDER per leaf;
 #     created_by="java-parquet-rs ParquetFileWriter" (actual legacy string, not
 #     this project's name/version); no user key_value_metadata. RowGroup sizes
@@ -1303,6 +1309,9 @@ REPETITION_REPEATED = 2;  # Field is repeated (appears 0 or more times)
 #     range, V2 size/default-flag, and stored-body CRC assertions.
 #   ColumnPageDecoderValidationTest / RleDecoderSafetyTest / CodecLz4FramingTest:
 #     malformed framing, value counts, and legacy-versus-raw codec bytes.
+#   WriterLogicalStatisticsTest: unsigned/DECIMAL serialized page/footer bounds,
+#     physical payload bytes, page/group boundaries, legacy bound omission,
+#     annotation-compatible merges, and independent DuckDB filtered reads.
 #   LogicalAnnotationReadPathTest / MapAssemblyContractTest:
 #     API-level logical conversion/nesting contracts, including their limits.
 #   The section 3e/6c/6d byte examples were exercised against the decoder and
@@ -1311,8 +1320,9 @@ REPETITION_REPEATED = 2;  # Field is repeated (appears 0 or more times)
 # ==============================================================================
 # 11. Inconsistencies and ambiguities
 # ==============================================================================
-# [F] corrected DOCUMENTATION; [A] upstream/legacy interpretation; [L] remaining
-# IMPLEMENTATION gap. This edit changes documentation, not Java behavior.
+# [F] corrected DOCUMENTATION; [A] upstream/legacy interpretation; [L]
+# IMPLEMENTATION findings. Entries explicitly marked FIXED record code remedies;
+# the other [L] entries remain open.
 #
 # Historical corrections retained from earlier revisions:
 #   [F1] Hybrid polarity: 0=repeated, 1=bit-packed (6c).
@@ -1358,7 +1368,7 @@ REPETITION_REPEATED = 2;  # Field is repeated (appears 0 or more times)
 #   [A7] Omitted V2 is_compressed=true and BOOLEAN statistics use one byte;
 #     these are explicit wire rules, NOT unresolved ambiguities (3a/5a).
 #
-# Remaining implementation limitations/deviations (not fixed by this document):
+# Implementation findings (only [L6] is fixed; other limitations remain open):
 #   [L1] LEGACY LEVELS: PageReader.java:233-252 discards V1 level encoding fields
 #     and assumes length-prefixed hybrid RLE. BIT_PACKED can misdecode or fail;
 #     the safe future behavior is implement it or explicitly reject it.
@@ -1381,15 +1391,21 @@ REPETITION_REPEATED = 2;  # Field is repeated (appears 0 or more times)
 #     pinned ColumnOrder has only TYPE_ORDER. Writer excludes NaNs/normalizes
 #     zeros but cannot satisfy newer mandatory floating nan_count rules without
 #     updated definitions. Older 2.9.0 compatibility != latest-spec completeness.
-#   [L6] INCORRECT LOGICAL BOUNDS (can mislead downstream pruning): writer
-#     statistics compare PHYSICAL signed ints/unsigned binary, while footer
-#     TYPE_ORDER must honor the annotation. Reproduced: UINT32 raw [-1,1] emits
-#     logical min=4294967295,max=1 instead of 1,4294967295; DECIMAL FIXED[1]
-#     precision=2,scale=0 bytes [FF,01] emits min=1,max=-1 instead of -1,1.
-#     UINT64 and binary decimal variants use the same flawed comparison class.
-#     writer/WriterStatistics.java:97-107,145-153 only receives physical Type
-#     (writer/WriterColumnBuffer.java:31); ParquetFileWriter.java:448-452 declares
-#     TYPE_ORDER. These are format inconsistencies, NOT valid alternative orders.
+#   [L6] FIXED - INCORRECT LOGICAL BOUNDS: previously WriterStatistics received
+#     only physical Type, losing unsigned INTEGER and binary DECIMAL ordering.
+#     UINT32 raw [-1,1] now emits logical min=1,max=4294967295; DECIMAL FIXED[1]
+#     precision=2,scale=0 bytes [FF,01] now emit min=-1,max=1. UINT64 and variable
+#     binary DECIMAL use the same annotation-aware comparison policy, selected
+#     once per statistics instance. Bounds keep their original physical bytes;
+#     footer TYPE_ORDER remains unchanged. Deprecated unsigned signed-order
+#     bounds are omitted. Unknown order suppresses bounds, not counts; merges
+#     reject unequal physical type/width or logical annotations before mutation.
+#     writer/WriterStatistics.java:35-51,90-132,173-205;
+#     writer/WriterColumnBuffer.java:31; writer/WriterColumnBuilder.java:34.
+#     WriterLogicalStatisticsTest checks pages/footer/payload, multi-page/group
+#     behavior and independent DuckDB reads. This does NOT fix reader [L11],
+#     and files already written with incorrect bounds must be rewritten or read
+#     without trusting those bounds for pruning.
 #   [L7] FOOTER VALIDATION: normal constructors never call verifyMagic;
 #     reproduced acceptance of a valid file after replacing leading PAR1 with
 #     BAD!. Signed footer length bound is fileLen-8, allowing metadataStart<4;
@@ -1439,7 +1455,7 @@ REPETITION_REPEATED = 2;  # Field is repeated (appears 0 or more times)
 # ==============================================================================
 # A reader should distinguish corruption, unsupported features, and ignorable
 # unknown optional metadata; none should become successful-looking partial EOF.
-# [L] above identifies checks this repository still lacks.
+# Open [L] findings above identify checks this repository still lacks.
 #   1. Validate both magic strings (unencrypted scope), footer range/allocation
 #      limit, bounded
 #      Compact fields/collections/recursion, required fields, and full metadata

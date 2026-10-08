@@ -28,7 +28,7 @@ public final class WriterColumnBuffer {
         this.byteLimit = byteLimit;
         this.valueLimit = valueLimit;
         values = new WriterPlainBuffer(descriptor.physicalType());
-        statistics = new WriterStatistics(descriptor.physicalType());
+        statistics = new WriterStatistics(descriptor);
     }
 
     public void clear() {

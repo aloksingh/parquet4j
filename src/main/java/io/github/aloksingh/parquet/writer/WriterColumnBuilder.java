@@ -31,7 +31,7 @@ public final class WriterColumnBuilder {
         this.byteLimit = byteLimit;
         this.valueLimit = valueLimit;
         current = new WriterColumnBuffer(descriptor, byteLimit, valueLimit);
-        statistics = new WriterStatistics(descriptor.physicalType());
+        statistics = new WriterStatistics(descriptor);
     }
 
     public void clear() {
