@@ -221,6 +221,12 @@ public class ParquetMetadataReader {
             statistics = new ColumnStatistics(min, max, nullCount, distinctCount, minOrder, maxOrder);
         }
 
+          long bloomFilterOffset = meta.isSetBloom_filter_offset()
+                  ? meta.getBloom_filter_offset() : -1;
+          // bloom_filter_length is field 15, newer than the pinned 2.9.0 definitions
+          // and absent from parquet-format-structures 1.13.1; use -1 when unavailable.
+          int bloomFilterLength = -1;
+
         ParquetMetadata.ColumnChunkMetadata colMeta =
             new ParquetMetadata.ColumnChunkMetadata(
                 type,
@@ -231,7 +237,9 @@ public class ParquetMetadataReader {
                 meta.getTotal_compressed_size(),
                 meta.getTotal_uncompressed_size(),
                 meta.getNum_values(),
-                statistics
+                    statistics,
+                    bloomFilterOffset,
+                    bloomFilterLength
             );
 
         columnChunks.add(colMeta);

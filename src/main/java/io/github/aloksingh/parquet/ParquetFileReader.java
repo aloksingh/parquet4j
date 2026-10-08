@@ -1,12 +1,9 @@
 package io.github.aloksingh.parquet;
 
-import io.github.aloksingh.parquet.model.ColumnBatch;
-import io.github.aloksingh.parquet.model.ColumnDescriptor;
-import io.github.aloksingh.parquet.model.ColumnValues;
-import io.github.aloksingh.parquet.model.LogicalColumnDescriptor;
-import io.github.aloksingh.parquet.model.Page;
-import io.github.aloksingh.parquet.model.ParquetMetadata;
-import io.github.aloksingh.parquet.model.SchemaDescriptor;
+import io.github.aloksingh.parquet.bloom.BloomFilterReader;
+import io.github.aloksingh.parquet.bloom.SplitBlockBloomFilter;
+import io.github.aloksingh.parquet.model.*;
+
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.List;
@@ -365,6 +362,20 @@ public class ParquetFileReader implements AutoCloseable {
       return readColumn(columnIndex).toPageBatches();
     }
 
+      /**
+       * Read the bloom filter for a physical column in this row group.
+       *
+       * @param columnIndex the physical column index (0-based)
+       * @return the bloom filter, or null if none exists or the algorithm is unsupported
+       * @throws IOException if reading the bloom filter data fails
+       */
+      public SplitBlockBloomFilter getBloomFilter(int columnIndex) throws IOException {
+          ParquetMetadata.ColumnChunkMetadata colMeta = rowGroupMeta.columns().get(columnIndex);
+          if (!colMeta.hasBloomFilter()) return null;
+          return BloomFilterReader.readBloomFilter(chunkReader,
+                  colMeta.bloomFilterOffset(), colMeta.bloomFilterLength());
+      }
+
     /** Resolves a logical column name or physical column path to a physical index. */
     private int physicalColumnIndex(String columnName) {
       java.util.Objects.requireNonNull(columnName, "columnName");
@@ -407,6 +418,22 @@ public class ParquetFileReader implements AutoCloseable {
         throw new IOException("Failed to close chunk reader", e);
       }
     }
+  }
+
+    /**
+     * Reads a bloom filter for a column chunk, or null when none exists.
+     *
+     * @param rowGroupIndex the row group index
+     * @param columnIndex   the physical column index within that row group
+     * @return the bloom filter, or null if unavailable or unsupported
+     * @throws IOException if an I/O error occurs
+     */
+    public SplitBlockBloomFilter readBloomFilter(int rowGroupIndex, int columnIndex) throws IOException {
+        ParquetMetadata.ColumnChunkMetadata colMeta =
+                metadata.rowGroups().get(rowGroupIndex).columns().get(columnIndex);
+        if (!colMeta.hasBloomFilter()) return null;
+        return BloomFilterReader.readBloomFilter(chunkReader,
+                colMeta.bloomFilterOffset(), colMeta.bloomFilterLength());
   }
 
   /**

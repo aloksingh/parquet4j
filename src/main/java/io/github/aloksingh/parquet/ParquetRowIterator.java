@@ -1,33 +1,14 @@
 package io.github.aloksingh.parquet;
 
-import io.github.aloksingh.parquet.model.ColumnDescriptor;
-import io.github.aloksingh.parquet.model.ColumnPageDecoder;
-import io.github.aloksingh.parquet.model.ColumnValues;
-import io.github.aloksingh.parquet.model.DecodedPage;
-import io.github.aloksingh.parquet.model.LogicalColumnDescriptor;
-import io.github.aloksingh.parquet.model.LogicalType;
-import io.github.aloksingh.parquet.model.Page;
-import io.github.aloksingh.parquet.model.ParquetException;
-import io.github.aloksingh.parquet.model.ParquetMetadata;
-import io.github.aloksingh.parquet.model.PrimitiveLogicalType;
-import io.github.aloksingh.parquet.model.RowColumnGroup;
-import io.github.aloksingh.parquet.model.SchemaDescriptor;
+import io.github.aloksingh.parquet.model.*;
 import io.github.aloksingh.parquet.model.SchemaDescriptor.GroupNode;
 import io.github.aloksingh.parquet.model.SchemaDescriptor.LeafNode;
 import io.github.aloksingh.parquet.model.SchemaDescriptor.Repetition;
 import io.github.aloksingh.parquet.model.SchemaDescriptor.SchemaNode;
-import io.github.aloksingh.parquet.model.SimpleRowColumnGroup;
-import io.github.aloksingh.parquet.model.Type;
 import io.github.aloksingh.parquet.util.filter.RowColumnGroupFilter;
+
 import java.io.IOException;
-import java.util.ArrayDeque;
-import java.util.ArrayList;
-import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.NoSuchElementException;
-import java.util.Set;
+import java.util.*;
 
 /**
  * Iterator that reads Parquet files row by row across all row groups.
@@ -227,7 +208,15 @@ public class ParquetRowIterator implements RowColumnGroupIterator, AutoCloseable
     }
     ParquetMetadata.RowGroupMetadata group =
         fileReader.getMetadata().rowGroups().get(rowGroupIndex);
-    return pruningFilter.canDrop(group, scanSchema);
+      return pruningFilter.canDrop(group, scanSchema, columnPath -> {
+          try {
+              int physicalIdx = physicalSchema.leafIndex(columnPath);
+              if (physicalIdx < 0) return null;
+              return fileReader.readBloomFilter(rowGroupIndex, physicalIdx);
+          } catch (Exception e) {
+              return null;
+          }
+      });
   }
 
   /**

@@ -240,4 +240,18 @@ abstract class TypedColumnFilter implements ColumnFilter {
     public boolean isApplicable(LogicalColumnDescriptor columnDescriptor) {
         return targetColumnDescriptor.equals(columnDescriptor);
     }
+
+    /**
+     * The filter operator for bloom-filter pruning integration.
+     */
+    public FilterOperator operator() {
+        return operator;
+    }
+
+    /**
+     * The bound constant, or null for isNull/isNotNull.
+     */
+    public Object getConstant() {
+        return matchValue;
+    }
 }

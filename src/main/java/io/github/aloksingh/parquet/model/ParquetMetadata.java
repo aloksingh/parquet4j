@@ -67,12 +67,33 @@ public record ParquetMetadata(FileMetadata fileMetadata, List<RowGroupMetadata> 
    * @param totalUncompressedSize  the total uncompressed size of this column chunk in bytes
    * @param numValues              the total number of values in this column chunk
    * @param statistics             the column statistics (min, max, null count, distinct count)
+   * @param bloomFilterOffset      the byte offset to the bloom filter data, or -1 if absent
+   * @param bloomFilterLength      the length of the bloom filter data (header + bitset), or -1 if absent
    */
   public record ColumnChunkMetadata(Type type, String[] path, CompressionCodec codec,
                                     long dataPageOffset,
                                     long dictionaryPageOffset, long totalCompressedSize,
                                     long totalUncompressedSize,
-                                    long numValues, ColumnStatistics statistics) {
+                                    long numValues, ColumnStatistics statistics,
+                                    long bloomFilterOffset, int bloomFilterLength) {
+
+    /**
+     * Constructor without bloom filter fields (backward compatible; offsets set to -1).
+     */
+    public ColumnChunkMetadata(Type type, String[] path, CompressionCodec codec,
+                               long dataPageOffset, long dictionaryPageOffset,
+                               long totalCompressedSize, long totalUncompressedSize,
+                               long numValues, ColumnStatistics statistics) {
+      this(type, path, codec, dataPageOffset, dictionaryPageOffset,
+              totalCompressedSize, totalUncompressedSize, numValues, statistics, -1, -1);
+    }
+
+    /**
+     * True when this column chunk has a bloom filter.
+     */
+    public boolean hasBloomFilter() {
+      return bloomFilterOffset >= 0;
+    }
 
     /**
      * Gets the file offset to the first page (dictionary or data) in this column chunk.

@@ -1,18 +1,10 @@
 package io.github.aloksingh.parquet.util.filter;
 
-import io.github.aloksingh.parquet.model.ColumnDescriptor;
-import io.github.aloksingh.parquet.model.LogicalColumnDescriptor;
-import io.github.aloksingh.parquet.model.ParquetMetadata;
-import io.github.aloksingh.parquet.model.RowColumnGroup;
-import io.github.aloksingh.parquet.model.SchemaDescriptor;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.IdentityHashMap;
-import java.util.LinkedHashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
+import io.github.aloksingh.parquet.bloom.SplitBlockBloomFilter;
+import io.github.aloksingh.parquet.model.*;
+
+import java.util.*;
+import java.util.function.Function;
 
 /**
  * Immutable AND/OR composition of column predicates. Known targets bind to logical indices once
@@ -131,8 +123,14 @@ public class RowColumnGroupFilterSet implements RowColumnGroupFilter {
 
   @Override
   public boolean canDrop(ParquetMetadata.RowGroupMetadata group, SchemaDescriptor schema) {
+      return canDrop(group, schema, colName -> null);
+  }
+
+    @Override
+    public boolean canDrop(ParquetMetadata.RowGroupMetadata group, SchemaDescriptor schema,
+                           Function<String, SplitBlockBloomFilter> bloomLookup) {
     for (var bound : bind(schema)) {
-      boolean impossible = canDropLeaf(bound, group, schema);
+        boolean impossible = canDropLeaf(bound, group, schema, bloomLookup);
       if (type == FilterJoinType.All && impossible) return true;
       if (type == FilterJoinType.Any && !impossible) return false;
     }
@@ -152,6 +150,12 @@ public class RowColumnGroupFilterSet implements RowColumnGroupFilter {
 
   private static boolean canDropLeaf(BoundFilter bound, ParquetMetadata.RowGroupMetadata group,
                                      SchemaDescriptor schema) {
+      return canDropLeaf(bound, group, schema, colName -> null);
+  }
+
+    private static boolean canDropLeaf(BoundFilter bound, ParquetMetadata.RowGroupMetadata group,
+                                       SchemaDescriptor schema,
+                                       Function<String, SplitBlockBloomFilter> bloomLookup) {
     if (constant(bound.filter())) return bound.filter().canDrop(null, -1);
     if (bound.filter().targetColumn() == null || bound.indices().size() != 1 || group == null
         || group.numRows() < 0 || group.columns() == null) return false;
@@ -174,7 +178,23 @@ public class RowColumnGroupFilterSet implements RowColumnGroupFilter {
     }
     if (candidate == null || candidate.type() != physical.physicalType()
         || candidate.numValues() != group.numRows()) return false;
-    return bound.filter().canDrop(candidate.statistics(), candidate.numValues());
+
+        // Statistics pruning
+        if (bound.filter().canDrop(candidate.statistics(), candidate.numValues())) return true;
+
+        // Bloom filter pruning: only for equality predicates on supported column chunks
+        if (bound.filter() instanceof TypedColumnFilter tcf
+                && tcf.operator() == FilterOperator.eq
+                && tcf.getConstant() != null
+                && candidate.hasBloomFilter()) {
+            String pathStr = String.join(".", physical.path());
+            SplitBlockBloomFilter bf = bloomLookup.apply(pathStr);
+            if (bf != null) {
+                return !BloomFilterPredicate.mightContain(bf, physical, tcf.getConstant());
+            }
+        }
+
+        return false;
   }
 
   private record BoundFilter(ColumnFilter filter, List<Integer> indices) { }
