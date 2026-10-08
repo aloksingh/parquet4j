@@ -262,6 +262,15 @@ public final class WriterColumnBuffer {
         return numRows;
     }
 
+    /**
+     * Feed each present (non-null) PLAIN-encoded value to the consumer.
+     * Staging buffers only use PLAIN encoding — dictionary ids are not materialized here.
+     */
+    void forEachPresentValue(java.util.function.Consumer<byte[]> consumer) {
+        if (presentCount == 0) return;
+        values.forEachPresent(consumer);
+    }
+
     public WriterStatistics statistics() {
         return statistics;
     }

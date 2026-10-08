@@ -52,6 +52,42 @@ final class WriterPlainBuffer {
     }
 
     /**
+     * Feed each present PLAIN-encoded value to the given consumer.
+     * The consumer receives the raw bytes as stored (BYTE_ARRAY includes the
+     * 4-byte length prefix; BOOLEAN is bit-packed and unsupported here).
+     */
+    void forEachPresent(java.util.function.Consumer<byte[]> consumer) {
+        if (type == Type.BOOLEAN) {
+            // Booleans are bit-packed: reconstruct individual bytes
+            for (int i = 0; i < booleanCount; i++) {
+                boolean bit = (bytes.data[i >>> 3] & (1 << (i & 7))) != 0;
+                consumer.accept(new byte[]{(byte) (bit ? 1 : 0)});
+            }
+            return;
+        }
+        int pos = 0;
+        while (pos < bytes.size) {
+            int len = switch (type) {
+                case INT32, FLOAT -> 4;
+                case INT64, DOUBLE -> 8;
+                case BYTE_ARRAY -> {
+                    int dataLen = (bytes.data[pos] & 0xFF)
+                            | ((bytes.data[pos + 1] & 0xFF) << 8)
+                            | ((bytes.data[pos + 2] & 0xFF) << 16)
+                            | ((bytes.data[pos + 3] & 0xFF) << 24);
+                    yield 4 + dataLen;
+                }
+                case FIXED_LEN_BYTE_ARRAY -> bytes.size - pos; // all remaining are fixed
+                default -> throw new IllegalStateException("Unsupported type: " + type);
+            };
+            byte[] slice = new byte[len];
+            System.arraycopy(bytes.data, pos, slice, 0, len);
+            consumer.accept(slice);
+            pos += len;
+        }
+    }
+
+    /**
      * Backing array of the raw PLAIN stream (only for non-BOOLEAN types).
      */
     byte[] data() {
