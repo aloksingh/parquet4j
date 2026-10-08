@@ -1,8 +1,10 @@
 package io.github.aloksingh.parquet.util.filter;
 
 import io.github.aloksingh.parquet.model.LogicalColumnDescriptor;
+import io.github.aloksingh.parquet.model.PrimitiveLogicalType;
 import io.github.aloksingh.parquet.model.Type;
 
+import java.math.BigInteger;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -16,7 +18,8 @@ import java.util.Optional;
  * FLOAT/DOUBLE use exact physical IEEE values: signed zeros compare equal, NaN never matches
  * equality or ordering, and inequality matches NaN (including NaN != NaN). Infinities are
  * supported. Binary comparison is by content, ordered unsigned lexicographically. Strings
- * use Java String order. There is no tolerance or decimal conversion during row evaluation.
+ * use Java String order. Unsigned INTEGER(32/64) predicates use logical Long/BigInteger values.
+ * There is no tolerance or decimal conversion during row evaluation.
  */
 abstract class TypedColumnFilter implements ColumnFilter {
     protected final LogicalColumnDescriptor targetColumnDescriptor;
@@ -139,8 +142,16 @@ abstract class TypedColumnFilter implements ColumnFilter {
             }
             return;
         }
-        if (!javaClass(valueType).isInstance(value)) {
-            throw invalid("expected " + javaClass(valueType).getSimpleName() + " row value, got "
+        var descriptor = mapKey.isPresent() ? targetColumnDescriptor.getMapMetadata().valueDescriptor()
+                : targetColumnDescriptor.getPhysicalDescriptor();
+        Class<?> expected = javaClass(valueType);
+        if (descriptor != null && descriptor.annotation().kind() == PrimitiveLogicalType.Kind.INTEGER
+                && !descriptor.annotation().isSigned()) {
+            if (descriptor.annotation().bitWidth() == 32) expected = Long.class;
+            if (descriptor.annotation().bitWidth() == 64) expected = BigInteger.class;
+        }
+        if (!expected.isInstance(value)) {
+            throw invalid("expected " + expected.getSimpleName() + " row value, got "
                     + value.getClass().getName());
         }
     }

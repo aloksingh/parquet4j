@@ -11,8 +11,42 @@ import java.nio.charset.StandardCharsets;
  * @param max           the maximum value in this column chunk (encoded as bytes), or null if not available
  * @param nullCount     the count of null values, or null if not tracked
  * @param distinctCount the count of distinct values, or null if not tracked
+ * @param minOrder      the minimum bound's order/provenance; unknown means do not use it for pruning
+ * @param maxOrder      the maximum bound's order/provenance; unknown means do not use it for pruning
  */
-public record ColumnStatistics(byte[] min, byte[] max, Long nullCount, Long distinctCount) {
+public record ColumnStatistics(byte[] min, byte[] max, Long nullCount, Long distinctCount,
+                               BoundsOrder minOrder, BoundsOrder maxOrder) {
+
+  /**
+   * The known interpretation of an individual bound, not the ordering of rows.
+   */
+  public enum BoundsOrder {
+    /**
+     * No supported order was established.
+     */
+    UNKNOWN,
+    /**
+     * Modern min_value/max_value with an explicit TYPE_ORDER.
+     */
+    TYPE_DEFINED,
+    /**
+     * Deprecated min/max, whose comparison order is signed.
+     */
+    LEGACY_SIGNED
+  }
+
+  /**
+   * Compatibility constructor for caller-supplied signed-order statistics.
+   * File readers must instead supply the actual provenance of both bounds.
+   *
+   * @param min           the signed-order minimum bound
+   * @param max           the signed-order maximum bound
+   * @param nullCount     the null count, or null if unknown
+   * @param distinctCount the distinct count, or null if unknown
+   */
+  public ColumnStatistics(byte[] min, byte[] max, Long nullCount, Long distinctCount) {
+    this(min, max, nullCount, distinctCount, BoundsOrder.LEGACY_SIGNED, BoundsOrder.LEGACY_SIGNED);
+  }
 
   /**
    * Checks if minimum value statistics are available.

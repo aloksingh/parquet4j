@@ -1,7 +1,9 @@
 package io.github.aloksingh.parquet.util.filter;
 
 import io.github.aloksingh.parquet.model.LogicalColumnDescriptor;
+import io.github.aloksingh.parquet.model.PrimitiveLogicalType;
 import io.github.aloksingh.parquet.model.Type;
+
 import java.math.BigDecimal;
 
 public class ColumnFilterHelper {
@@ -39,6 +41,21 @@ public class ColumnFilterHelper {
     if (matchValue == null) {
       return null;
     }
+    var descriptor = targetColumnDescriptor.getPhysicalDescriptor();
+    if (descriptor != null && descriptor.annotation().kind() == PrimitiveLogicalType.Kind.INTEGER
+            && !descriptor.annotation().isSigned()) {
+      if (descriptor.annotation().bitWidth() == 32) return exactIntegral(matchValue, false);
+      if (descriptor.annotation().bitWidth() == 64) {
+        if (!(matchValue instanceof Number) && !(matchValue instanceof String)) {
+          throw new IllegalArgumentException("Expected an integral constant, got " + matchValue.getClass().getName());
+        }
+        try {
+          return new BigDecimal(matchValue.toString()).toBigIntegerExact();
+        } catch (ArithmeticException | NumberFormatException e) {
+          throw new IllegalArgumentException("Constant is not an exact integer: " + matchValue, e);
+        }
+      }
+    }
     switch (physicalType) {
       case BOOLEAN -> {
         return strictBoolean(matchValue);
@@ -61,7 +78,6 @@ public class ColumnFilterHelper {
       }
       case FIXED_LEN_BYTE_ARRAY -> {
         if (matchValue instanceof byte[] bytes) {
-          var descriptor = targetColumnDescriptor.getPhysicalDescriptor();
           if (descriptor == null || descriptor.typeLength() <= 0) {
             throw new IllegalArgumentException("FIXED_LEN_BYTE_ARRAY requires a positive typeLength");
           }

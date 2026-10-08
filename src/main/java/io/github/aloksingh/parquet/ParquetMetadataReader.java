@@ -1,6 +1,7 @@
 package io.github.aloksingh.parquet;
 
 import io.github.aloksingh.parquet.model.*;
+import io.github.aloksingh.parquet.model.ColumnStatistics.BoundsOrder;
 import io.github.aloksingh.parquet.model.CompressionCodec;
 import io.github.aloksingh.parquet.model.Type;
 import org.apache.parquet.format.*;
@@ -180,17 +181,33 @@ public class ParquetMetadataReader {
           Long nullCount = null;
           Long distinctCount = null;
 
-          // Use min_value/max_value if available, otherwise fall back to min/max
+            // ColumnOrder is per schema leaf, not per logical (e.g. MAP) column.
+            // Bad cardinality/alignment or an unknown union alternative leaves modern bounds opaque.
+            BoundsOrder modernOrder = BoundsOrder.UNKNOWN;
+            if (thriftMetadata.isSetColumn_orders() && thriftMetadata.getColumn_ordersSize() == columns.size()
+                    && i < columns.size() && type == columns.get(i).physicalType()
+                    && java.util.Arrays.equals(path, columns.get(i).path())
+                    && thriftMetadata.getColumn_orders().get(i).isSetTYPE_ORDER()) {
+                modernOrder = BoundsOrder.TYPE_DEFINED;
+            }
+            BoundsOrder minOrder = BoundsOrder.UNKNOWN;
+            BoundsOrder maxOrder = BoundsOrder.UNKNOWN;
+
+            // Prefer modern bounds, but never erase provenance or mix orders for pruning.
           if (stats.isSetMin_value()) {
             min = stats.getMin_value();
+              minOrder = modernOrder;
           } else if (stats.isSetMin()) {
             min = stats.getMin();
+              minOrder = BoundsOrder.LEGACY_SIGNED;
           }
 
           if (stats.isSetMax_value()) {
             max = stats.getMax_value();
+              maxOrder = modernOrder;
           } else if (stats.isSetMax()) {
             max = stats.getMax();
+              maxOrder = BoundsOrder.LEGACY_SIGNED;
           }
 
           if (stats.isSetNull_count()) {
@@ -201,7 +218,7 @@ public class ParquetMetadataReader {
             distinctCount = stats.getDistinct_count();
           }
 
-          statistics = new ColumnStatistics(min, max, nullCount, distinctCount);
+            statistics = new ColumnStatistics(min, max, nullCount, distinctCount, minOrder, maxOrder);
         }
 
         ParquetMetadata.ColumnChunkMetadata colMeta =

@@ -1,35 +1,54 @@
 package io.github.aloksingh.parquet.util.filter;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertSame;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import io.github.aloksingh.parquet.model.*;
+import io.github.aloksingh.parquet.model.ColumnStatistics.BoundsOrder;
+import org.junit.jupiter.api.Test;
 
-import io.github.aloksingh.parquet.model.ColumnDescriptor;
-import io.github.aloksingh.parquet.model.ColumnStatistics;
-import io.github.aloksingh.parquet.model.LogicalColumnDescriptor;
-import io.github.aloksingh.parquet.model.LogicalType;
-import io.github.aloksingh.parquet.model.ParquetMetadata;
-import io.github.aloksingh.parquet.model.SchemaDescriptor;
-import io.github.aloksingh.parquet.model.Type;
-
-import java.util.List;
-import java.util.Arrays;
-import java.util.ArrayList;
-import java.util.Map;
-import java.util.Optional;
-import java.util.Set;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
+import java.util.*;
 
-import org.junit.jupiter.api.Test;
+import static org.junit.jupiter.api.Assertions.*;
 
 class StatisticsPruningTest {
     private static LogicalColumnDescriptor primitive(String name, Type type) {
         return new LogicalColumnDescriptor(name, LogicalType.PRIMITIVE, type,
                 new ColumnDescriptor(type, new String[]{name}, 1, 0, 0));
+    }
+
+    @Test
+    void unsupportedLogicalComparisonsCannotUsePhysicalBounds() {
+        for (var annotation : List.of(PrimitiveLogicalType.date(), PrimitiveLogicalType.decimal(6, 2),
+                PrimitiveLogicalType.unknown())) {
+            var column = new LogicalColumnDescriptor("value", LogicalType.PRIMITIVE, Type.INT32,
+                    new ColumnDescriptor(Type.INT32, new String[]{"value"}, 1, 0, 0, annotation));
+            var statistics = new ColumnStatistics(intBytes(10), intBytes(20), 0L, null,
+                    BoundsOrder.TYPE_DEFINED, BoundsOrder.TYPE_DEFINED);
+            assertFalse(new ColumnEqualFilter(column, 5).canDrop(statistics, 2), annotation.kind().toString());
+        }
+    }
+
+    @Test
+    void deprecatedSignedBoundsCannotPruneUnsignedIntegerColumns() {
+        for (var type : List.of(Type.INT32, Type.INT64)) {
+            var column = new LogicalColumnDescriptor("value", LogicalType.PRIMITIVE, type,
+                    new ColumnDescriptor(type, new String[]{"value"}, 1, 0, 0,
+                            PrimitiveLogicalType.integer(type == Type.INT32 ? 32 : 64, false)));
+            Object minimum = type == Type.INT32 ? (Object) 10 : 10L;
+            Object maximum = type == Type.INT32 ? (Object) 20 : 20L;
+            var statistics = new ColumnStatistics(encode(minimum, type), encode(maximum, type), 0L, null);
+            assertFalse(new ColumnEqualFilter(column, 5).canDrop(statistics, 2));
+            assertTrue(new ColumnIsNullFilter(column).canDrop(statistics, 2), "counts are independent of bound order");
+        }
+    }
+
+    @Test
+    void unknownBoundOrderDoesNotDisableNullCountPruning() {
+        var column = primitive("value", Type.INT32);
+        var statistics = new ColumnStatistics(intBytes(10), intBytes(20), 0L, null,
+                BoundsOrder.UNKNOWN, BoundsOrder.UNKNOWN);
+        assertTrue(new ColumnIsNullFilter(column).canDrop(statistics, 2));
+        assertFalse(new ColumnEqualFilter(column, 5).canDrop(statistics, 2));
     }
 
     @Test

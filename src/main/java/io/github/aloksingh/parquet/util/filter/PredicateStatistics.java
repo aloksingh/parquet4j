@@ -2,13 +2,15 @@ package io.github.aloksingh.parquet.util.filter;
 
 import io.github.aloksingh.parquet.model.ColumnStatistics;
 import io.github.aloksingh.parquet.model.LogicalColumnDescriptor;
+import io.github.aloksingh.parquet.model.PrimitiveLogicalType;
 import io.github.aloksingh.parquet.model.Type;
 
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 
 /**
- * Strict statistics decoding for known signed primitive order; never interpret binary as UTF-8.
+ * Conservative statistics decoding for known, predicate-compatible primitive orders.
+ * Unknown/mixed orders and binary bounds never justify pruning.
  */
 final class PredicateStatistics {
     private PredicateStatistics() {
@@ -29,11 +31,30 @@ final class PredicateStatistics {
         boolean minPresent = statistics.min() != null;
         boolean maxPresent = statistics.max() != null;
         if (minPresent != maxPresent) return false;
+        var annotation = descriptor.annotation();
+        // Bound comparisons must use the same value domain as the residual predicate.
+        // Other logical types (e.g. DATE/DECIMAL) lack compatible primitive predicate binding.
+        boolean usableBounds = minPresent && statistics.minOrder() == statistics.maxOrder()
+                && (statistics.minOrder() == ColumnStatistics.BoundsOrder.TYPE_DEFINED
+                || statistics.minOrder() == ColumnStatistics.BoundsOrder.LEGACY_SIGNED)
+                && (annotation.kind() == PrimitiveLogicalType.Kind.NONE
+                || annotation.kind() == PrimitiveLogicalType.Kind.INTEGER);
+        if (statistics.minOrder() == ColumnStatistics.BoundsOrder.LEGACY_SIGNED
+                && annotation.kind() == PrimitiveLogicalType.Kind.INTEGER
+                && !annotation.isSigned() && annotation.bitWidth() >= 32) usableBounds = false;
         Object min = null;
         Object max = null;
-        if (minPresent) {
+        if (usableBounds) {
             min = decode(statistics.min(), type);
             max = decode(statistics.max(), type);
+            if (min != null && max != null && descriptor.annotation().kind() == PrimitiveLogicalType.Kind.INTEGER) {
+                try {
+                    min = descriptor.annotation().toLogicalValue(min);
+                    max = descriptor.annotation().toLogicalValue(max);
+                } catch (IllegalArgumentException e) {
+                    return false; // Invalid annotated bounds are not evidence for pruning.
+                }
+            }
             if (min == null || max == null || TypedColumnFilter.isNaN(min)
                     || TypedColumnFilter.isNaN(max) || TypedColumnFilter.compareValues(min, max) > 0) return false;
         }
@@ -46,7 +67,7 @@ final class PredicateStatistics {
         // This format has no nan_count. Keep floating ordered/inequality predicates unless the
         // all-null count proved them impossible, independent of the residual NaN policy.
         if ((type == Type.FLOAT || type == Type.DOUBLE) && operator != FilterOperator.eq) return false;
-        if (!minPresent) return false;
+        if (!usableBounds) return false;
         int minCompare = TypedColumnFilter.compareValues(min, constant);
         int maxCompare = TypedColumnFilter.compareValues(max, constant);
         return switch (operator) {

@@ -1302,6 +1302,25 @@ REPETITION_REPEATED = 2;  # Field is repeated (appears 0 or more times)
 #     leaf zip, not arbitrary nested reconstruction, and treats BYTE_ARRAY as
 #     UTF-8 regardless of annotation (NestedStructureReader.java:64-174).
 #
+# 10d. Reader predicates and statistics pruning
+#   - ColumnStatistics retains each bound's modern TYPE_ORDER, legacy signed,
+#     or unknown provenance. Modern order must be explicit, one per PHYSICAL
+#     schema leaf, with a matching chunk path/type; malformed cardinality or
+#     unknown union alternatives leave those bounds unusable for pruning.
+#   - Mixed modern/legacy bound pairs are not combined for pruning. Legacy
+#     bounds require signed-order compatibility; unsigned 32/64-bit columns
+#     cannot use them. Compatible legacy-only signed files still prune.
+#   - INTEGER predicates compare logical values: UINT32 constants/rows/bounds
+#     use Long, UINT64 uses BigInteger, including values above signed maxima.
+#     Bound order and residual predicate semantics must agree. Other primitive
+#     annotations (DATE/DECIMAL/TIME/TIMESTAMP etc.) do not gain typed predicate
+#     binding from this fix; their bounds are ignored, not compared as raw ints.
+#   - Valid null-count proofs remain usable independently of bound ordering.
+#     Binary/repeated/MAP bound pruning remains disabled, and floating NaN /
+#     signed-zero safeguards remain conservative. The four-argument statistics
+#     constructor remains for caller-supplied signed-order bounds; file metadata
+#     uses explicit per-bound provenance. See the fixed [L11] finding.
+#
 # Regression evidence to consult (not a blanket conformance certification):
 #   WriterIndependentTest: DuckDB reads writer primitive/MAP output; pages,
 #     null slots, whole oversized rows, independent leaf boundaries checked.
@@ -1312,6 +1331,9 @@ REPETITION_REPEATED = 2;  # Field is repeated (appears 0 or more times)
 #   WriterLogicalStatisticsTest: unsigned/DECIMAL serialized page/footer bounds,
 #     physical payload bytes, page/group boundaries, legacy bound omission,
 #     annotation-compatible merges, and independent DuckDB filtered reads.
+#   ReaderPruningOrderTest / StatisticsPruningTest: pruning-on/off equivalence,
+#     unknown/absent/misaligned orders, modern/legacy provenance, unsigned
+#     boundary values, physical leaf ordering after MAP, and count-based proofs.
 #   LogicalAnnotationReadPathTest / MapAssemblyContractTest:
 #     API-level logical conversion/nesting contracts, including their limits.
 #   The section 3e/6c/6d byte examples were exercised against the decoder and
@@ -1368,7 +1390,7 @@ REPETITION_REPEATED = 2;  # Field is repeated (appears 0 or more times)
 #   [A7] Omitted V2 is_compressed=true and BOOLEAN statistics use one byte;
 #     these are explicit wire rules, NOT unresolved ambiguities (3a/5a).
 #
-# Implementation findings (only [L6] is fixed; other limitations remain open):
+# Implementation findings ([L6]/[L11] fixed; other limitations remain open):
 #   [L1] LEGACY LEVELS: PageReader.java:233-252 discards V1 level encoding fields
 #     and assumes length-prefixed hybrid RLE. BIT_PACKED can misdecode or fail;
 #     the safe future behavior is implement it or explicitly reject it.
@@ -1403,9 +1425,9 @@ REPETITION_REPEATED = 2;  # Field is repeated (appears 0 or more times)
 #     writer/WriterStatistics.java:35-51,90-132,173-205;
 #     writer/WriterColumnBuffer.java:31; writer/WriterColumnBuilder.java:34.
 #     WriterLogicalStatisticsTest checks pages/footer/payload, multi-page/group
-#     behavior and independent DuckDB reads. This does NOT fix reader [L11],
-#     and files already written with incorrect bounds must be rewritten or read
-#     without trusting those bounds for pruning.
+#     behavior and independent DuckDB reads. Reader order checks at [L11] are
+#     a separate fix. Files already written with incorrect bounds must still be
+#     rewritten or read without trusting those bounds for pruning.
 #   [L7] FOOTER VALIDATION: normal constructors never call verifyMagic;
 #     reproduced acceptance of a valid file after replacing leading PAR1 with
 #     BAD!. Signed footer length bound is fileLen-8, allowing metadataStart<4;
@@ -1432,14 +1454,22 @@ REPETITION_REPEATED = 2;  # Field is repeated (appears 0 or more times)
 #     row totals/group sizes are not reconciled. Malformed LIST/MAP can fall
 #     back to STRUCT (model/SchemaDescriptor.java:184-205,242-315;
 #     ParquetMetadataReader.java:125-230). These checks remain implementer work.
-#  [L11] PRUNING ORDER: metadata adapter discards column_orders and whether bounds
-#     came from modern versus legacy fields, preferring modern then legacy.
-#     PredicateStatistics assumes signed primitive order; it cannot establish
-#     that external modern bounds have a known/supported order. Unknown/absent
-#     orders or incompatible annotations must NOT justify pruning:
-#     ParquetMetadataReader.java:174-204; util/filter/PredicateStatistics.java:17-60.
-#     Binary
-#     pruning is already refused; floating ordered predicates are conservative.
+#  [L11] FIXED - PRUNING ORDER: the adapter now records each bound's supported
+#     order/provenance in model/ColumnStatistics.java. Modern bounds require an
+#     explicit TYPE_ORDER with correct physical-leaf cardinality/alignment;
+#     absent or unknown orders do not imply signed order. Mixed-source pairs
+#     and predicate-incompatible annotations cannot justify bound pruning.
+#     Unsigned INTEGER predicates bind and compare logical Long/BigInteger
+#     values consistently with row conversion and modern statistics. Legacy
+#     signed bounds are not used for unsigned 32/64-bit pruning; compatible
+#     legacy signed files and independent null-count proofs still prune.
+#     Binary bounds and unsupported logical predicate domains remain excluded;
+#     floating NaN/signed-zero safeguards are unchanged. No global disabling of
+#     pruning is needed, but this does NOT validate a producer's incorrect bounds.
+#     ParquetMetadataReader.java:175-224; util/filter/PredicateStatistics.java:19-83;
+#     util/filter/ColumnFilterHelper.java:43-57; util/filter/TypedColumnFilter.java:145-156.
+#     ReaderPruningOrderTest verifies serialized footer handling and pruning-on/off
+#     equivalence, including unsigned high values and scalar leaves after MAP.
 #  [L12] ROW ANNOTATION MATCH: WriterSchema.sameColumn compares physical shape,
 #     not PrimitiveLogicalType, so an annotation-only row-schema mismatch can
 #     pass validation (writer/WriterSchema.java:81-101,130-135). Conversion and
