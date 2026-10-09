@@ -27,10 +27,45 @@ dogma_v1 utf-8
 #     the upstream specification/library are THREE DIFFERENT version numbers.
 #     A version=1 footer may describe V2 pages and modern logical annotations.
 #
+# Callout markers used throughout (scannable; details at the cited section):
+#   CRITICAL:   a wire rule where a small mistake silently corrupts data or
+#               breaks interoperability with other readers/writers.
+#   EDGE CASE:  legal-but-surprising input a conforming reader must handle.
+#   AMBIGUITY:  an unresolved spec/legacy ambiguity; tagged [An] and recorded
+#               in section 11 ("Upstream/legacy interpretation").
+#   [Fn]/[Ln]:  section 11 entries: [F] corrected doc errors, [L] parquet4j
+#               implementation findings/limitations.
+#
 # Reading routes:
 #   First implementation: 1-3 (framing), 4 (levels), 5 (metadata), 6-8 (bytes).
-#   Nested data: 4a/4b/4c. Byte debugging: 3e, 6c, 6d, 8.
+#   Nested data: 4a/4b/4c. Byte debugging: 3e, 3f, 5c, 6c, 6d, 8.
 #   Repository coverage: 10. Unresolved mismatches: 11. Validation checklist: 12.
+#
+# Twelve wire rules that break files if missed (digest; detail in parentheses):
+#    1. CRC covers the body bytes EXACTLY AS STORED (post-compression), never
+#       the decompressed bytes and never the page header (3a).
+#    2. DATA_PAGE_V2 bodies store REPETITION levels FIRST even though header
+#       field 5 is definition_levels_byte_length (3a, 3c).
+#    3. V2 is_compressed OMITTED MEANS TRUE; writers storing raw values must
+#       write false explicitly (3a, 7).
+#    4. Hybrid RLE run headers: LSB 0 = repeated run, LSB 1 = bit-packed run
+#       (6c). Deprecated BIT_PACKED packs MSB-first; hybrid packs LSB-first
+#       (6h) - opposite bit orders in one format.
+#    5. The dictionary index stream starts with a one-byte bit width and has
+#       NO length prefix in either page version (6b).
+#    6. Byte-array statistics bounds omit the PLAIN length prefix; DECIMAL on
+#       byte arrays is big-endian two's-complement (5a).
+#    7. There is NO default ColumnOrder: when column_orders is absent, modern
+#       min_value/max_value bounds cannot justify pruning (5a).
+#    8. footer_length counts ONLY the FileMetaData bytes; metadata must not
+#       overlap the leading "PAR1" (5).
+#    9. V1 compresses the WHOLE body as one unit; V2 compresses ONLY the
+#       values region and never the level bytes (7).
+#   10. Null slots never consume values: present = count(def == max_def) (4).
+#   11. ColumnChunk.file_offset is deprecated and inconsistent across writers;
+#       seek via data_page_offset/dictionary_page_offset only (5a [A2]).
+#   12. num_values counts level SLOTS including nulls everywhere it appears
+#       (page headers, ColumnMetaData); only the values stream holds fewer (3a).
 #
 # A Parquet file commonly looks like this:
 #
@@ -221,7 +256,7 @@ data_page_v2      = page_header_data_v2
 #
 # Exactly one of fields 5-8 is set, matching `type`.
 #
-# crc semantics (easy to get wrong):
+# CRITICAL - crc semantics (easy to get wrong):
 #   - Algorithm: standard CRC-32 (polynomial 0x04C11DB7, the same as GZIP's;
 #     e.g. java.util.zip.CRC32 in Java).
 #   - Computed over the page body bytes EXACTLY as stored on disk (i.e. after
@@ -252,10 +287,11 @@ data_page_v2      = page_header_data_v2
 #   7: optional bool is_compressed = true     "true" if the VALUES region is
 #                                             compressed (see section 7)
 #   8: optional Statistics statistics
-#   NOTE THE TRAP: field order lists definition (5) before repetition (6), but
-#   the on-disk body stores REPETITION levels FIRST, then definition levels.
-#   NOTE: is_compressed omitted = true (Thrift default). Writers storing raw
-#   values must explicitly write false.
+#   CRITICAL - NOTE THE TRAP: field order lists definition (5) before
+#     repetition (6), but the on-disk body stores REPETITION levels FIRST,
+#     then definition levels.
+#   CRITICAL: is_compressed omitted = true (Thrift default). Writers storing
+#     raw values must explicitly write false.
 #
 # DictionaryPageHeader - field ids:
 #   1: required i32 num_values                entries in the dictionary
@@ -276,9 +312,9 @@ page_header_data_v2 = thrift_compact_protocol;
 # everything below is compressed together; compressed_page_size is the stored
 # size, uncompressed_page_size the decompressed size).
 #
-# The following V1 layout assumes both level encodings are RLE. V1 also
-# permits legacy BIT_PACKED levels: those have NO four-byte length prefix and
-# occupy ceil(num_values * bit_width / 8) bytes per present level section.
+# CRITICAL - The following V1 layout assumes both level encodings are RLE. V1
+# also permits legacy BIT_PACKED levels: those have NO four-byte length prefix
+# and occupy ceil(num_values * bit_width / 8) bytes per present level section.
 # Honor the two header encoding fields independently; an unsupported encoding
 # must be rejected, not reinterpreted as RLE. V2 has no such selector.
 #
@@ -297,7 +333,8 @@ page_header_data_v2 = thrift_compact_protocol;
 # section means num_values implicit zero levels, not a missing count.
 # V1 has no num_nulls/num_rows: derive present count from definition levels;
 # derive row starts from rep=0 and carry row assembly across page boundaries.
-# A V1 page can start with rep>0 when it continues a row from the previous page.
+# EDGE CASE: a V1 page can start with rep>0 when it continues a row from the
+# previous page; do not treat page starts as row starts.
 
 compressed_data_page_v1 = u8(~)*;
 
@@ -350,7 +387,8 @@ encoded_values_v1  = u8(~)*;
 # num_values. num_nulls counts ALL slots with def<max_def, including null/empty
 # enclosing containers; it is NOT necessarily a count of null top-level rows.
 # Subtract the level lengths from BOTH sizes before decompressing the values.
-# Empty/all-null pages may have no physical values; do not manufacture one.
+# EDGE CASE: empty/all-null pages may have no physical values; do not
+# manufacture one.
 
 page_v2_data       = repetition_levels_v2
                   & definition_levels_v2
@@ -407,6 +445,66 @@ compressed_dict_data = u8(~)*;
 # Readers must return [10,null,20] in both cases, not [10,20,null].
 #
 # ------------------------------------------------------------------------------
+# 3f. Byte-exact example: dictionary-encoded chunk ["foo","bar","foo",null]
+# ------------------------------------------------------------------------------
+# Schema: optional binary s (STRING), max_def=1, max_rep=0, UNCOMPRESSED.
+# Dictionary ["foo","bar"] in first-seen order; row 3 reuses index 0; row 4 is
+# null and consumes NO index. The page headers below were serialized with the
+# pinned parquet-format-structures Compact serializer and the file was decoded
+# back row-by-row with an independent reader of this repository.
+#
+# Whole file (141 bytes):
+#   offset 0     "PAR1"
+#   offset 4     dictionary page (27 bytes = 13-byte header + 14-byte body)
+#   offset 31    data page        (33 bytes = 22-byte header + 11-byte body)
+#   offset 64    FileMetaData     (69 bytes)
+#   offset 133   footer length u32 LE = 69 (45 00 00 00)
+#   offset 137   "PAR1"
+# ColumnMetaData: dictionary_page_offset=4, data_page_offset=31,
+# encodings=[PLAIN, RLE, RLE_DICTIONARY], num_values=4,
+# total_compressed_size = total_uncompressed_size = 60 (headers AND the
+# dictionary page included, per section 2).
+#
+# Dictionary page body (PLAIN entries back to back, 14 bytes):
+#   03 00 00 00 66 6F 6F     "foo"   (u32 LE length, then bytes)
+#   03 00 00 00 62 61 72     "bar"
+# Dictionary page header (13 bytes):
+#   15 04   field 1 type = 2 (DICTIONARY_PAGE)
+#   15 1C   field 2 uncompressed_page_size = 14
+#   15 1C   field 3 compressed_page_size   = 14
+#   4C      field 7 (delta 4) dictionary_page_header STRUCT
+#   15 04     field 1 num_values = 2
+#   15 00     field 2 encoding   = 0 (PLAIN - not deprecated PLAIN_DICTIONARY)
+#   00        STOP (DictionaryPageHeader)
+#   00      STOP (PageHeader)
+#
+# Data page body (11 bytes):
+#   06 01 02 00           definition levels [1,1,1,0]: two hybrid repeated runs
+#                         (3x value 1, then 1x value 0) at width 1
+#   01                    index stream bit width = 1 (one raw byte, not a varint)
+#   02 00 02 01 02 00     indices [0,1,0] as three single-value repeated runs;
+#                         NO length prefix follows the width byte (section 6b)
+# Data page header (22 bytes):
+#   15 06   field 1 type = 3 (DATA_PAGE_V2)
+#   15 16   field 2 uncompressed_page_size = 11
+#   15 16   field 3 compressed_page_size   = 11
+#   5C      field 8 (delta 5) data_page_header_v2 STRUCT
+#   15 08     field 1 num_values = 4
+#   15 02     field 2 num_nulls  = 1
+#   15 08     field 3 num_rows   = 4
+#   15 10     field 4 encoding   = 8 (RLE_DICTIONARY)
+#   15 08     field 5 definition_levels_byte_length = 4
+#   15 00     field 6 repetition_levels_byte_length = 0
+#   12        field 7 is_compressed = false (the bool lives in the header byte)
+#   00        STOP (DataPageHeaderV2)
+#   00      STOP (PageHeader)
+#
+# Rows decode to ["foo","bar","foo",null]. The width byte is page-level
+# metadata sitting IN FRONT of the hybrid stream - it is not a run header.
+# bit_width is ceil(log2(dictionary_size)), so a 2-entry dictionary needs only
+# 1 bit per index; a one-entry dictionary uses bit_width 0 (6b).
+#
+# ------------------------------------------------------------------------------
 # 4. Repetition and definition levels (Dremel)
 # ------------------------------------------------------------------------------
 # Leaf columns of nested schemas carry two integer streams per data page that
@@ -457,6 +555,13 @@ compressed_dict_data = u8(~)*;
 #   [null]           [2]            [0]            []
 #   ["a",null,"b"]   [3,2,3]        [0,1,1]        ["a","b"]
 # Together: num_rows=4, num_values=6, present=2, num_nulls=4.
+#
+# Byte-level view of the row ["a",null,"b"] (V2 body, PLAIN, UNCOMPRESSED):
+#   def [3,2,3] width 2 ->  02 03 02 02 02 03   three one-value repeated runs
+#   rep [0,1,1] width 1 ->  02 00 04 01         run 1x value 0, run 2x value 1
+#   values              ->  03 00 00 00 61 03 00 00 00 62   ("a" then "b")
+# The null element (def=2) consumes a level slot but NO value bytes - the
+# values region holds exactly the two present values.
 # Required list removes its def increment; required element removes its own.
 # Do not decode def=1 as [null]: it means there are NO entries in the list.
 # Nested lists add repeated depths: for list<list<T>>, rep=1 starts the next
@@ -517,10 +622,11 @@ compressed_dict_data = u8(~)*;
 #   footer_length   = u32 LE at [file_length - 8 .. file_length - 4]
 #   magic           = "PAR1"      at [file_length - 4 .. file_length]
 #   metadata_start  = file_length - 8 - footer_length
-# Validate with wide, overflow-checked arithmetic: file_length >= 12, both
-# magics match, footer_length > 0, metadata_start >= 4, metadata ends exactly
-# at file_length-8. Equivalently footer_length <= file_length-12; this preserves
-# the initial four-byte header. Set an allocation limit BEFORE reading metadata.
+# CRITICAL - Validate with wide, overflow-checked arithmetic: file_length >= 12,
+# both magics match, footer_length > 0, metadata_start >= 4, metadata ends
+# exactly at file_length-8. Equivalently footer_length <= file_length-12; this
+# preserves the initial four-byte header. Set an allocation limit BEFORE reading
+# metadata.
 # The u32 framing permits lengths above signed-i32 range; a reader unable to
 # allocate those must explicitly reject them rather than wrap to negative.
 
@@ -635,10 +741,10 @@ footer_length     = u32(~);
 # ColumnChunk (field ids):
 #   1: optional string file_path    relative path; current upstream restricts
 #                                   usage to "_metadata" summary files
-#   2: required i64 file_offset     DEPRECATED - historically pointed at the
-#         ColumnMetaData or at the first page, inconsistently across writers;
-#         current spec says write 0 unless ColumnMetaData is replicated outside
-#         the footer. NEVER use it to find data; use data_page_offset /
+#   2: required i64 file_offset     DEPRECATED - CRITICAL: historically pointed
+#         at the ColumnMetaData or at the first page, inconsistently across
+#         writers; current spec says write 0 unless ColumnMetaData is replicated
+#         outside the footer. NEVER use it to find data; use data_page_offset /
 #         dictionary_page_offset instead.
 #   3: optional ColumnMetaData meta_data   populate for ordinary plaintext chunks;
 #                                         encrypted metadata uses field 9
@@ -687,9 +793,16 @@ footer_length     = u32(~);
 #   the four-byte length prefix (raw bytes only). BOOLEAN is one packed byte;
 #   numeric bounds use their fixed physical width. Logical annotations still
 #   control interpretation (e.g. DECIMAL bytes stay big-endian).
+#   Bound-encoding examples (logical value -> stored bound bytes):
+#     INT32 10 .. 20           -> 0A 00 00 00 .. 14 00 00 00 (fixed LE)
+#     STRING "B" .. "C"        -> 42 .. 43 (single bytes, NO u32 length prefix)
+#     DECIMAL(2,0) FIXED[1]    -> logical -1 .. 1 stored as FF .. 01 (big-endian
+#                                 unscaled; the bytes, not the values, go in the
+#                                 bounds - readers interpret via the annotation)
 #   min_value/max_value follow FileMetaData.column_orders, with exactly one
-#   order per leaf. There is NO TYPE_ORDER default when column_orders is absent:
-#   the modern bounds' order is undefined and cannot justify pruning rows.
+#   order per leaf. CRITICAL: there is NO TYPE_ORDER default when column_orders
+#   is absent: the modern bounds' order is undefined and cannot justify pruning
+#   rows.
 #   TYPE_ORDER means logical-type order when annotated, otherwise physical-type
 #   order: unsigned lexicographic bytes for raw binary/STRING/UUID; signed ints;
 #   unsigned ints for INTEGER(isSigned=false); numeric DECIMAL; false<true.
@@ -698,7 +811,8 @@ footer_length     = u32(~);
 #   present value under that order. Truncation must widen bounds, never exclude
 #   actual data. Exactness flags indicate observed extrema; absent != exact.
 #   All-null/empty chunks have no min/max; all-NaN TYPE_ORDER pages have none
-#   either. An empty binary bound is a valid value, not an absent field.
+#   either. EDGE CASE: an empty binary bound is a valid value, not an absent
+#   field.
 #   Floating TYPE_ORDER compatibility: ignore NaN bounds; min=+0 may include -0,
 #   max=-0 may include +0; min/max cannot answer a search for NaN. Current upstream
 #   requires nan_count even when zero for floating TYPE_ORDER or total-order
@@ -788,7 +902,64 @@ footer_length     = u32(~);
 #     require keys, authenticated decryption, module framing, and AAD rules.
 #     Unsupported encryption must be handled explicitly, never interpreted as
 #     ordinary compressed bytes. CRC is not an authentication mechanism.
-# parquet4j does not implement these side structures or encryption (section 11).
+# parquet4j implements bloom filters (read and write; sections 10a/10b/10d)
+# but NOT page indexes or encryption (section 11).
+#
+# ------------------------------------------------------------------------------
+# 5c. Byte-exact example: footer of the 3e file
+# ------------------------------------------------------------------------------
+# The 3e page (36 bytes) embedded in a complete minimal file - 110 bytes total:
+#   offset 0     "PAR1"
+#   offset 4     the 3e page (36 bytes: 22-byte header + 14-byte body)
+#   offset 40    FileMetaData (62 bytes)  <- metadata_start = 110 - 8 - 62
+#   offset 102   footer length u32 LE = 62 (3E 00 00 00)
+#   offset 106   "PAR1"
+# The 3e file decodes to [10, null, 20] through a full reader stack; the
+# metadata bytes below were serialized with the pinned Compact serializer and
+# re-parsed field by field (they are generated, not hand-assembled).
+#
+# FileMetaData hex (62 bytes):
+#   15 02 19 2C 48 06 73 63 68 65 6D 61 15 02 00 15 02 25 02 18 02 69 64 00
+#   16 06 19 1C 19 1C 26 00 1C 15 02 19 25 06 00 19 18 02 69 64 15 00 16 06
+#   16 48 16 48 26 08 00 00 16 48 16 06 00 00
+#
+# Walk (offsets into the metadata; nested struct IDs reset per struct):
+#    0  15 02                field 1 version = 1
+#    2  19 2C                field 2 schema: LIST, 2 STRUCT elements
+#    4  48 06 73 63 68 65 6D 61   [0] field 4 (delta 4) name = "schema"
+#   12  15 02                [0] field 5 num_children = 1
+#   14  00                   [0] STOP  (root has name + num_children ONLY)
+#   15  15 02                [1] field 1 type = 1 (INT32)
+#   17  25 02                [1] field 3 (delta 2) repetition_type = 1 (OPTIONAL)
+#   19  18 02 69 64          [1] field 4 name = "id"
+#   23  00                   [1] STOP  (leaf: no num_children)
+#   24  16 06                field 3 num_rows = 3 (i64 zigzag: 06 -> 3)
+#   26  19 1C                field 4 row_groups: LIST, 1 STRUCT
+#   28  19 1C                  [0] field 1 columns: LIST, 1 STRUCT
+#   30  26 00                  [0][0] field 2 (delta 2) file_offset = 0 (see [A2])
+#   32  1C                     [0][0] field 3 meta_data STRUCT
+#   33  15 02                    field 1 type = 1 (INT32)
+#   35  19 25                    field 2 encodings: LIST, 2 I32
+#   37  06 00                    [0]=3 (RLE)  [1]=0 (PLAIN)
+#   39  19 18                    field 3 path_in_schema: LIST, 1 BINARY
+#   41  02 69 64                 [0] = "id"   (root name excluded, see 5a)
+#   44  15 00                    field 4 codec = 0 (UNCOMPRESSED)
+#   46  16 06                    field 5 num_values = 3
+#   48  16 48                    field 6 total_uncompressed_size = 36
+#   50  16 48                    field 7 total_compressed_size = 36
+#   52  26 08                    field 9 (delta 2) data_page_offset = 4
+#   54  00                       STOP (meta_data)
+#   55  00                     [0][0] STOP (ColumnChunk)
+#   56  16 48                  [0] field 2 total_byte_size = 36
+#   58  16 06                  [0] field 3 num_rows = 3
+#   60  00                     [0] STOP (RowGroup)
+#   61  00                STOP (FileMetaData)
+#
+# Notice: optional fields (statistics, column_orders, created_by,
+# key_value_metadata) are simply ABSENT - no placeholders. This minimal example
+# has no column_orders, so modern min/max bounds in a file like this could not
+# justify pruning (rule 7 in the digest). A reader locates all of this from the
+# last 8 bytes alone; nothing in the page region points at the footer.
 #
 # ------------------------------------------------------------------------------
 # 6. Encodings
@@ -841,13 +1012,15 @@ dictionary_encoding: bits =
     data pages can use PLAIN or another supported non-dictionary encoding.
     Dictionary-encoded data pages store INDICES into that dictionary:
 
-      index stream = u8 bit_width          (single byte, 0..32 - NOT a varint)
+      CRITICAL: index stream = u8 bit_width   (single byte, 0..32 - NOT a varint)
                  &   rle-bit-packed-hybrid (indices at that bit width)
 
     The index stream has NO 4-byte length prefix in either page version; it
     simply runs to the end of the values region. bit_width 0 is legal (a
-    one-entry dictionary: all indices are 0). If the dictionary gets too large,
-    writers fall back to PLAIN for the remaining data pages of the chunk
+    one-entry dictionary: all indices are 0) - EDGE CASE: zero-width streams
+    encode indices as hybrid runs with ZERO payload bytes (6c).
+    If the dictionary gets too large, writers fall back to PLAIN for the
+    remaining data pages of the chunk
     (ColumnMetaData.encodings then lists both). Decode only present-value
     indices, not null slots; every actual index must be < dictionary entry count.
     """;
@@ -874,8 +1047,9 @@ rle_bitpacked_hybrid: bits =
                       groups = run length / 8 (values are packed 8 at a time)
                       payload = groups * bit_width bytes
 
-    NOTE (frequently got wrong): LSB 0 = repeated/RLE run, LSB 1 = bit-packed
-    run. (An older revision of this document had the polarity inverted.)
+    CRITICAL - NOTE (frequently got wrong): LSB 0 = repeated/RLE run, LSB 1 =
+    bit-packed run. (An older revision of this document had the polarity
+    inverted.)
 
     Bit-packing is an LSB-first bit stream. Bit b of value i occupies overall
     bit position i*w+b: byte floor((i*w+b)/8), bit ((i*w+b) mod 8), for 0<=b<w.
@@ -1028,9 +1202,9 @@ byte_stream_split_encoding: bits =
 bit_packed_encoding: bits =
     """
     Deprecated bit-packed encoding (BIT_PACKED = 4): fixed-width values packed
-    back to back WITHOUT run headers, padded to whole bytes. WARNING: it packs
-    from the MOST significant bit of each byte downward - the opposite order of
-    the hybrid encoding's bit-packed runs. Only ever used for (old) level
+    back to back WITHOUT run headers, padded to whole bytes. CRITICAL - WARNING:
+    it packs from the MOST significant bit of each byte downward - the opposite
+    order of the hybrid encoding's bit-packed runs. Only ever used for (old) level
     streams; superseded by RLE = 3. V1 BIT_PACKED level sections have neither
     run headers NOR a byte-length prefix; use ceil(num_values*width/8) bytes.
     For width=3 and values 0..7 the payload is 05 39 77, not hybrid 88 C6 FA.
@@ -1206,30 +1380,59 @@ REPETITION_REPEATED = 2;  # Field is repeated (appears 0 or more times)
 # 10a. Writer: ParquetFileWriter + writer/*
 #   - Writable schemas: required/optional top-level primitives and canonical
 #     top-level MAP with required primitive key and required/optional primitive
-#     value. MAP container may be required/optional. LIST, STRUCT, nested MAP
+#     values. MAP container may be required/optional. LIST, STRUCT, nested MAP
 #     values, arbitrary nested paths, repeated primitives, and INT96 are rejected
-#     by writer/WriterSchema.java:25-78,104-122. Format support is broader.
+#     by writer/WriterSchema.java:34-122. Format support is broader.
 #   - WriterFileSchema emits descriptor annotations plus their legacy fields;
 #     MAP emits modern and converted MAP. Raw BYTE_ARRAY is not automatically
 #     STRING. Callers supply PHYSICAL values: logical dates/decimals/UUIDs need
 #     explicit PrimitiveLogicalType.toPhysicalValue conversion before writing
 #     (writer/WriterValues.java; model/PrimitiveLogicalType.java:446-529).
-#   - V2-only, PLAIN values, no dictionary. WriterLevelBuffer emits unprefixed
-#     repeated hybrid runs, omitting zero-max-level streams. One row is never
-#     split across pages; leaf columns can split at different row boundaries.
-#     Null/empty MAP placeholders are null leaf slots, including for keys.
+#   - V2 pages only. Values are PLAIN, plus opt-in dictionary encoding
+#     (writer/DictionaryOptions.java; default disabled). When enabled per chunk
+#     (never for BOOLEAN) a DICTIONARY_PAGE of PLAIN entries is written first
+#     and data pages use RLE_DICTIONARY: one raw bit-width byte plus unprefixed
+#     hybrid indexes (3f, 6b). A per-chunk entry budget (default 1 MiB) makes
+#     fallback to PLAIN permanent for the rest of the chunk; a page straddling
+#     fallback re-expands its indexed prefix from the dictionary before the raw
+#     suffix values (writer/WriterDictionary.java; writer/WriterColumnBuffer.java:
+#     217-251). All-null pages stay PLAIN with no dictionary page.
+#     WriterLevelBuffer emits unprefixed repeated hybrid runs, omitting
+#     zero-max-level streams. One row is never split across pages; leaf columns
+#     can split at different row boundaries. Null/empty MAP placeholders are
+#     null leaf slots, including for keys.
 #   - Page/group soft targets default to 1 MiB/128 MiB, measured as uncompressed
 #     encoded payload, excluding headers/footer/statistics; NOT compressed size
 #     or row count. One complete row may exceed a soft target; hard body/event
 #     limits still apply. Encoded pages buffer in memory until group flush
-#     (ParquetFileWriter.java:88-89,277-285; writer/WriterColumnBuilder.java).
-#   - ColumnMetaData.encodings is the fixed [RLE, PLAIN] pair, overinclusive
-#     when a required flat column has no level stream. Dictionary offset absent.
+#     (ParquetFileWriter.java:49-50,275-285; writer/WriterColumnBuilder.java).
+#   - ColumnMetaData.encodings is [RLE, PLAIN], plus RLE_DICTIONARY when any
+#     page of the chunk is dictionary-encoded (ParquetFileWriter.java:320-326);
+#     RLE is advertised even when a required flat column has no level stream.
+#     dictionary_page_offset is set only when a dictionary page exists and is
+#     always < data_page_offset.
+#   - Bloom filters (optional): WriteOptions.bloomFilter(path, ndv, fpp)
+#     enables one filter per physical column PER ROW GROUP. At group flush a
+#     SplitBlockBloomFilter is built from present values only: XXH64 seed 0
+#     over PLAIN bytes with BYTE_ARRAY's 4-byte length prefix stripped and
+#     BOOLEAN as one 0x01/0x00 byte. The filter is written AFTER the chunk's
+#     pages as BloomFilterHeader (numBytes, BLOCK, XXHASH, UNCOMPRESSED) plus
+#     the little-endian bitset, referenced only by ColumnMetaData.
+#     bloom_filter_offset (bloom_filter_length is NOT written: absent from the
+#     pinned definitions). Bloom bytes are excluded from chunk size totals
+#     (bloom/BloomFilterAccumulator.java; ParquetFileWriter.java:308,337-374).
+#     Two safe-but-surprising quirks: the accumulator is never reset between
+#     row groups (each filter is a superset of earlier groups' values) and
+#     FIXED_LEN_BYTE_ARRAY values are sliced as "all remaining bytes" when
+#     hashing (multiple FLBA values in one row merge) - see [L13].
 #   - Compression retention tests VALUES bytes only: candidate_size/raw_size
 #     must be STRICTLY LESS than minCompressionRatio (default 0.90). Exactly
 #     10% savings is rejected. Threshold 0 disables compression. Flag is always
 #     explicit; chunk codec is configured codec if any page retained compression,
-#     otherwise UNCOMPRESSED (ParquetFileWriter.java:374-414).
+#     otherwise UNCOMPRESSED (ParquetFileWriter.java:328-329,401-408).
+#     EDGE CASE: dictionary pages bypass the ratio test and are always
+#     compressed when compression is active; minCompressionRatio=0 builds no
+#     compressor at all, so even an LZO/BROTLI configuration can write then.
 #   - Both codec factories implement UNCOMPRESSED, SNAPPY, GZIP, ZSTD, legacy
 #     Hadoop-framed LZ4, LZ4_RAW. LZO/BROTLI are enum values, NOT implementations.
 #     GZIP reader accepts concatenated members; LZ4_RAW is not LZ4 framing.
@@ -1243,18 +1446,20 @@ REPETITION_REPEATED = 2;  # Field is repeated (appears 0 or more times)
 #     Deprecated min/max are omitted for unsigned INTEGER and all binary types.
 #     Unknown annotation order omits bounds but retains counts. Row/page/chunk
 #     merges require equal physical type/width and logical annotations before
-#     changing statistics; see the fixed [L6] finding.
-#   - Footer: version=1; root + DFS schema nodes; TYPE_ORDER per leaf;
-#     created_by="java-parquet-rs ParquetFileWriter" (actual legacy string, not
-#     this project's name/version); no user key_value_metadata. RowGroup sizes
-#     include headers; ColumnChunk.file_offset uses legacy first-page address
-#     rather than current upstream's recommendation of 0 (see [A2]).
+#     changing statistics; see the fixed [L6] finding. No nan_count or
+#     exactness fields are written (absent from pinned definitions, [L5]).
+#   - Footer: version=1; root + DFS schema nodes; TYPE_ORDER per PHYSICAL leaf
+#     (a MAP contributes two); created_by="java-parquet-rs ParquetFileWriter"
+#     (actual legacy string, not this project's name/version); no user
+#     key_value_metadata. RowGroup sizes include headers; ColumnChunk.file_offset
+#     is the chunk start (dictionary offset when present), not current upstream's
+#     recommendation of 0 (see [A2]; ParquetFileWriter.java:283,342).
 #   - First accepted row/start creates a sibling .parquet4j-*.tmp. Successful
 #     close flushes chunks, writes footer/trailer, closes the sink, then uses
 #     ATOMIC_MOVE + REPLACE_EXISTING with no non-atomic fallback. Empty close
 #     emits a zero-row file. Failure aborts the whole writer and attempts temp
 #     cleanup. Atomic publication is NOT an fsync/durability guarantee
-#     (ParquetFileWriter.java:188-237,422-487; WriterTransactionalTest).
+#     (ParquetFileWriter.java:163-178,187-209,470-517; WriterTransactionalTest).
 #
 # 10b. Physical reader: PageReader + model/ColumnPageDecoder
 #   - Reads V1/V2 and dictionary pages. PLAIN covers all physical types,
@@ -1264,8 +1469,9 @@ REPETITION_REPEATED = 2;  # Field is repeated (appears 0 or more times)
 #   - Values: DELTA_BINARY_PACKED for INT32/INT64; DELTA_LENGTH_BYTE_ARRAY for
 #     BYTE_ARRAY; DELTA_BYTE_ARRAY for BYTE_ARRAY/FIXED_LEN_BYTE_ARRAY;
 #     BYTE_STREAM_SPLIT for INT32/INT64/FLOAT/DOUBLE/FIXED_LEN_BYTE_ARRAY;
-#     RLE values for BOOLEAN. Invalid combinations fail rather than yield nulls
-#     (model/ColumnPageDecoder.java:28-138,146-174).
+#     RLE values for BOOLEAN (4-byte length prefix, width-1 hybrid). Invalid
+#     combinations fail rather than yield nulls
+#     (model/ColumnPageDecoder.java:28-152).
 #   - Levels: hybrid-RLE only. Enforces level maxima, exact decoded slot counts,
 #     full run payloads, permitted final padding, no trailing bytes. Explicit
 #     width-zero V2 streams accepted. V1 legacy selectors ignored: [L1].
@@ -1274,15 +1480,23 @@ REPETITION_REPEATED = 2;  # Field is repeated (appears 0 or more times)
 #     page header/body is bounded by that declared end; this is NOT a full
 #     footer/chunk/accounting validation (PageReader.java:64-95,149-169; [L4]).
 #   - Direct PageReader limits default to header 1 MiB, stored body 64 MiB,
-#     decoded body 128 MiB, 16 Mi values/page. PageReadOptions.STRICT verifies
-#     a PRESENT CRC; missing CRC remains allowed. Normal scans use defaults;
-#     ReadOptions integrity limits are not wired through: see [L8].
+#     decoded body 128 MiB, 16 Mi values/page (PageReadOptions.java:25-33).
+#     PageReadOptions.STRICT verifies a PRESENT CRC via java.util.zip.CRC32 over
+#     the STORED body bytes (V2 includes the raw level bytes); missing CRC
+#     remains allowed. Normal scans use defaults; the ReadOptions
+#     verifyChecksums/pageLimits/logicalTypes builders exist but have zero call
+#     sites on the row path: see [L8].
 #   - V2: checks level lengths against stored/decoded sizes, false compression
 #     flag requires equal sizes, definition-derived null count, 0<=rows<=slots,
-#     and rows==slots for flat columns. Repeated row-start counts/boundaries
-#     are NOT checked (model/ColumnPageDecoder.java:76-88; [L4]).
+#     and rows==slots for flat columns (PageReader.java:300-319;
+#     model/ColumnPageDecoder.java:82-89). Repeated row-start counts/boundaries
+#     are NOT checked ([L4]).
 #   - INDEX_PAGE/unhandled page types rejected, not skipped. Matching subheader
-#     must exist, but extra subheaders are not rejected (PageReader.java:288-321).
+#     must exist, but extra subheaders are not rejected (PageReader.java:288-322).
+#   - Positional I/O lives behind ChunkReader/FileChunkReader (bounded
+#     exact-fill reads, EOF clamped at open); page headers stream through
+#     PageHeaderInputStream with exact byte accounting (ChunkReader.java;
+#     FileChunkReader.java; PageHeaderInputStream.java).
 #
 # 10c. Metadata and logical row APIs (not full format conformance)
 #   - Normal ParquetFileReader validates trailing PAR1 and a positive signed
@@ -1295,8 +1509,9 @@ REPETITION_REPEATED = 2;  # Field is repeated (appears 0 or more times)
 #     STRUCT/LIST to dotted leaf names; repeated leaf rows expose a flattened
 #     List, and absent AND empty containers surface as null. MAPs outside
 #     repeated ancestors collapse to one Map-valued column; their nested values
-#     can be recursively materialized (model/SchemaDescriptor.java:208-239;
-#     ParquetRowIterator.java:513-675). This is not a lossless nested LIST API.
+#     can be recursively materialized (model/SchemaDescriptor.java:206-239;
+#     model/NestedAssembler.java; ParquetRowIterator.java:513-675). This is not
+#     a lossless nested LIST API.
 #   - NestedStructureReader helpers differ: readMap flattens nested entries and
 #     rejects duplicates that flattening would lose; readStruct is a positional
 #     leaf zip, not arbitrary nested reconstruction, and treats BYTE_ARRAY as
@@ -1320,6 +1535,16 @@ REPETITION_REPEATED = 2;  # Field is repeated (appears 0 or more times)
 #     signed-zero safeguards remain conservative. The four-argument statistics
 #     constructor remains for caller-supplied signed-order bounds; file metadata
 #     uses explicit per-bound provenance. See the fixed [L11] finding.
+#   - Bloom pruning sits beside statistics pruning: when bounds cannot drop a
+#     chunk, an EQUALITY TypedColumnFilter with a non-null constant may still
+#     drop it through the row group's SplitBlockBloomFilter
+#     (util/filter/RowColumnGroupFilterSet.java:156-198;
+#     util/filter/BloomFilterPredicate.java:34-78). Equality only - IN, neq,
+#     range, contains/prefix/suffix filters and custom ColumnFilter impls never
+#     consult blooms; repeated/MAP leaves are skipped; any bloom read failure
+#     keeps the chunk. Unsigned INTEGER constants (Long/BigInteger) never match
+#     the predicate's boxed conversion, so bloom pruning silently declines for
+#     unsigned columns (statistics pruning still applies). See [L13].
 #
 # Regression evidence to consult (not a blanket conformance certification):
 #   WriterIndependentTest: DuckDB reads writer primitive/MAP output; pages,
@@ -1331,13 +1556,24 @@ REPETITION_REPEATED = 2;  # Field is repeated (appears 0 or more times)
 #   WriterLogicalStatisticsTest: unsigned/DECIMAL serialized page/footer bounds,
 #     physical payload bytes, page/group boundaries, legacy bound omission,
 #     annotation-compatible merges, and independent DuckDB filtered reads.
+#   WriterDictionaryEncodingTest: dictionary page shape, index streams (width 0
+#     and the spec bit-packed example), encodings list, budget fallback,
+#     per-group reset, BOOLEAN exclusion, DuckDB interop.
+#   WriterCompressionTest / WriterStatisticsTest: retention flags versus chunk
+#     codec, values-only ratio, NaN exclusion and -0/+0 normalization,
+#     distinct-count omission past limits.
+#   BloomFilterTest / BloomFilterWriteTest: XXH64 known vectors, the canonical
+#     parquet-testing bitset, bloom offsets across files, write round-trip,
+#     read pruning and mixed enabled/disabled columns.
 #   ReaderPruningOrderTest / StatisticsPruningTest: pruning-on/off equivalence,
 #     unknown/absent/misaligned orders, modern/legacy provenance, unsigned
 #     boundary values, physical leaf ordering after MAP, and count-based proofs.
 #   LogicalAnnotationReadPathTest / MapAssemblyContractTest:
 #     API-level logical conversion/nesting contracts, including their limits.
-#   The section 3e/6c/6d byte examples were exercised against the decoder and
-#     generated Compact structs, not inferred from a local writer round trip.
+#   The section 3e/3f/4a/5c/6c/6d byte examples were exercised against the
+#     decoders and the pinned parquet-format-structures Compact serializer
+#     (3e/3f were additionally read back through ParquetFileReader), not
+#     inferred from a local writer round trip.
 #
 # ==============================================================================
 # 11. Inconsistencies and ambiguities
@@ -1368,6 +1604,10 @@ REPETITION_REPEATED = 2;  # Field is repeated (appears 0 or more times)
 #     are distinguished from later upstream fields/types/orders.
 #  [F12] Writer bounds are not always present; compression ratio comparison is
 #     strict and values-only; UNCOMPRESSED for all-raw V2 chunks is policy.
+#  [F13] Section 10/11 reconciled with the current tree: dictionary encoding
+#     and bloom filters (read and write) ARE implemented; prior non-support
+#     claims are superseded. Line citations refreshed after the ChunkReader /
+#     LevelStreams / writer refactors. New bloom gaps recorded as [L13].
 #
 # Upstream/legacy interpretation (not every pitfall is a spec ambiguity):
 #   [A1] File version 2 has no agreed separate meaning in current upstream;
@@ -1394,21 +1634,26 @@ REPETITION_REPEATED = 2;  # Field is repeated (appears 0 or more times)
 #   [L1] LEGACY LEVELS: PageReader.java:233-252 discards V1 level encoding fields
 #     and assumes length-prefixed hybrid RLE. BIT_PACKED can misdecode or fail;
 #     the safe future behavior is implement it or explicitly reject it.
-#   [L2] WRITER SUBSET: only schemas in 10a, V2/PLAIN, no dictionary/V1/INT96,
-#     page indexes, blooms, SizeStatistics, encryption. Fixed [RLE,PLAIN] can
-#     advertise unused RLE. Do not infer these capabilities from enum tables.
+#   [L2] WRITER SUBSET: only schemas in 10a, V2 pages, PLAIN plus opt-in
+#     dictionary values, no V1/INT96, page indexes, SizeStatistics, or
+#     encryption. [RLE,PLAIN] (+ RLE_DICTIONARY when used) can advertise
+#     unused RLE. Do not infer these capabilities from enum tables.
 #   [L3] NEW/OPTIONAL FEATURES: neither the internal enum nor pinned generated
-#     enum accepts ALP=10 (model/Encoding.java:65-76). New logical alternatives,
-#     bounds orders, and metadata fields are not interpreted. Side indexes,
-#     blooms, file_path/encryption metadata are ignored by the adapter; encrypted
-#     metadata/pages have no usable decode path. LZO/BROTLI factories reject.
+#     enum accepts ALP=10 (model/Encoding.java:65-77); an ALP page fails at
+#     header decode. New logical alternatives, bounds orders, and metadata
+#     fields are not interpreted. Side indexes, file_path/encryption metadata
+#     are ignored by the adapter; encrypted metadata/pages have no usable decode
+#     path. LZO/BROTLI factories reject (minCompressionRatio=0 skips the
+#     factory). bloom_filter_length (field 15) is absent from the pinned
+#     definitions on both sides; readers locate the bitset by parsing the
+#     BloomFilterHeader for numBytes instead.
 #   [L4] ACCOUNTING: PageReader enforces source/chunk boundaries, but does not
 #     reconcile summed page slots/uncompressed sizes, first DATA address,
 #     footer/other-chunk overlap, or rep=0 counts with repeated V2 num_rows.
 #     Wrong total_compressed_size ending on a page boundary can hide pages;
 #     wrong group num_rows can leave unread events. Partial validation is not
 #     proof of full-file integrity (PageReader.java:64-95,142-169;
-#     model/ColumnPageDecoder.java:82-88; ParquetRowIterator.java:305-327).
+#     model/ColumnPageDecoder.java:82-89; ParquetRowIterator.java:230-255).
 #   [L5] NEW FLOAT STATS: pinned Statistics has no nan_count or exactness flags;
 #     pinned ColumnOrder has only TYPE_ORDER. Writer excludes NaNs/normalizes
 #     zeros but cannot satisfy newer mandatory floating nan_count rules without
@@ -1422,8 +1667,8 @@ REPETITION_REPEATED = 2;  # Field is repeated (appears 0 or more times)
 #     footer TYPE_ORDER remains unchanged. Deprecated unsigned signed-order
 #     bounds are omitted. Unknown order suppresses bounds, not counts; merges
 #     reject unequal physical type/width or logical annotations before mutation.
-#     writer/WriterStatistics.java:35-51,90-132,173-205;
-#     writer/WriterColumnBuffer.java:31; writer/WriterColumnBuilder.java:34.
+#     writer/WriterStatistics.java:50-51,75-77,119-134,141-205;
+#     writer/WriterColumnBuffer.java:31; writer/WriterColumnBuilder.java:55.
 #     WriterLogicalStatisticsTest checks pages/footer/payload, multi-page/group
 #     behavior and independent DuckDB reads. Reader order checks at [L11] are
 #     a separate fix. Files already written with incorrect bounds must still be
@@ -1433,14 +1678,16 @@ REPETITION_REPEATED = 2;  # Field is repeated (appears 0 or more times)
 #     BAD!. Signed footer length bound is fileLen-8, allowing metadataStart<4;
 #     no explicit configurable footer resource policy or full-byte-consumption
 #     check. version is copied without an allowlist:
-#     ParquetMetadataReader.java:51-106,145-150; ParquetFileReader.java:63-96.
+#     ParquetMetadataReader.java:54-105,146-151; ParquetFileReader.java:65-93.
 #     Recommended checks are in sections 5/12.
 #   [L8] POLICY PLUMBING: direct PageReader accepts STRICT/custom limits, but
-#     RowGroupReader constructs a default PageReader. ReadOptions checksum/page
-#     limits and logicalTypes flag are not forwarded/consulted on the normal
-#     row path. Do not promise opt-in scan CRC from that API:
-#     ParquetFileReader.java:264-277; ParquetRowIterator.java:513-528;
-#     ReadOptions.java:80-108.
+#     RowGroupReader constructs a default PageReader
+#     (ParquetFileReader.java:261-275). ReadOptions now exposes
+#     verifyChecksums/pageLimits/logicalTypes builders, yet none are forwarded
+#     or consulted on the normal row path - the row iterator reads only
+#     pruning/limit/batch settings (ParquetRowIterator.java:230-255). The
+#     logicalTypes flag is dead configuration. Do not promise opt-in scan CRC
+#     from that API (ReadOptions.java:80-108,180-194).
 #   [L9] NESTED SEMANTICS: flattened LIST/STRUCT leaves lose container identity;
 #     empty/absent repeated leaf containers both become null. Legacy singleton
 #     repeated-group LIST rules for names array/<name>_tuple or repeated child
@@ -1453,7 +1700,7 @@ REPETITION_REPEATED = 2;  # Field is repeated (appears 0 or more times)
 #     paths/types/counts are not cross-checked against schema leaves, and file
 #     row totals/group sizes are not reconciled. Malformed LIST/MAP can fall
 #     back to STRUCT (model/SchemaDescriptor.java:184-205,242-315;
-#     ParquetMetadataReader.java:125-230). These checks remain implementer work.
+#     ParquetMetadataReader.java:126-243). These checks remain implementer work.
 #  [L11] FIXED - PRUNING ORDER: the adapter now records each bound's supported
 #     order/provenance in model/ColumnStatistics.java. Modern bounds require an
 #     explicit TYPE_ORDER with correct physical-leaf cardinality/alignment;
@@ -1466,14 +1713,28 @@ REPETITION_REPEATED = 2;  # Field is repeated (appears 0 or more times)
 #     Binary bounds and unsupported logical predicate domains remain excluded;
 #     floating NaN/signed-zero safeguards are unchanged. No global disabling of
 #     pruning is needed, but this does NOT validate a producer's incorrect bounds.
-#     ParquetMetadataReader.java:175-224; util/filter/PredicateStatistics.java:19-83;
-#     util/filter/ColumnFilterHelper.java:43-57; util/filter/TypedColumnFilter.java:145-156.
+#     ParquetMetadataReader.java:184-211; util/filter/PredicateStatistics.java:19-106;
+#     util/filter/ColumnFilterHelper.java:44-57; util/filter/TypedColumnFilter.java:148-220.
 #     ReaderPruningOrderTest verifies serialized footer handling and pruning-on/off
 #     equivalence, including unsigned high values and scalar leaves after MAP.
 #  [L12] ROW ANNOTATION MATCH: WriterSchema.sameColumn compares physical shape,
 #     not PrimitiveLogicalType, so an annotation-only row-schema mismatch can
 #     pass validation (writer/WriterSchema.java:81-101,130-135). Conversion and
 #     annotation consistency must be enforced separately by future implementers.
+#  [L13] BLOOM GAPS: the writer's accumulator is never reset - build() keeps its
+#     values and clear() deliberately skips it - so each row group's filter also
+#     covers all earlier groups' values: a safe superset that inflates false
+#     positives and repeats bytes (bloom/BloomFilterAccumulator.java:56-63;
+#     writer/WriterColumnBuilder.java:59-67,98-100). FIXED_LEN_BYTE_ARRAY
+#     present-value iteration slices "all remaining bytes", so multiple FLBA
+#     values in one row (MAP leaves) hash as one combined slice
+#     (writer/WriterPlainBuffer.java:80). bloom_filter_length is never written
+#     and is always -1 on read, so readers probe the header in two steps; a
+#     truncated single-shot bitset is zero-padded, not rejected
+#     (bloom/BloomFilterReader.java:48-73). Bloom pruning is equality-only and
+#     silently declines for unsigned INTEGER constants whose boxed types never
+#     match (util/filter/BloomFilterPredicate.java:45-78). None of these can
+#     drop matching rows; they waste space or skip optimizations.
 #
 # Sibling-document drift (out of scope for this edit): docs/PARQUET_FORMAT.md
 # still names src/main/java/org/parquet/, describes file_offset as chunk address,
